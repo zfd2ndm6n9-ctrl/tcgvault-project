@@ -232,6 +232,14 @@
         .profile-tab { background: transparent; border: none; color: var(--text-muted); padding: 8px 12px; cursor: pointer; font-weight: 700; border-radius: 8px; font-size: 0.85rem; }
         .profile-tab.active { color: var(--accent-neon); background: rgba(0, 255, 136, 0.08); }
 
+        .bot-chat-box { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; height: 260px; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+        .bot-msg { background: rgba(0, 255, 136, 0.08); border: 1px solid rgba(0, 255, 136, 0.2); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; font-size: 0.9rem; font-weight: 500; }
+        .user-msg { background: var(--panel-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; align-self: flex-end; font-size: 0.9rem; font-weight: 500; }
+
+        .faq-item { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+        .faq-title { font-weight: 700; color: var(--accent-neon); margin-bottom: 8px; font-size: 1.02rem; }
+        .faq-text { font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; }
+
         .form-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
         .form-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
         .form-group input, .form-group select, .form-group textarea { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 11px; color: var(--text-main); outline: none; font-family: inherit; font-size: 0.95rem; }
@@ -372,6 +380,8 @@
                 <button class="profile-tab" onclick="switchProfileTab('my-listings', this)">Annunci</button>
                 <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio & Prelievo</button>
                 <button class="profile-tab" onclick="switchProfileTab('reviews-tab', this)">Recensioni</button>
+                <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">Bot H24</button>
+                <button class="profile-tab" onclick="switchProfileTab('tos-faq', this)">ToS & FAQ</button>
             </div>
 
             <div id="tab-info" class="tab-content">
@@ -417,6 +427,28 @@
                 <h3 style="margin-top:0; color: var(--accent-neon);">⭐ La tua Reputazione sul Marketplace</h3>
                 <div id="my-reviews-container" style="display: flex; flex-direction: column; gap: 12px;">
                     <p style="color: var(--text-muted);">Nessuna recensione ricevuta al momento.</p>
+                </div>
+            </div>
+
+            <div id="tab-bot-support" class="tab-content" style="display: none;">
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale TCG Vault (Copertura 99% H24).</p>
+                <div class="bot-chat-box" id="botChatContainer">
+                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di TCG Vault. Come posso aiutarti oggi con le spedizioni o i pagamenti protetti?</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="botInput" placeholder="Chiedi qualcosa al bot..." style="flex: 1; padding: 10px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendBotMessage()">
+                    <button onclick="sendBotMessage()" style="background: var(--accent-neon); border: none; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
+                </div>
+            </div>
+
+            <div id="tab-tos-faq" class="tab-content" style="display: none;">
+                <div class="faq-item">
+                    <div class="faq-title">🛡️ 1. Protezione Escrow e Pagamenti</div>
+                    <div class="faq-text">Ogni transazione è protetta da Escrow. I fondi restano custoditi sul conto centrale della piattaforma e rilasciati sul wallet del venditore solo a consegna confermata.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">📦 2. Corrieri Autorizzati</div>
+                    <div class="faq-text">I corrieri ufficiali sono: Poste Italiane / SDA, InPost, BRT, GLS, DHL e UPS.</div>
                 </div>
             </div>
         </div>
@@ -643,10 +675,7 @@
             }
         }
 
-        function openNotificationsModal() {
-            document.getElementById('notifications-modal').style.display = 'flex';
-        }
-
+        function openNotificationsModal() { document.getElementById('notifications-modal').style.display = 'flex'; }
         function closeNotificationsModal() { 
             document.getElementById('notifications-modal').style.display = 'none';
             notifications = [];
@@ -673,9 +702,7 @@
                     <button class="btn-outline" onclick="logout()">Esci</button>
                 `;
             } else {
-                authContainer.innerHTML = `
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi</button>
-                `;
+                authContainer.innerHTML = `<button class="btn-outline" onclick="openAuthModal()">Accedi</button>`;
             }
         }
 
@@ -760,6 +787,30 @@
             updateHeaderUI();
         }
 
+        // BOT H24
+        function sendBotMessage() {
+            const input = document.getElementById('botInput');
+            const q = input.value.trim().toLowerCase();
+            if(!q) return;
+            const container = document.getElementById('botChatContainer');
+            container.innerHTML += `<div class="user-msg">${input.value}</div>`;
+            input.value = '';
+            
+            let reply = "Per questa specifica richiesta contatta support@tcgvault.com.";
+            if (q.includes('ciao') || q.includes('salve')) {
+                reply = "🤖 Ciao! Sono l'assistente virtuale H24 di TCG Vault. Come posso aiutarti?";
+            } else if (q.includes('spediz') || q.includes('corriere')) {
+                reply = "📦 I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
+            } else if (q.includes('escrow') || q.includes('pagament')) {
+                reply = "💳 I pagamenti sono protetti in Escrow sul conto centrale della piattaforma.";
+            }
+
+            setTimeout(() => {
+                container.innerHTML += `<div class="bot-msg">🤖 ${reply}</div>`;
+                container.scrollTop = container.scrollHeight;
+            }, 600);
+        }
+
         function loadMyListings() {
             const container = document.getElementById('my-listings-container');
             const myCards = isAdmin() ? allCards : allCards.filter(c => c.user_id === (currentUser ? currentUser.id : ''));
@@ -787,9 +838,7 @@
             }
         }
 
-        function applyFilters() {
-            renderCardsToContainer(allCards, document.getElementById('product-list'));
-        }
+        function applyFilters() { renderCardsToContainer(allCards, document.getElementById('product-list')); }
 
         function renderCardsToContainer(cards, container) {
             if (cards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto trovato.</p>'; return; }
