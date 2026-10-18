@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
-    <!-- Inclusione delle librerie ufficiali Stripe.js -->
+    <!-- Inclusione delle librerie ufficiali Stripe.js e Supabase JS SDK -->
     <script src="https://js.stripe.com/v3/"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
             --bg-color: #090d16;
@@ -263,7 +264,7 @@
                 </button>
                 <button class="btn-outline" onclick="openSavedModal()">❤️ Salvati (<span id="saved-count">0</span>)</button>
                 <div id="auth-actions">
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi</button>
+                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
                 </div>
                 <button class="btn-sell" onclick="checkAuthAndOpenSellModal()">+ Metti in Vendita</button>
             </div>
@@ -395,7 +396,7 @@
                         <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567" required>
                     </div>
                     <div class="form-group">
-                        <label>Email (Non Modificabile)</label>
+                        <label>Email (Autenticata Supabase)</label>
                         <input type="email" id="profile-email" disabled style="opacity: 0.6;">
                     </div>
                     <button type="submit" class="btn-submit">Salva Modifiche Profilo</button>
@@ -544,19 +545,27 @@
         </div>
     </div>
 
-    <!-- MODALE AUTH -->
+    <!-- MODALE AUTH SUPABASE (VERIFICA EMAIL REALE) -->
     <div class="modal-overlay" id="auth-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="auth-modal-title">Accedi a TCG Vault</h2>
+                <h2 id="auth-modal-title">Accedi o Registrati (Supabase)</h2>
                 <button class="close-btn" onclick="closeAuthModal()">&times;</button>
             </div>
-            <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
+                Inserisci la tua email e la tua password. Se sei nuovo, ti invieremo un link di conferma via email!
+            </p>
+            <form id="auth-form" onsubmit="handleSupabaseAuth(event)">
                 <div class="form-group">
                     <label>Email *</label>
                     <input type="email" id="auth-email" placeholder="la-tua-email@esempio.com" required>
                 </div>
-                <button type="submit" class="btn-submit" id="auth-submit-btn">Accedi</button>
+                <div class="form-group">
+                    <label>Password *</label>
+                    <input type="password" id="auth-password" placeholder="••••••••" required minlength="6">
+                </div>
+                <button type="submit" class="btn-submit" id="auth-submit-btn">Accedi / Registrati</button>
+                <div id="auth-message" style="font-size: 0.85rem; margin-top: 10px; text-align: center; color: var(--accent-neon);"></div>
             </form>
         </div>
     </div>
@@ -624,6 +633,11 @@
     <script>
         const stripe = Stripe('pk_live_51URVxbB5CcM9bCL44GCB7XIP7NX3ofDkHfnTf0pXzL0T0w0ggdve6GQI9bGvsRgW08uheTInau2mFFBZG4CTkLXl00CqE2fp40');
 
+        // Configurazione Client Supabase con le tue credenziali reali
+        const SUPABASE_URL = 'https://ahpkmppjtespemkzmkol.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_h2FS86T_f9gT3YZZgQ8Ruw_FE8x-Bvu';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
         let defaultCards = [
             { id: 'mock-charizard', user_id: 'system-user-123', category: 'Pokemon', type: 'Carta Singola', title: 'Charizard VMAX', price: 150.00, location: 'Milano', condition: 'Quasi Nuovo', description: 'Carta originale in perfette condizioni, disponibile per spedizione o scambio a mano.', image_url: 'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500', is_sold: false }
         ];
@@ -634,7 +648,6 @@
         let selectedCategory = '';
         let currentUser = null;
         let selectedCard = null;
-        let activeReceiverId = null;
         let elements = null;
         let clientSecret = null;
 
@@ -707,8 +720,21 @@
             document.getElementById('notifications-modal').style.display = 'none';
         }
 
-        function initAuth() {
-            currentUser = JSON.parse(localStorage.getItem('tcg_mock_user') || 'null');
+        // --- INIZIALIZZAZIONE SUPABASE AUTH ---
+        async function initAuth() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session && session.user) {
+                currentUser = {
+                    id: session.user.id,
+                    email: session.user.email,
+                    name: session.user.email.toLowerCase() === 'francesco_delduca@icloud.com' ? 'Francesco Del Duca (Admin)' : session.user.email.split('@')[0],
+                    phone: session.user.user_metadata?.phone || '',
+                    wallet: 0.00,
+                    iban: ''
+                };
+            } else {
+                currentUser = null;
+            }
             updateHeaderUI();
             updateSavedCounter();
             updateNotificationBadge();
@@ -723,13 +749,52 @@
                 authContainer.innerHTML = `
                     <button class="btn-outline" onclick="openMyMessagesModal()">💬 Messaggi</button>
                     <span class="${badgeClass}" onclick="openProfileModal()">${badgeText}</span>
-                    <button class="btn-outline" onclick="logout()">Esci</button>
+                    <button class="btn-outline" onclick="logoutSupabase()">Esci</button>
                 `;
             } else {
                 authContainer.innerHTML = `
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi</button>
+                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
                 `;
             }
+        }
+
+        // Gestione Autenticazione Reale Supabase (Login / Registrazione con Verifica Email)
+        async function handleSupabaseAuth(e) {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value;
+            const msgEl = document.getElementById('auth-message');
+            msgEl.innerText = "Elaborazione in corso...";
+
+            // Tentativo di Login
+            let { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+            if (error) {
+                // Se l'utente non esiste, proviamo la registrazione con verifica email
+                let signUpRes = await supabaseClient.auth.signUp({ email, password });
+                if (signUpRes.error) {
+                    msgEl.style.color = 'var(--heart-red)';
+                    msgEl.innerText = signUpRes.error.message;
+                } else {
+                    msgEl.style.color = 'var(--accent-neon)';
+                    msgEl.innerText = "✉️ Registrazione avvenuta! Controlla la tua email per confermare l'account prima di accedere.";
+                }
+            } else {
+                msgEl.style.color = 'var(--accent-neon)';
+                msgEl.innerText = "Accesso effettuato con successo!";
+                setTimeout(() => {
+                    closeAuthModal();
+                    initAuth();
+                    showNotification('Benvenuto su TCG Vault!');
+                }, 1000);
+            }
+        }
+
+        async function logoutSupabase() {
+            await supabaseClient.auth.signOut();
+            currentUser = null;
+            updateHeaderUI();
+            showNotification('Logout effettuato.');
         }
 
         function toggleSaveProduct(e, cardId) {
@@ -761,35 +826,6 @@
         }
 
         function closeSavedModal() { document.getElementById('saved-modal').style.display = 'none'; }
-
-        async function handleAuthSubmit(e) {
-            e.preventDefault();
-            const email = document.getElementById('auth-email').value.trim();
-            try {
-                const res = await fetch(`${window.location.origin}/api/auth/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    currentUser = data.user;
-                    localStorage.setItem('tcg_mock_user', JSON.stringify(currentUser));
-                    closeAuthModal();
-                    updateHeaderUI();
-                    showNotification('Accesso effettuato con successo!');
-                }
-            } catch (err) {
-                showNotification('Errore di connessione al server.', 'error');
-            }
-        }
-
-        function logout() {
-            currentUser = null;
-            localStorage.removeItem('tcg_mock_user');
-            updateHeaderUI();
-            showNotification('Logout effettuato.');
-        }
 
         function openProfileModal() {
             if (!currentUser) { openAuthModal(); return; }
@@ -825,7 +861,6 @@
                 if (data.success) {
                     currentUser.wallet = data.newBalance;
                     currentUser.iban = iban;
-                    localStorage.setItem('tcg_mock_user', JSON.stringify(currentUser));
                     document.getElementById('wallet-balance').innerText = currentUser.wallet.toFixed(2);
                     showNotification(data.message);
                 } else {
@@ -840,7 +875,6 @@
             e.preventDefault();
             currentUser.name = document.getElementById('profile-name').value;
             currentUser.phone = document.getElementById('profile-phone').value;
-            localStorage.setItem('tcg_mock_user', JSON.stringify(currentUser));
             showNotification('Profilo aggiornato con successo!');
             updateHeaderUI();
         }
