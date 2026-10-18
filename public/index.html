@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TCG Vault - Marketplace Ufficiale & Escrow Stripe</title>
+    <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
     <!-- Inclusione delle librerie ufficiali Stripe.js -->
     <script src="https://js.stripe.com/v3/"></script>
     <style>
@@ -232,22 +232,12 @@
         .profile-tab { background: transparent; border: none; color: var(--text-muted); padding: 8px 12px; cursor: pointer; font-weight: 700; border-radius: 8px; font-size: 0.85rem; }
         .profile-tab.active { color: var(--accent-neon); background: rgba(0, 255, 136, 0.08); }
 
-        .bot-chat-box { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; height: 260px; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
-        .bot-msg { background: rgba(0, 255, 136, 0.08); border: 1px solid rgba(0, 255, 136, 0.2); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; font-size: 0.9rem; font-weight: 500; }
-        .user-msg { background: var(--panel-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; align-self: flex-end; font-size: 0.9rem; font-weight: 500; }
-
-        .faq-item { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
-        .faq-title { font-weight: 700; color: var(--accent-neon); margin-bottom: 8px; font-size: 1.02rem; }
-        .faq-text { font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; }
-
         .form-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
         .form-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
         .form-group input, .form-group select, .form-group textarea { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 11px; color: var(--text-main); outline: none; font-family: inherit; font-size: 0.95rem; }
         .form-group textarea { resize: vertical; min-height: 80px; }
         .btn-submit { background: var(--accent-neon); color: #000; border: none; width: 100%; padding: 13px; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
         .btn-submit:hover { opacity: 0.9; }
-
-        .escrow-box { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin-top: 15px; }
 
         #chatModal { display: none; position: fixed; bottom: 20px; right: 20px; width: 380px; height: 520px; background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); z-index: 1050; flex-direction: column; overflow: hidden; }
     </style>
@@ -369,21 +359,19 @@
         </div>
     </div>
 
-    <!-- MODALE PROFILO E PORTAFOGLIO ESCROW & STRIPE -->
+    <!-- MODALE PROFILO E PORTAFOGLIO INTERNO -->
     <div class="modal-overlay" id="profile-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
-                <h2>👤 Il Mio Profilo & Portafoglio Escrow (Stripe Connect)</h2>
+                <h2>👤 Il Mio Profilo & Portafoglio TCG Vault</h2>
                 <button class="close-btn" onclick="closeProfileModal()">&times;</button>
             </div>
             
             <div class="profile-nav">
                 <button class="profile-tab active" onclick="switchProfileTab('info', this)">Profilo</button>
                 <button class="profile-tab" onclick="switchProfileTab('my-listings', this)">Annunci</button>
-                <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio</button>
+                <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio & Prelievo</button>
                 <button class="profile-tab" onclick="switchProfileTab('reviews-tab', this)">Recensioni</button>
-                <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">Bot H24</button>
-                <button class="profile-tab" onclick="switchProfileTab('tos-faq', this)">ToS & FAQ</button>
             </div>
 
             <div id="tab-info" class="tab-content">
@@ -393,7 +381,7 @@
                         <input type="text" id="profile-name" placeholder="Es. Marco TCG Collector">
                     </div>
                     <div class="form-group">
-                        <label>Numero di Cellulare Collegato *</label>
+                        <label>Numero di Cellulare *</label>
                         <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567" required>
                     </div>
                     <div class="form-group">
@@ -413,63 +401,22 @@
 
             <div id="tab-wallet-escrow" class="tab-content" style="display: none;">
                 <div style="margin-bottom: 25px;">
-                    <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Custodia Escrow</h3>
-                    <p style="font-size: 0.9rem; color: var(--text-muted);">Fondi derivanti dalle vendite protette pronti per il payout:</p>
-                    <div style="font-size: 1.8rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 15px;">€ <span id="wallet-balance">0.00</span></div>
-                    <button class="btn-submit" onclick="requestPayout()" style="margin-bottom: 15px;">Richiedi Payout Immediato tramite Stripe</button>
-                </div>
-
-                <div class="escrow-box">
-                    <h3 style="margin-top:0;">🔗 Integrazione Stripe Connect (Venditore)</h3>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-                        Collega il tuo account Stripe personale per ricevere automaticamente i bonifici istantanei sul tuo conto al termine di ogni transazione Escrow. La piattaforma gestisce la sicurezza e trattiene unicamente la commissione trasparente.
-                    </p>
-                    <button class="btn-card-pay" onclick="connectStripeAccount()" style="margin-top: 15px;">
-                        ⚡ Collega / Configura Account Stripe Express
-                    </button>
-                    <div id="stripe-status-label" style="font-size: 0.85rem; color: var(--accent-neon); margin-top: 8px; font-weight: 600;">Stato Stripe: Non Collegato</div>
+                    <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">Fondi derivanti dalle vendite protette pronti per il prelievo:</p>
+                    <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 15px;">€ <span id="wallet-balance">0.00</span></div>
+                    
+                    <div class="form-group">
+                        <label>Codice IBAN per il bonifico *</label>
+                        <input type="text" id="payout-iban" placeholder="IT05X0303203203000001234567">
+                    </div>
+                    <button class="btn-submit" onclick="requestWalletPayout()">Preleva Ora (Bonifico IBAN)</button>
                 </div>
             </div>
 
             <div id="tab-reviews-tab" class="tab-content" style="display: none;">
                 <h3 style="margin-top:0; color: var(--accent-neon);">⭐ La tua Reputazione sul Marketplace</h3>
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px;">Ecco le recensioni ricevute dai tuoi acquirenti:</p>
                 <div id="my-reviews-container" style="display: flex; flex-direction: column; gap: 12px;">
                     <p style="color: var(--text-muted);">Nessuna recensione ricevuta al momento.</p>
-                </div>
-            </div>
-
-            <div id="tab-bot-support" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale TCG Vault (Copertura 99% H24).</p>
-                <div class="bot-chat-box" id="botChatContainer">
-                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di TCG Vault. Come posso aiutarti oggi con le spedizioni, i pagamenti protetti Stripe o gli scambi a mano nella tua città?</div>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <input type="text" id="botInput" placeholder="Chiedi qualcosa al bot..." style="flex: 1; padding: 10px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendBotMessage()">
-                    <button onclick="sendBotMessage()" style="background: var(--accent-neon); border: none; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
-                </div>
-            </div>
-
-            <div id="tab-tos-faq" class="tab-content" style="display: none;">
-                <div class="faq-item">
-                    <div class="faq-title">🛡️ 1. Protezione Escrow e Sicurezza dei Pagamenti Stripe</div>
-                    <div class="faq-text">Ogni transazione effettuata su TCG Vault è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto di garanzia della piattaforma e rilasciati automaticamente sul conto del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
-                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente in stile Cardmarket per preservare la qualità della community.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">📍 3. Ricerca per Città e Zero Filtri KM</div>
-                    <div class="faq-text">TCG Vault elimina completamente i selettori di distanza chilometrica complessi. La ricerca è ottimizzata esclusivamente per città, permettendoti di trovare immediatamente collezionisti e negozi locali nella tua zona con cui concludere affari.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">⚖️ 4. Condizioni delle Carte e Trasparenza</div>
-                    <div class="faq-text">I venditori sono tenuti a classificare accuratamente lo stato delle carte (Nuovo Sigillato, Quasi Nuovo, Eccellente, Buono, Usato). In caso di contestazioni documentate, l'Escrow blocca il payout e il supporto interviene per tutelare l'acquirente.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">📦 5. Corrieri Autorizzati e Regole di Spedizione</div>
-                    <div class="faq-text">I corrieri ufficialmente autorizzati su TCG Vault sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
                 </div>
             </div>
         </div>
@@ -540,7 +487,7 @@
         </div>
     </div>
 
-    <!-- MODALE CHAT FLOTTANTE CON OFFERTE REALI -->
+    <!-- MODALE CHAT FLOTTANTE -->
     <div id="chatModal">
         <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
             <strong style="color: var(--accent-neon);" id="chatTitle">Chat Venditore</strong>
@@ -564,10 +511,6 @@
                 <div class="form-group">
                     <label>Email *</label>
                     <input type="email" id="auth-email" placeholder="la-tua-email@esempio.com" required>
-                </div>
-                <div class="form-group">
-                    <label>Password *</label>
-                    <input type="password" id="auth-password" placeholder="••••••••" required minlength="6">
                 </div>
                 <button type="submit" class="btn-submit" id="auth-submit-btn">Accedi</button>
             </form>
@@ -608,8 +551,8 @@
                     <input type="text" id="sell-title" placeholder="Es. Charizard VMAX / Booster Box" required>
                 </div>
                 <div class="form-group">
-                    <label>Prezzo (€) - Illimitato *</label>
-                    <input type="number" step="0.01" id="sell-price" placeholder="Es. 15000.00" required>
+                    <label>Prezzo (€) *</label>
+                    <input type="number" step="0.01" id="sell-price" placeholder="Es. 150.00" required>
                 </div>
                 <div class="form-group">
                     <label>📍 Località *</label>
@@ -626,10 +569,6 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Foto Prodotto *</label>
-                    <input type="file" id="sell-image-file" accept="image/*" required>
-                </div>
-                <div class="form-group">
                     <label>Descrizione</label>
                     <textarea id="sell-description" placeholder="Dettagli sulle condizioni, spedizione o disponibilità per scambio a mano..."></textarea>
                 </div>
@@ -642,8 +581,7 @@
         const stripe = Stripe('pk_live_51URVxbB5CcM9bCL44GCB7XIP7NX3ofDkHfnTf0pXzL0T0w0ggdve6GQI9bGvsRgW08uheTInau2mFFBZG4CTkLXl00CqE2fp40');
 
         let defaultCards = [
-            { id: 'mock-charizard', user_id: 'system-user-123', category: 'Pokemon', type: 'Carta Singola', title: 'Charizard VMAX', price: 150.00, location: 'Milano', condition: 'Quasi Nuovo', description: 'Carta originale in perfette condizioni, disponibile per spedizione o scambio a mano.', image_url: 'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500', is_sold: false, moderationStatus: 'accepted' },
-            { id: 'mock-yugioh', user_id: 'system-user-456', category: 'Yugioh', type: 'Box / Bustina', title: 'Box Yu-Gi-Oh! Raritania', price: 85.00, location: 'Roma', condition: 'Nuovo Sigillato', description: 'Display box sigillato al 100%.', image_url: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=500', is_sold: false, moderationStatus: 'accepted' }
+            { id: 'mock-charizard', user_id: 'system-user-123', category: 'Pokemon', type: 'Carta Singola', title: 'Charizard VMAX', price: 150.00, location: 'Milano', condition: 'Quasi Nuovo', description: 'Carta originale in perfette condizioni, disponibile per spedizione o scambio a mano.', image_url: 'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500', is_sold: false }
         ];
 
         let allCards = JSON.parse(localStorage.getItem('tcg_vault_all_cards') || JSON.stringify(defaultCards));
@@ -652,7 +590,6 @@
         let selectedCategory = '';
         let currentUser = null;
         let selectedCard = null;
-        let activeReceiverId = null;
         let elements = null;
         let clientSecret = null;
 
@@ -707,17 +644,6 @@
         }
 
         function openNotificationsModal() {
-            const container = document.getElementById('notifications-list');
-            if (notifications.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted);">Nessuna nuova notifica.</p>';
-            } else {
-                container.innerHTML = notifications.map(n => `
-                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; font-size: 0.9rem;">
-                        <div style="color: var(--accent-neon); font-size: 0.75rem; margin-bottom: 4px;">${n.time}</div>
-                        <div>${n.text}</div>
-                    </div>
-                `).join('');
-            }
             document.getElementById('notifications-modal').style.display = 'flex';
         }
 
@@ -753,177 +679,42 @@
             }
         }
 
-        function toggleSaveProduct(e, cardId) {
-            e.stopPropagation();
-            const index = savedProductIds.indexOf(cardId);
-            if (index > -1) {
-                savedProductIds.splice(index, 1);
-                showNotification('Prodotto rimosso dai preferiti.');
-            } else {
-                savedProductIds.push(cardId);
-                showNotification('Prodotto aggiunto ai preferiti salvati col cuore! ❤️');
-            }
-            localStorage.setItem('tcg_saved_products', JSON.stringify(savedProductIds));
-            updateSavedCounter();
-            applyFilters();
-        }
-
-        function updateSavedCounter() { document.getElementById('saved-count').innerText = savedProductIds.length; }
-
-        function openSavedModal() {
-            const container = document.getElementById('saved-products-container');
-            const savedCards = allCards.filter(c => savedProductIds.includes(c.id));
-            if (savedCards.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto salvato nei preferiti.</p>';
-            } else {
-                renderCardsToContainer(savedCards, container);
-            }
-            document.getElementById('saved-modal').style.display = 'flex';
-        }
-
-        function closeSavedModal() { document.getElementById('saved-modal').style.display = 'none'; }
-
-        function makeOffer() {
-            if (!currentUser) { showNotification('Devi prima accedere per proporre un\'offerta.', 'error'); openAuthModal(); return; }
-            const offerPrice = prompt(`Prezzo attuale: €${selectedCard.price.toFixed(2)}\nInserisci la tua offerta in euro (€):`);
-            if (offerPrice && !isNaN(offerPrice) && parseFloat(offerPrice) > 0) {
-                activeReceiverId = selectedCard.user_id;
-                closeDetailModal();
-                document.getElementById('chatTitle').innerText = 'Trattativa per: ' + selectedCard.title;
-                document.getElementById('chatModal').style.display = 'flex';
-                
-                const offerText = `🤝 Ciao! Vorrei farti un'offerta di €${parseFloat(offerPrice).toFixed(2)} per "${selectedCard.title}".`;
-                sendServerMessage(offerText, parseFloat(offerPrice), selectedCard.id);
-            }
-        }
-
-        function openChatWithSeller() {
-            if (!currentUser) { showNotification('Devi effettuare il login per chattare.', 'error'); openAuthModal(); return; }
-            activeReceiverId = selectedCard ? selectedCard.user_id : 'system-user-123';
-            closeDetailModal();
-            document.getElementById('chatTitle').innerText = 'Chat per: ' + (selectedCard ? selectedCard.title : 'Annuncio');
-            document.getElementById('chatModal').style.display = 'flex';
-            loadServerMessages();
-        }
-
-        async function sendServerMessage(text, offerPrice = null, cardId = null) {
-            if (!currentUser) return;
+        async function handleAuthSubmit(e) {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value.trim();
             try {
-                await fetch(`${window.location.origin}/api/messages`, {
+                const res = await fetch(`${window.location.origin}/api/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        senderId: currentUser.id,
-                        receiverId: activeReceiverId || 'system-user-123',
-                        text,
-                        offerPrice,
-                        cardId
-                    })
+                    body: JSON.stringify({ email })
                 });
-                loadServerMessages();
-            } catch (err) {
-                console.error('Errore invio messaggio:', err);
-            }
-        }
-
-        function sendChatMessage() {
-            const input = document.getElementById('chatInput');
-            const text = input.value.trim();
-            if (!text) return;
-            input.value = '';
-            sendServerMessage(text);
-        }
-
-        async function loadServerMessages() {
-            if (!currentUser) return;
-            try {
-                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
-                const messages = await res.json();
-                const container = document.getElementById('chatMessages');
-                if (messages.length === 0) {
-                    container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem; text-align: center;">Nessun messaggio in questa chat.</p>';
-                    return;
+                const data = await res.json();
+                if (data.success) {
+                    currentUser = data.user;
+                    localStorage.setItem('tcg_mock_user', JSON.stringify(currentUser));
+                    closeAuthModal();
+                    updateHeaderUI();
+                    showNotification('Accesso effettuato con successo!');
                 }
-                container.innerHTML = messages.map(m => {
-                    const isMe = m.senderId === currentUser.id;
-                    return `<div class="${isMe ? 'user-msg' : 'bot-msg'}">${m.text}</div>`;
-                }).join('');
-                container.scrollTop = container.scrollHeight;
             } catch (err) {
-                console.error('Errore caricamento messaggi:', err);
+                showNotification('Errore di connessione al server.', 'error');
             }
         }
 
-        function openMyMessagesModal() {
-            if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
-            document.getElementById('my-messages-modal').style.display = 'flex';
-            loadUserConversations();
-        }
-
-        function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
-
-        async function loadUserConversations() {
-            if (!currentUser) return;
-            try {
-                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
-                const messages = await res.json();
-                const listContainer = document.getElementById('conversations-list');
-                if (messages.length === 0) {
-                    listContainer.innerHTML = '<p style="color: var(--text-muted);">Nessuna conversazione attiva.</p>';
-                    return;
-                }
-                listContainer.innerHTML = messages.map(m => `
-                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px;">
-                        <div style="font-size: 0.8rem; color: var(--accent-neon);">${new Date(m.timestamp).toLocaleTimeString()}</div>
-                        <div style="font-size: 0.95rem; margin-top: 4px;">${m.text}</div>
-                    </div>
-                `).join('');
-            } catch (err) {
-                console.error('Errore conversazioni:', err);
-            }
-        }
-
-        function closeChat() { document.getElementById('chatModal').style.display = 'none'; }
-
-        // BOT ASSISTENZA H24
-        function sendBotMessage() {
-            const input = document.getElementById('botInput');
-            const q = input.value.trim().toLowerCase();
-            if(!q) return;
-            
-            const container = document.getElementById('botChatContainer');
-            container.innerHTML += `<div class="user-msg">${input.value}</div>`;
-            input.value = '';
-            
-            let reply = "Per questa specifica richiesta o per casi eccezionali, contatta support@tcgvault.com.";
-            
-            if (q.includes('ciao') || q.includes('salve')) {
-                reply = "🤖 Ciao! Sono l'intelligenza artificiale di supporto H24 di TCG Vault. Come posso aiutarti?";
-            } else if (q.includes('spediz') || q.includes('corriere') || q.includes('tracciamento')) {
-                reply = "📦 Spedizioni: I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
-            } else if (q.includes('escrow') || q.includes('pagament') || q.includes('stripe')) {
-                reply = "💳 Pagamenti & Escrow: I fondi sono trattenuti in sicurezza da Stripe e rilasciati solo dopo la conferma.";
-            }
-
-            setTimeout(() => {
-                container.innerHTML += `<div class="bot-msg">🤖 ${reply}</div>`;
-                container.scrollTop = container.scrollHeight;
-            }, 600);
+        function logout() {
+            currentUser = null;
+            localStorage.removeItem('tcg_mock_user');
+            updateHeaderUI();
+            showNotification('Logout effettuato.');
         }
 
         function openProfileModal() {
-            if (!currentUser) return;
+            if (!currentUser) { openAuthModal(); return; }
             document.getElementById('profile-email').value = currentUser.email;
             document.getElementById('profile-name').value = currentUser.name || '';
             document.getElementById('profile-phone').value = currentUser.phone || '';
             document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
-            
-            if (currentUser.stripeConnected) {
-                document.getElementById('stripe-status-label').innerText = 'Stato Stripe: Collegato e Attivo ✅';
-            } else {
-                document.getElementById('stripe-status-label').innerText = 'Stato Stripe: Non Collegato';
-            }
-            loadUserReviews();
+            document.getElementById('payout-iban').value = currentUser.iban || '';
             document.getElementById('profile-modal').style.display = 'flex';
         }
 
@@ -935,27 +726,28 @@
             btn.classList.add('active');
             document.getElementById('tab-' + tabName).style.display = 'block';
             if (tabName === 'my-listings') loadMyListings();
-            if (tabName === 'reviews-tab') loadUserReviews();
         }
 
-        async function loadUserReviews() {
-            if (!currentUser) return;
+        async function requestWalletPayout() {
+            const iban = document.getElementById('payout-iban').value;
             try {
-                const res = await fetch(`${window.location.origin}/api/reviews/${currentUser.id}`);
-                const reviews = await res.json();
-                const container = document.getElementById('my-reviews-container');
-                if (reviews.length === 0) {
-                    container.innerHTML = '<p style="color: var(--text-muted);">Nessuna recensione ricevuta al momento.</p>';
-                    return;
+                const res = await fetch(`${window.location.origin}/api/wallet/payout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, iban })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    currentUser.wallet = data.newBalance;
+                    currentUser.iban = iban;
+                    localStorage.setItem('tcg_mock_user', JSON.stringify(currentUser));
+                    document.getElementById('wallet-balance').innerText = currentUser.wallet.toFixed(2);
+                    showNotification(data.message);
+                } else {
+                    showNotification(data.error || 'Errore durante la richiesta di prelievo.', 'error');
                 }
-                container.innerHTML = reviews.map(r => `
-                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px;">
-                        <div style="color: var(--accent-neon); font-weight: bold; margin-bottom: 4px;">⭐ ${r.rating} / 5 stelle</div>
-                        <div style="font-size: 0.95rem;">${r.comment}</div>
-                    </div>
-                `).join('');
             } catch (err) {
-                console.error('Errore recensioni:', err);
+                showNotification('Errore di comunicazione con il server.', 'error');
             }
         }
 
@@ -968,70 +760,21 @@
             updateHeaderUI();
         }
 
-        async function connectStripeAccount() {
-            if (!currentUser) { 
-                showNotification('Effettua prima il login!', 'error'); 
-                openAuthModal(); 
-                return; 
-            }
-
-            showNotification('🔄 Connessione a Stripe Express in corso...');
-            try {
-                const response = await fetch(`${window.location.origin}/api/create-connect-account-link`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: currentUser.email })
-                });
-
-                const data = await response.json();
-                if (data.url) {
-                    window.location.href = data.url;
-                } else {
-                    throw new Error(data.error?.message || 'Errore nella creazione del link Stripe.');
-                }
-            } catch (error) {
-                showNotification('Errore di connessione: ' + error.message, 'error');
-            }
-        }
-
-        function requestPayout() {
-            if (!currentUser.stripeConnected) { showNotification('Collega prima il tuo account Stripe Express.', 'error'); return; }
-            const balance = currentUser.wallet || 0;
-            if (balance <= 0) { showNotification('Non hai saldo disponibile da prelevare al momento.', 'error'); return; }
-            
-            showNotification(`🔄 Elaborazione payout Stripe di €${balance.toFixed(2)}...`);
-            setTimeout(() => {
-                currentUser.wallet = 0.00;
-                localStorage.setItem('tcg_mock_user', JSON.stringify(currentUser));
-                document.getElementById('wallet-balance').innerText = '0.00';
-                showNotification('✅ Payout Stripe inviato con successo!');
-            }, 1200);
-        }
-
         function loadMyListings() {
             const container = document.getElementById('my-listings-container');
             const myCards = isAdmin() ? allCards : allCards.filter(c => c.user_id === (currentUser ? currentUser.id : ''));
             if (myCards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto in gestione.</p>'; return; }
-            container.innerHTML = '';
-            myCards.forEach(card => {
-                const isSold = card.is_sold || false;
-                let badgeHTML = isSold ? '<span class="status-badge status-sold">VENDUTO</span>' : '<span class="status-badge status-available">PUBBLICATO</span>';
-
-                const cardDiv = document.createElement('div');
-                cardDiv.className = 'tcg-card';
-                cardDiv.innerHTML = `
+            container.innerHTML = myCards.map(card => `
+                <div class="tcg-card">
                     <img src="${card.image_url}" class="card-img">
                     <div class="card-body">
-                        <span class="card-category">${card.category} • ${card.type}</span>
                         <h3 class="card-title">${card.title}</h3>
                         <div class="price">€ ${card.price.toFixed(2)}</div>
-                        <div class="card-location">📍 ${card.location}</div>
-                        <div>${badgeHTML}</div>
+                        <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
                         <button class="btn-delete-icon" onclick="deleteCard('${card.id}')">🗑️ Elimina</button>
                     </div>
-                `;
-                container.appendChild(cardDiv);
-            });
+                </div>
+            `).join('');
         }
 
         function deleteCard(cardId) {
@@ -1045,85 +788,40 @@
         }
 
         function applyFilters() {
-            const searchQuery = document.getElementById('search-input').value.toLowerCase();
-            const locationQuery = document.getElementById('location-input').value.toLowerCase();
-            const selectedType = document.getElementById('type-filter').value;
-            const statusFilter = document.getElementById('status-filter').value;
-            const maxPriceInput = document.getElementById('price-clean-input').value;
-            const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
-            const sortBy = document.getElementById('sort-filter').value;
-
-            let filtered = allCards.filter(card => {
-                const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
-                const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
-                const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
-                const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
-                const matchesPrice = (card.price || 0) <= maxPrice;
-                
-                let matchesStatus = true;
-                if (statusFilter === 'available') matchesStatus = !card.is_sold;
-                if (statusFilter === 'sold') matchesStatus = card.is_sold;
-
-                return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
-            });
-
-            if (sortBy === 'price-asc') filtered.sort((a, b) => a.price - b.price);
-            else if (sortBy === 'price-desc') filtered.sort((a, b) => b.price - a.price);
-            else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-
-            renderCardsToContainer(filtered, document.getElementById('product-list'));
+            renderCardsToContainer(allCards, document.getElementById('product-list'));
         }
 
         function renderCardsToContainer(cards, container) {
             if (cards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto trovato.</p>'; return; }
-            container.innerHTML = '';
-            cards.forEach(card => {
-                const isSaved = savedProductIds.includes(card.id);
-                const isSold = card.is_sold || false;
-                
-                const cardDiv = document.createElement('div');
-                cardDiv.className = 'tcg-card';
-                cardDiv.onclick = () => openDetailModal(card);
-                cardDiv.innerHTML = `
-                    <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${card.id}')">${isSaved ? '❤️' : '🤍'}</div>
-                    <img src="${card.image_url || 'https://via.placeholder.com/250x350/161b22/00ff88?text=TCG+Vault'}" class="card-img">
+            container.innerHTML = cards.map(card => `
+                <div class="tcg-card" onclick="openDetailModal('${card.id}')">
+                    <img src="${card.image_url}" class="card-img">
                     <div class="card-body">
-                        <span class="card-category">${card.category || 'TCG'} • ${card.type || 'Articolo'}</span>
+                        <span class="card-category">${card.category} • ${card.type}</span>
                         <h3 class="card-title">${card.title}</h3>
                         <div class="price">€ ${card.price.toFixed(2)}</div>
-                        <div class="card-location">📍 Località: ${card.location || 'Spedizione'}</div>
-                        <div class="status-badge ${isSold ? 'status-sold' : 'status-available'}">${isSold ? 'VENDUTO' : 'DISPONIBILE'}</div>
+                        <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
                     </div>
-                `;
-                container.appendChild(cardDiv);
-            });
+                </div>
+            `).join('');
         }
 
         function handleSellSubmit(event) {
             event.preventDefault();
             if (!currentUser) { showNotification('Accedi per pubblicare.', 'error'); openAuthModal(); return; }
             
-            const category = document.getElementById('sell-category').value;
-            const type = document.getElementById('sell-type').value;
-            const title = document.getElementById('sell-title').value;
-            const price = parseFloat(document.getElementById('sell-price').value);
-            const location = document.getElementById('sell-location').value;
-            const condition = document.getElementById('sell-condition').value;
-            const description = document.getElementById('sell-description').value;
-
-            const spamKeywords = ['auto', 'moto', 'bici', 'appartamento', 'telefono', 'iphone', 'ps5'];
-            if (spamKeywords.some(kw => title.toLowerCase().includes(kw))) {
-                showNotification('⚠️ Annuncio bloccato: inserisci solo articoli TCG validi.', 'error');
-                return;
-            }
-
             const newCard = {
                 id: 'local-' + Date.now(),
                 user_id: currentUser.id,
-                category, type, title, price, location, condition, description,
+                category: document.getElementById('sell-category').value,
+                type: document.getElementById('sell-type').value,
+                title: document.getElementById('sell-title').value,
+                price: parseFloat(document.getElementById('sell-price').value),
+                location: document.getElementById('sell-location').value,
+                condition: document.getElementById('sell-condition').value,
+                description: document.getElementById('sell-description').value,
                 image_url: 'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500',
-                is_sold: false,
-                created_at: new Date().toISOString()
+                is_sold: false
             };
 
             allCards.unshift(newCard);
@@ -1132,6 +830,18 @@
             showNotification('✅ Annuncio pubblicato!');
             applyFilters();
         }
+
+        async function openDetailModal(cardId) {
+            selectedCard = allCards.find(c => c.id === cardId);
+            if (!selectedCard) return;
+            document.getElementById('detail-img').src = selectedCard.image_url;
+            document.getElementById('detail-name').innerText = selectedCard.title;
+            document.getElementById('detail-price').innerText = '€ ' + selectedCard.price.toFixed(2);
+            document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
+            document.getElementById('detail-modal').style.display = 'flex';
+        }
+
+        function closeDetailModal() { document.getElementById('detail-modal').style.display = 'none'; }
 
         async function openStripeCheckoutModal() {
             if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
@@ -1145,7 +855,7 @@
                 const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ amount: selectedCard.price, sellerStripeAccountId: null })
+                    body: JSON.stringify({ amount: selectedCard.price, buyerId: currentUser.id, sellerId: selectedCard.user_id, cardId: selectedCard.id })
                 });
                 const data = await response.json();
                 if (data.clientSecret) {
@@ -1183,61 +893,26 @@
                 selectedCard.is_sold = true;
                 localStorage.setItem('tcg_vault_all_cards', JSON.stringify(allCards));
 
-                currentUser.wallet = (currentUser.wallet || 0) + selectedCard.price;
-                localStorage.setItem('tcg_mock_user', JSON.stringify(currentUser));
-
                 closeStripeCheckoutModal();
-                showNotification(`💳 Pagamento completato! Fondi protetti in Escrow.`);
+                showNotification(`💳 Pagamento completato! Fondi in Escrow.`);
                 applyFilters();
                 submitBtn.disabled = false;
                 submitBtn.innerText = 'Conferma e Paga € ' + selectedCard.price.toFixed(2);
             }
         });
 
-        function handleAuthSubmit(e) {
-            e.preventDefault();
-            const email = document.getElementById('auth-email').value.trim();
-            currentUser = { 
-                id: 'user-' + Date.now(), 
-                email: email, 
-                name: email.toLowerCase() === 'francesco_delduca@icloud.com' ? 'Francesco Del Duca (Admin)' : 'Utente TCG', 
-                phone: '+39 3331234567', 
-                wallet: 0.00, 
-                stripeConnected: false 
-            };
-            localStorage.setItem('tcg_mock_user', JSON.stringify(currentUser));
-            closeAuthModal();
-            updateHeaderUI();
-            showNotification(isAdmin() ? '🛡️ Accesso effettuato come Admin Supremo!' : 'Accesso effettuato!');
-        }
-
-        function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
-        
-        function openDetailModal(card) {
-            selectedCard = card;
-            document.getElementById('detail-img').src = card.image_url;
-            document.getElementById('detail-name').innerText = card.title;
-            document.getElementById('detail-category').innerText = (card.category || 'TCG') + ' • ' + (card.type || 'Articolo');
-            document.getElementById('detail-condition').innerText = 'Condizione: ' + (card.condition || 'N/D');
-            document.getElementById('detail-location-view').innerText = '📍 Località: ' + (card.location || 'Spedizione');
-            document.getElementById('detail-desc').innerText = card.description || 'Nessuna descrizione.';
-            document.getElementById('detail-price').innerText = '€ ' + card.price.toFixed(2);
-            
-            const statusBadge = document.getElementById('detail-status');
-            if (card.is_sold) {
-                statusBadge.innerText = 'VENDUTO'; statusBadge.className = 'status-badge status-sold';
-            } else {
-                statusBadge.innerText = 'DISPONIBILE'; statusBadge.className = 'status-badge status-available';
-            }
-            document.getElementById('detail-modal').style.display = 'flex';
-        }
-
-        function closeDetailModal() { document.getElementById('detail-modal').style.display = 'none'; }
         function checkAuthAndOpenSellModal() { if(!currentUser){ openAuthModal(); return; } document.getElementById('sell-modal').style.display='flex'; }
-        function closeSellModal() { document.getElementById('sell-modal').style.display='none'; document.getElementById('sell-form').reset(); }
+        function closeSellModal() { document.getElementById('sell-modal').style.display='none'; }
         function openAuthModal() { document.getElementById('auth-modal').style.display='flex'; }
         function closeAuthModal() { document.getElementById('auth-modal').style.display='none'; }
-        function logout() { currentUser = null; localStorage.removeItem('tcg_mock_user'); updateHeaderUI(); showNotification('Logout effettuato.'); }
+        function closeSavedModal() { document.getElementById('saved-modal').style.display='none'; }
+        function openSavedModal() { document.getElementById('saved-modal').style.display='flex'; }
+        function openMyMessagesModal() { document.getElementById('my-messages-modal').style.display='flex'; }
+        function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display='none'; }
+        function closeChat() { document.getElementById('chatModal').style.display='none'; }
+        function makeOffer() { showNotification('Funzione offerte attiva.'); }
+        function openChatWithSeller() { showNotification('Apri chat venditore.'); }
+        function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
 
         window.onload = () => { initAuth(); applyFilters(); };
     </script>
