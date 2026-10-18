@@ -1,0 +1,13 @@
+{
+  "name": "tcg-vault",
+  "version": "1.0.0",
+  "description": "TCG Vault App",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "stripe": "^14.0.0"
+  }
+}
