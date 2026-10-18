@@ -797,14 +797,39 @@
             showNotification('Logout effettuato.');
         }
 
+        // --- CARICAMENTO ANNUNCI IN TEMPO REALE DA SUPABASE ---
+        async function loadCardsFromSupabase() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('cards')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    console.error('Errore caricamento da Supabase:', error);
+                    allCards = JSON.parse(localStorage.getItem('tcg_vault_all_cards') || JSON.stringify(defaultCards));
+                } else if (data && data.length > 0) {
+                    allCards = data;
+                    localStorage.setItem('tcg_vault_all_cards', JSON.stringify(allCards));
+                } else {
+                    allCards = defaultCards;
+                }
+                applyFilters();
+            } catch (err) {
+                console.error('Eccezione caricamento carte:', err);
+                applyFilters();
+            }
+        }
+
         function toggleSaveProduct(e, cardId) {
             e.stopPropagation();
-            const index = savedProductIds.indexOf(cardId);
+            const idStr = String(cardId);
+            const index = savedProductIds.map(String).indexOf(idStr);
             if (index > -1) {
                 savedProductIds.splice(index, 1);
                 showNotification('Prodotto rimosso dai preferiti.');
             } else {
-                savedProductIds.push(cardId);
+                savedProductIds.push(idStr);
                 showNotification('Prodotto aggiunto ai preferiti salvati col cuore! ❤️');
             }
             localStorage.setItem('tcg_saved_products', JSON.stringify(savedProductIds));
@@ -816,7 +841,8 @@
 
         function openSavedModal() {
             const container = document.getElementById('saved-products-container');
-            const savedCards = allCards.filter(c => savedProductIds.includes(c.id));
+            const savedIdsStr = savedProductIds.map(String);
+            const savedCards = allCards.filter(c => savedIdsStr.includes(String(c.id)));
             if (savedCards.length === 0) {
                 container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto salvato nei preferiti.</p>';
             } else {
@@ -934,7 +960,7 @@
                     <div class="card-body">
                         <span class="card-category">${card.category} • ${card.type}</span>
                         <h3 class="card-title">${card.title}</h3>
-                        <div class="price">€ ${card.price.toFixed(2)}</div>
+                        <div class="price">€ ${Number(card.price).toFixed(2)}</div>
                         <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
                         <button class="btn-delete-icon" onclick="deleteCard('${card.id}')">🗑️ Elimina</button>
                     </div>
@@ -942,13 +968,22 @@
             `).join('');
         }
 
-        function deleteCard(cardId) {
+        async function deleteCard(cardId) {
             if (confirm("Vuoi eliminare questo annuncio?")) {
-                allCards = allCards.filter(c => c.id !== cardId);
-                localStorage.setItem('tcg_vault_all_cards', JSON.stringify(allCards));
-                showNotification('Annuncio eliminato.');
-                loadMyListings();
-                applyFilters();
+                const { error } = await supabaseClient
+                    .from('cards')
+                    .delete()
+                    .eq('id', cardId);
+
+                if (error) {
+                    showNotification('Errore durante l\'eliminazione: ' + error.message, 'error');
+                } else {
+                    allCards = allCards.filter(c => String(c.id) !== String(cardId));
+                    localStorage.setItem('tcg_vault_all_cards', JSON.stringify(allCards));
+                    showNotification('Annuncio eliminato.');
+                    await loadCardsFromSupabase();
+                    loadMyListings();
+                }
             }
         }
 
@@ -966,7 +1001,7 @@
                 const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
                 const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
                 const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
-                const matchesPrice = (card.price || 0) <= maxPrice;
+                const matchesPrice = (Number(card.price) || 0) <= maxPrice;
                 
                 let matchesStatus = true;
                 if (statusFilter === 'available') matchesStatus = !card.is_sold;
@@ -975,8 +1010,8 @@
                 return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
             });
 
-            if (sortBy === 'price-asc') filtered.sort((a, b) => a.price - b.price);
-            else if (sortBy === 'price-desc') filtered.sort((a, b) => b.price - a.price);
+            if (sortBy === 'price-asc') filtered.sort((a, b) => Number(a.price) - Number(b.price));
+            else if (sortBy === 'price-desc') filtered.sort((a, b) => Number(b.price) - Number(a.price));
             else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
             renderCardsToContainer(filtered, document.getElementById('product-list'));
@@ -984,8 +1019,9 @@
 
         function renderCardsToContainer(cards, container) {
             if (cards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto trovato.</p>'; return; }
+            const savedIdsStr = savedProductIds.map(String);
             container.innerHTML = cards.map(card => {
-                const isSaved = savedProductIds.includes(card.id);
+                const isSaved = savedIdsStr.includes(String(card.id));
                 return `
                     <div class="tcg-card" onclick="openDetailModal('${card.id}')">
                         <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${card.id}')">${isSaved ? '❤️' : '🤍'}</div>
@@ -993,7 +1029,7 @@
                         <div class="card-body">
                             <span class="card-category">${card.category} • ${card.type}</span>
                             <h3 class="card-title">${card.title}</h3>
-                            <div class="price">€ ${card.price.toFixed(2)}</div>
+                            <div class="price">€ ${Number(card.price).toFixed(2)}</div>
                             <div class="card-location">📍 Località: ${card.location || 'Spedizione'}</div>
                             <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
                         </div>
@@ -1002,12 +1038,11 @@
             }).join('');
         }
 
-        function handleSellSubmit(event) {
+        async function handleSellSubmit(event) {
             event.preventDefault();
             if (!currentUser) { showNotification('Accedi per pubblicare.', 'error'); openAuthModal(); return; }
             
             const newCard = {
-                id: 'local-' + Date.now(),
                 user_id: currentUser.id,
                 category: document.getElementById('sell-category').value,
                 type: document.getElementById('sell-type').value,
@@ -1017,19 +1052,25 @@
                 condition: document.getElementById('sell-condition').value,
                 description: document.getElementById('sell-description').value,
                 image_url: 'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500',
-                is_sold: false,
-                created_at: new Date().toISOString()
+                is_sold: false
             };
 
-            allCards.unshift(newCard);
-            localStorage.setItem('tcg_vault_all_cards', JSON.stringify(allCards));
-            closeSellModal();
-            showNotification('✅ Annuncio pubblicato!');
-            applyFilters();
+            const { error } = await supabaseClient
+                .from('cards')
+                .insert([newCard]);
+
+            if (error) {
+                showNotification('Errore pubblicazione su Supabase: ' + error.message, 'error');
+            } else {
+                document.getElementById('sell-form').reset();
+                closeSellModal();
+                showNotification('✅ Annuncio pubblicato su Supabase!');
+                await loadCardsFromSupabase();
+            }
         }
 
         async function openDetailModal(cardId) {
-            selectedCard = allCards.find(c => c.id === cardId);
+            selectedCard = allCards.find(c => String(c.id) === String(cardId));
             if (!selectedCard) return;
             document.getElementById('detail-img').src = selectedCard.image_url;
             document.getElementById('detail-name').innerText = selectedCard.title;
@@ -1037,7 +1078,7 @@
             document.getElementById('detail-condition').innerText = 'Condizione: ' + (selectedCard.condition || 'N/D');
             document.getElementById('detail-location-view').innerText = '📍 Località: ' + (selectedCard.location || 'Spedizione');
             document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
-            document.getElementById('detail-price').innerText = '€ ' + selectedCard.price.toFixed(2);
+            document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-modal').style.display = 'flex';
         }
 
@@ -1047,7 +1088,7 @@
             if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
             if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
             
-            document.getElementById('checkout-modal-price').innerText = selectedCard.price.toFixed(2);
+            document.getElementById('checkout-modal-price').innerText = Number(selectedCard.price).toFixed(2);
             closeDetailModal();
             document.getElementById('stripe-checkout-modal').style.display = 'flex';
 
@@ -1088,16 +1129,23 @@
             if (error) {
                 document.getElementById('payment-message').innerText = error.message;
                 submitBtn.disabled = false;
-                submitBtn.innerText = 'Conferma e Paga € ' + selectedCard.price.toFixed(2);
+                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
             } else {
                 selectedCard.is_sold = true;
+                
+                // Aggiorna lo stato di vendita su Supabase
+                await supabaseClient
+                    .from('cards')
+                    .update({ is_sold: true })
+                    .eq('id', selectedCard.id);
+
                 localStorage.setItem('tcg_vault_all_cards', JSON.stringify(allCards));
 
                 closeStripeCheckoutModal();
                 showNotification(`💳 Pagamento completato! Fondi in Escrow.`);
-                applyFilters();
+                await loadCardsFromSupabase();
                 submitBtn.disabled = false;
-                submitBtn.innerText = 'Conferma e Paga € ' + selectedCard.price.toFixed(2);
+                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
             }
         });
 
@@ -1127,7 +1175,7 @@
         function closeAuthModal() { document.getElementById('auth-modal').style.display='none'; }
         function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
 
-        window.onload = () => { initAuth(); applyFilters(); };
+        window.onload = () => { initAuth(); loadCardsFromSupabase(); };
     </script>
 </body>
 </html>
