@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
-    <!-- Inclusione delle librerie ufficiali Stripe.js e Supabase JS SDK -->
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -570,7 +569,7 @@
         </div>
     </div>
 
-    <!-- MODALE VENDITA CON URL FOTO -->
+    <!-- MODALE VENDITA -->
     <div class="modal-overlay" id="sell-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -623,7 +622,7 @@
                 </div>
                 <div class="form-group">
                     <label>URL Immagine Prodotto *</label>
-                    <input type="url" id="sell-image" placeholder="https://esempio.com/foto-carta.jpg" required value="https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500">
+                    <input type="url" id="sell-image" placeholder="https://esempio.com/foto.jpg" required value="https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500">
                 </div>
                 <div class="form-group">
                     <label>Descrizione</label>
@@ -640,10 +639,6 @@
         const SUPABASE_URL = 'https://ahpkmppjtespemkzmkol.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_h2FS86T_f9gT3YZZgQ8Ruw_FE8x-Bvu';
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-        let defaultCards = [
-            { id: 'mock-charizard', user_id: 'system-user-123', category: 'Pokemon', type: 'Carta Singola', title: 'Charizard VMAX', price: 150.00, location: 'Milano', condition: 'Quasi Nuovo', description: 'Carta originale in perfette condizioni, disponibile per spedizione o scambio a mano.', image_url: 'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500', is_sold: false }
-        ];
 
         let allCards = [];
         let savedProductIds = JSON.parse(localStorage.getItem('tcg_saved_products') || '[]');
@@ -723,7 +718,6 @@
             document.getElementById('notifications-modal').style.display = 'none';
         }
 
-        // --- INIZIALIZZAZIONE SUPABASE AUTH ---
         async function initAuth() {
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session && session.user) {
@@ -797,7 +791,6 @@
             showNotification('Logout effettuato.');
         }
 
-        // --- CARICAMENTO ANNUNCI DA SUPABASE ---
         async function loadCardsFromSupabase() {
             try {
                 const { data, error } = await supabaseClient
@@ -807,14 +800,14 @@
 
                 if (error) {
                     console.error('Errore caricamento:', error);
-                    allCards = defaultCards;
+                    allCards = [];
                 } else {
-                    allCards = data && data.length > 0 ? data : defaultCards;
+                    allCards = data || [];
                 }
                 applyFilters();
             } catch (err) {
                 console.error('Eccezione:', err);
-                allCards = defaultCards;
+                allCards = [];
                 applyFilters();
             }
         }
