@@ -108,7 +108,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
     }
 });
 
-// Endpoint Stripe Connect con supporto dinamico per Render o Locale
+// Endpoint Stripe Connect con URL fisso HTTPS forzato per evitare errori Livemode
 app.post('/api/create-connect-account-link', async (req, res) => {
     const { email } = req.body;
     try {
@@ -119,9 +119,7 @@ app.post('/api/create-connect-account-link', async (req, res) => {
             capabilities: { transfers: { requested: true } },
         });
 
-        const host = req.headers.host;
-        const protocol = req.headers['x-forwarded-proto'] || 'http';
-        const baseUrl = `${protocol}://${host}`;
+        const baseUrl = 'https://tcg-vault-bjs3.onrender.com';
 
         const accountLink = await stripe.accountLinks.create({
             account: account.id,
@@ -138,15 +136,13 @@ app.post('/api/create-connect-account-link', async (req, res) => {
 
 app.get('/api/stripe-success', (req, res) => {
     const accountId = req.query.account_id;
-    const host = req.headers.host;
-    const protocol = req.headers['x-forwarded-proto'] || 'http';
-    res.redirect(`${protocol}://${host}/?stripe_connected=true&account_id=${accountId}`);
+    const baseUrl = 'https://tcg-vault-bjs3.onrender.com';
+    res.redirect(`${baseUrl}/?stripe_connected=true&account_id=${accountId}`);
 });
 
 app.get('/api/stripe-refresh', (req, res) => {
-    const host = req.headers.host;
-    const protocol = req.headers['x-forwarded-proto'] || 'http';
-    res.redirect(`${protocol}://${host}/?stripe_error=true`);
+    const baseUrl = 'https://tcg-vault-bjs3.onrender.com';
+    res.redirect(`${baseUrl}/?stripe_error=true`);
 });
 
 app.post('/api/messages', (req, res) => {
@@ -252,5 +248,5 @@ app.get('/api/orders/:orderId', (req, res) => {
 
 const PORT = process.env.PORT || 4242;
 app.listen(PORT, () => {
-    console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT} con protezione Password e HTTPS attivi!`);
+    console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT} con protezione Password e HTTPS forzato!`);
 });
