@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout Sicuro - TCG Vault</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #18181b;
+            --text-main: #ffffff;
+            --text-muted: #a1a1aa;
+            --accent-green: #22c55e;
+            --accent-green-hover: #16a34a;
+            --border-color: #27272a;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .checkout-container {
+            background: var(--card-bg);
+            padding: 48px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            width: 100%;
+            max-width: 640px;
+            box-sizing: border-box;
+            border: 1px solid var(--border-color);
+        }
+
+        .brand-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .brand-header h2 {
+            margin: 0;
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -0.5px;
+        }
+
+        .brand-header p {
+            margin: 8px 0 0;
+            font-size: 15px;
+            color: var(--text-muted);
+        }
+
+        .order-summary {
+            background: #202024;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .order-summary span {
+            font-size: 16px;
+            color: var(--text-muted);
+        }
+
+        .order-summary strong {
+            font-size: 24px;
+            color: var(--accent-green);
+        }
+
+        #payment-element {
+            margin-bottom: 32px;
+        }
+
+        button {
+            background-color: var(--accent-green);
+            color: #000000;
+            border: none;
+            padding: 16px;
+            width: 100%;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 4px 20px rgba(34, 197, 94, 0.3);
+        }
+
+        button:hover {
+            background-color: var(--accent-green-hover);
+        }
+
+        button:active {
+            transform: scale(0.99);
+        }
+
+        button:disabled {
+            background-color: #3f3f46;
+            color: #71717a;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        #error-message {
+            color: #f87171;
+            margin-top: 16px;
+            font-size: 14px;
+            text-align: center;
+            background: rgba(248, 113, 113, 0.1);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(248, 113, 113, 0.2);
+        }
+
+        .secure-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 24px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="checkout-container">
+        <div class="brand-header">
+            <h2>TCG Vault</h2>
+            <p>Protezione Acquisti & Garanzia Escrow</p>
+        </div>
+
+        <div class="order-summary">
+            <span>Totale da pagare (con commissioni):</span>
+            <strong id="total-display">Caricamento...</strong>
+        </div>
+        
+        <form id="payment-form">
+            <div id="payment-element"></div>
+            <button id="submit">
+                <span id="button-text">Paga Ora in Sicurezza</span>
+            </button>
+            <div id="error-message" style="display: none;"></div>
+        </form>
+
+        <div class="secure-badge">
+            🔒 Pagamento crittografato e protetto da Stripe
+        </div>
+    </div>
+
+    <script>
+        const stripe = Stripe('pk_live_51URVxbB5CcM9bCL44GCB7XIP7NX3ofDkHfnTf0pXzL0T0w0ggdve6GQI9bGvsRgW08uheTInau2mFFBZG4CTkLXl00CqE2fp40');
+
+        let elements;
+
+        // Legge i parametri dall'indirizzo (es. ?amount=15&seller=acct_123)
+        const urlParams = new URLSearchParams(window.location.search);
+        const amountDaPagare = parseFloat(urlParams.get('amount')) || 10; // Default a 10 se non specificato
+        const sellerAccountId = urlParams.get('seller') || null;
+
+        initialize();
+
+        async function initialize() {
+            try {
+                const response = await fetch("http://localhost:4242/api/create-payment-intent", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        amount: amountDaPagare,
+                        sellerStripeAccountId: sellerAccountId 
+                    }),
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error.message);
+                    return;
+                }
+
+                // Mostra visivamente il prezzo calcolato comprensivo di fee
+                document.getElementById('total-display').textContent = `€ ${amountDaPagare.toFixed(2)}`;
+
+                const clientSecret = data.clientSecret;
+
+                const appearance = { 
+                    theme: 'night',
+                    variables: {
+                        colorPrimary: '#22c55e',
+                        colorBackground: '#18181b',
+                        colorText: '#ffffff',
+                        colorDanger: '#f87171',
+                        borderRadius: '12px',
+                    }
+                };
+                
+                elements = stripe.elements({ appearance, clientSecret });
+
+                const paymentElement = elements.create('payment');
+                paymentElement.mount("#payment-element");
+            } catch (err) {
+                showError("Errore di connessione al server di pagamento.");
+            }
+        }
+
+        const form = document.getElementById('payment-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            setLoading(true);
+
+            const { error } = await stripe.confirmPayment({
+                elements,
+                confirmParams: {
+                    return_url: "https://example.com/successo",
+                },
+            });
+
+            if (error) {
+                showError(error.message);
+                setLoading(false);
+            }
+        });
+
+        function showError(message) {
+            const messageContainer = document.querySelector('#error-message');
+            messageContainer.textContent = message;
+            messageContainer.style.display = 'block';
+        }
+
+        function setLoading(isLoading) {
+            const submitButton = document.querySelector("#submit");
+            const buttonText = document.querySelector("#button-text");
+            if (isLoading) {
+                submitButton.disabled = true;
+                buttonText.textContent = "Elaborazione in corso...";
+            } else {
+                submitButton.disabled = false;
+                buttonText.textContent = "Paga Ora in Sicurezza";
+            }
+        }
+    </script>
+</body>
+</html>
