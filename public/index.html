@@ -809,7 +809,7 @@
         async function sendServerMessage(text, offerPrice = null, cardId = null) {
             if (!currentUser) return;
             try {
-                await fetch('http://localhost:4242/api/messages', {
+                await fetch(`${window.location.origin}/api/messages`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -837,7 +837,7 @@
         async function loadServerMessages() {
             if (!currentUser) return;
             try {
-                const res = await fetch(`http://localhost:4242/api/messages/${currentUser.id}`);
+                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
                 const messages = await res.json();
                 const container = document.getElementById('chatMessages');
                 if (messages.length === 0) {
@@ -865,7 +865,7 @@
         async function loadUserConversations() {
             if (!currentUser) return;
             try {
-                const res = await fetch(`http://localhost:4242/api/messages/${currentUser.id}`);
+                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
                 const messages = await res.json();
                 const listContainer = document.getElementById('conversations-list');
                 if (messages.length === 0) {
@@ -941,7 +941,7 @@
         async function loadUserReviews() {
             if (!currentUser) return;
             try {
-                const res = await fetch(`http://localhost:4242/api/reviews/${currentUser.id}`);
+                const res = await fetch(`${window.location.origin}/api/reviews/${currentUser.id}`);
                 const reviews = await res.json();
                 const container = document.getElementById('my-reviews-container');
                 if (reviews.length === 0) {
@@ -977,7 +977,7 @@
 
             showNotification('🔄 Connessione a Stripe Express in corso...');
             try {
-                const response = await fetch('http://localhost:4242/api/create-connect-account-link', {
+                const response = await fetch(`${window.location.origin}/api/create-connect-account-link`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: currentUser.email })
@@ -1142,7 +1142,7 @@
             document.getElementById('stripe-checkout-modal').style.display = 'flex';
 
             try {
-                const response = await fetch('http://localhost:4242/api/create-payment-intent', {
+                const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ amount: selectedCard.price, sellerStripeAccountId: null })
