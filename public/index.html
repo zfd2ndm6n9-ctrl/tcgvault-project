@@ -621,9 +621,9 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>📷 Foto della Carta (Galleria / File) *</label>
+                    <label>📷 Foto della Carta (Galleria / File)</label>
                     <input type="file" id="sell-image-file" accept="image/*" style="padding: 8px;">
-                    <small style="color: var(--text-muted); font-size: 0.75rem;">Oppure inserisci un URL:</small>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px;">Oppure inserisci un URL:</small>
                     <input type="url" id="sell-image-url" placeholder="https://..." value="">
                 </div>
                 <div class="form-group">
@@ -830,7 +830,7 @@
             if (fileInput.files && fileInput.files[0]) {
                 const file = fileInput.files[0];
                 const fileExt = file.name.split('.').pop();
-                const fileName = `${Date.now()}_${Math.random().toString(36.substring(2))}.${fileExt}`;
+                const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
                 const filePath = `${fileName}`;
 
                 showNotification('Caricamento immagine in corso...');
