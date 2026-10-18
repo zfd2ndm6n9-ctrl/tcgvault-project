@@ -443,12 +443,24 @@
 
             <div id="tab-tos-faq" class="tab-content" style="display: none;">
                 <div class="faq-item">
-                    <div class="faq-title">🛡️ 1. Protezione Escrow e Pagamenti</div>
-                    <div class="faq-text">Ogni transazione è protetta da Escrow. I fondi restano custoditi sul conto centrale della piattaforma e rilasciati sul wallet del venditore solo a consegna confermata.</div>
+                    <div class="faq-title">🛡️ 1. Protezione Escrow e Sicurezza dei Pagamenti Stripe</div>
+                    <div class="faq-text">Ogni transazione effettuata su TCG Vault è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto centrale della piattaforma e rilasciati automaticamente sul wallet del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
                 </div>
                 <div class="faq-item">
-                    <div class="faq-title">📦 2. Corrieri Autorizzati</div>
-                    <div class="faq-text">I corrieri ufficiali sono: Poste Italiane / SDA, InPost, BRT, GLS, DHL e UPS.</div>
+                    <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
+                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente in stile Cardmarket per preservare la qualità della community.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">📍 3. Ricerca per Città e Zero Filtri KM</div>
+                    <div class="faq-text">TCG Vault elimina completamente i selettori di distanza chilometrica complessi. La ricerca è ottimizzata esclusivamente per città, permettendoti di trovare immediatamente collezionisti e negozi locali nella tua zona con cui concludere affari.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">⚖️ 4. Condizioni delle Carte e Trasparenza</div>
+                    <div class="faq-text">I venditori sono tenuti a classificare accuratamente lo stato delle carte (Nuovo Sigillato, Quasi Nuovo, Eccellente, Buono, Usato). In caso di contestazioni documentate, l'Escrow blocca il payout e il supporto interviene per tutelare l'acquirente.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">📦 5. Corrieri Autorizzati e Regole di Spedizione</div>
+                    <div class="faq-text">I corrieri ufficialmente autorizzati su TCG Vault sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
                 </div>
             </div>
         </div>
@@ -622,6 +634,7 @@
         let selectedCategory = '';
         let currentUser = null;
         let selectedCard = null;
+        let activeReceiverId = null;
         let elements = null;
         let clientSecret = null;
 
@@ -675,12 +688,23 @@
             }
         }
 
-        function openNotificationsModal() { document.getElementById('notifications-modal').style.display = 'flex'; }
+        function openNotificationsModal() {
+            const container = document.getElementById('notifications-list');
+            if (notifications.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted);">Nessuna nuova notifica.</p>';
+            } else {
+                container.innerHTML = notifications.map(n => `
+                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; font-size: 0.9rem;">
+                        <div style="color: var(--accent-neon); font-size: 0.75rem; margin-bottom: 4px;">${n.time}</div>
+                        <div>${n.text}</div>
+                    </div>
+                `).join('');
+            }
+            document.getElementById('notifications-modal').style.display = 'flex';
+        }
+
         function closeNotificationsModal() { 
             document.getElementById('notifications-modal').style.display = 'none';
-            notifications = [];
-            localStorage.setItem('tcg_notifications', JSON.stringify(notifications));
-            updateNotificationBadge();
         }
 
         function initAuth() {
@@ -702,9 +726,41 @@
                     <button class="btn-outline" onclick="logout()">Esci</button>
                 `;
             } else {
-                authContainer.innerHTML = `<button class="btn-outline" onclick="openAuthModal()">Accedi</button>`;
+                authContainer.innerHTML = `
+                    <button class="btn-outline" onclick="openAuthModal()">Accedi</button>
+                `;
             }
         }
+
+        function toggleSaveProduct(e, cardId) {
+            e.stopPropagation();
+            const index = savedProductIds.indexOf(cardId);
+            if (index > -1) {
+                savedProductIds.splice(index, 1);
+                showNotification('Prodotto rimosso dai preferiti.');
+            } else {
+                savedProductIds.push(cardId);
+                showNotification('Prodotto aggiunto ai preferiti salvati col cuore! ❤️');
+            }
+            localStorage.setItem('tcg_saved_products', JSON.stringify(savedProductIds));
+            updateSavedCounter();
+            applyFilters();
+        }
+
+        function updateSavedCounter() { document.getElementById('saved-count').innerText = savedProductIds.length; }
+
+        function openSavedModal() {
+            const container = document.getElementById('saved-products-container');
+            const savedCards = allCards.filter(c => savedProductIds.includes(c.id));
+            if (savedCards.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto salvato nei preferiti.</p>';
+            } else {
+                renderCardsToContainer(savedCards, container);
+            }
+            document.getElementById('saved-modal').style.display = 'flex';
+        }
+
+        function closeSavedModal() { document.getElementById('saved-modal').style.display = 'none'; }
 
         async function handleAuthSubmit(e) {
             e.preventDefault();
@@ -742,6 +798,7 @@
             document.getElementById('profile-phone').value = currentUser.phone || '';
             document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
             document.getElementById('payout-iban').value = currentUser.iban || '';
+            loadUserReviews();
             document.getElementById('profile-modal').style.display = 'flex';
         }
 
@@ -753,6 +810,7 @@
             btn.classList.add('active');
             document.getElementById('tab-' + tabName).style.display = 'block';
             if (tabName === 'my-listings') loadMyListings();
+            if (tabName === 'reviews-tab') loadUserReviews();
         }
 
         async function requestWalletPayout() {
@@ -787,6 +845,27 @@
             updateHeaderUI();
         }
 
+        async function loadUserReviews() {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`${window.location.origin}/api/reviews/${currentUser.id}`);
+                const reviews = await res.json();
+                const container = document.getElementById('my-reviews-container');
+                if (reviews.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-muted);">Nessuna recensione ricevuta al momento.</p>';
+                    return;
+                }
+                container.innerHTML = reviews.map(r => `
+                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px;">
+                        <div style="color: var(--accent-neon); font-weight: bold; margin-bottom: 4px;">⭐ ${r.rating} / 5 stelle</div>
+                        <div style="font-size: 0.95rem;">${r.comment}</div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Errore recensioni:', err);
+            }
+        }
+
         // BOT H24
         function sendBotMessage() {
             const input = document.getElementById('botInput');
@@ -796,13 +875,13 @@
             container.innerHTML += `<div class="user-msg">${input.value}</div>`;
             input.value = '';
             
-            let reply = "Per questa specifica richiesta contatta support@tcgvault.com.";
+            let reply = "Per questa specifica richiesta o per casi eccezionali, contatta support@tcgvault.com.";
             if (q.includes('ciao') || q.includes('salve')) {
-                reply = "🤖 Ciao! Sono l'assistente virtuale H24 di TCG Vault. Come posso aiutarti?";
-            } else if (q.includes('spediz') || q.includes('corriere')) {
-                reply = "📦 I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
-            } else if (q.includes('escrow') || q.includes('pagament')) {
-                reply = "💳 I pagamenti sono protetti in Escrow sul conto centrale della piattaforma.";
+                reply = "🤖 Ciao! Sono l'intelligenza artificiale di supporto H24 di TCG Vault. Come posso aiutarti?";
+            } else if (q.includes('spediz') || q.includes('corriere') || q.includes('tracciamento')) {
+                reply = "📦 Spedizioni: I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
+            } else if (q.includes('escrow') || q.includes('pagament') || q.includes('stripe')) {
+                reply = "💳 Pagamenti & Escrow: I fondi sono trattenuti in sicurezza da Stripe e rilasciati solo dopo la conferma.";
             }
 
             setTimeout(() => {
@@ -819,6 +898,7 @@
                 <div class="tcg-card">
                     <img src="${card.image_url}" class="card-img">
                     <div class="card-body">
+                        <span class="card-category">${card.category} • ${card.type}</span>
                         <h3 class="card-title">${card.title}</h3>
                         <div class="price">€ ${card.price.toFixed(2)}</div>
                         <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
@@ -838,21 +918,54 @@
             }
         }
 
-        function applyFilters() { renderCardsToContainer(allCards, document.getElementById('product-list')); }
+        function applyFilters() {
+            const searchQuery = document.getElementById('search-input').value.toLowerCase();
+            const locationQuery = document.getElementById('location-input').value.toLowerCase();
+            const selectedType = document.getElementById('type-filter').value;
+            const statusFilter = document.getElementById('status-filter').value;
+            const maxPriceInput = document.getElementById('price-clean-input').value;
+            const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
+            const sortBy = document.getElementById('sort-filter').value;
+
+            let filtered = allCards.filter(card => {
+                const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
+                const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
+                const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
+                const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
+                const matchesPrice = (card.price || 0) <= maxPrice;
+                
+                let matchesStatus = true;
+                if (statusFilter === 'available') matchesStatus = !card.is_sold;
+                if (statusFilter === 'sold') matchesStatus = card.is_sold;
+
+                return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
+            });
+
+            if (sortBy === 'price-asc') filtered.sort((a, b) => a.price - b.price);
+            else if (sortBy === 'price-desc') filtered.sort((a, b) => b.price - a.price);
+            else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+            renderCardsToContainer(filtered, document.getElementById('product-list'));
+        }
 
         function renderCardsToContainer(cards, container) {
             if (cards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto trovato.</p>'; return; }
-            container.innerHTML = cards.map(card => `
-                <div class="tcg-card" onclick="openDetailModal('${card.id}')">
-                    <img src="${card.image_url}" class="card-img">
-                    <div class="card-body">
-                        <span class="card-category">${card.category} • ${card.type}</span>
-                        <h3 class="card-title">${card.title}</h3>
-                        <div class="price">€ ${card.price.toFixed(2)}</div>
-                        <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
+            container.innerHTML = cards.map(card => {
+                const isSaved = savedProductIds.includes(card.id);
+                return `
+                    <div class="tcg-card" onclick="openDetailModal('${card.id}')">
+                        <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${card.id}')">${isSaved ? '❤️' : '🤍'}</div>
+                        <img src="${card.image_url}" class="card-img">
+                        <div class="card-body">
+                            <span class="card-category">${card.category} • ${card.type}</span>
+                            <h3 class="card-title">${card.title}</h3>
+                            <div class="price">€ ${card.price.toFixed(2)}</div>
+                            <div class="card-location">📍 Località: ${card.location || 'Spedizione'}</div>
+                            <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function handleSellSubmit(event) {
@@ -870,7 +983,8 @@
                 condition: document.getElementById('sell-condition').value,
                 description: document.getElementById('sell-description').value,
                 image_url: 'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500',
-                is_sold: false
+                is_sold: false,
+                created_at: new Date().toISOString()
             };
 
             allCards.unshift(newCard);
@@ -885,8 +999,11 @@
             if (!selectedCard) return;
             document.getElementById('detail-img').src = selectedCard.image_url;
             document.getElementById('detail-name').innerText = selectedCard.title;
-            document.getElementById('detail-price').innerText = '€ ' + selectedCard.price.toFixed(2);
+            document.getElementById('detail-category').innerText = (selectedCard.category || 'TCG') + ' • ' + (selectedCard.type || 'Articolo');
+            document.getElementById('detail-condition').innerText = 'Condizione: ' + (selectedCard.condition || 'N/D');
+            document.getElementById('detail-location-view').innerText = '📍 Località: ' + (selectedCard.location || 'Spedizione');
             document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
+            document.getElementById('detail-price').innerText = '€ ' + selectedCard.price.toFixed(2);
             document.getElementById('detail-modal').style.display = 'flex';
         }
 
@@ -950,17 +1067,30 @@
             }
         });
 
+        function makeOffer() {
+            if (!currentUser) { showNotification('Accedi prima di fare un\'offerta.', 'error'); openAuthModal(); return; }
+            const offer = prompt("Inserisci la tua offerta in euro (€):");
+            if (offer && !isNaN(offer)) {
+                showNotification(`Offerta di €${parseFloat(offer).toFixed(2)} inviata al venditore!`);
+            }
+        }
+
+        function openChatWithSeller() {
+            if (!currentUser) { showNotification('Accedi per chattare.', 'error'); openAuthModal(); return; }
+            showNotification('Apertura chat con il venditore...');
+        }
+
+        function openMyMessagesModal() {
+            if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
+            document.getElementById('my-messages-modal').style.display = 'flex';
+        }
+
+        function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
+
         function checkAuthAndOpenSellModal() { if(!currentUser){ openAuthModal(); return; } document.getElementById('sell-modal').style.display='flex'; }
         function closeSellModal() { document.getElementById('sell-modal').style.display='none'; }
         function openAuthModal() { document.getElementById('auth-modal').style.display='flex'; }
         function closeAuthModal() { document.getElementById('auth-modal').style.display='none'; }
-        function closeSavedModal() { document.getElementById('saved-modal').style.display='none'; }
-        function openSavedModal() { document.getElementById('saved-modal').style.display='flex'; }
-        function openMyMessagesModal() { document.getElementById('my-messages-modal').style.display='flex'; }
-        function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display='none'; }
-        function closeChat() { document.getElementById('chatModal').style.display='none'; }
-        function makeOffer() { showNotification('Funzione offerte attiva.'); }
-        function openChatWithSeller() { showNotification('Apri chat venditore.'); }
         function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
 
         window.onload = () => { initAuth(); applyFilters(); };
