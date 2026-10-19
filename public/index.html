@@ -1107,7 +1107,11 @@
             if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
             if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
             
-            document.getElementById('checkout-modal-price').innerText = Number(selectedCard.price).toFixed(2);
+            const priceEl = document.getElementById('checkout-modal-price');
+            if (priceEl) {
+                priceEl.innerText = Number(selectedCard.price).toFixed(2);
+            }
+            
             closeDetailModal();
             document.getElementById('stripe-checkout-modal').style.display = 'flex';
 
@@ -1135,6 +1139,12 @@
                     
                     // Configurazione dei campi obbligatori per contatti e indirizzo di fatturazione
                     const paymentElement = elements.create('payment', {
+                        defaultValues: {
+                            billingDetails: {
+                                name: currentUser.name || '',
+                                email: currentUser.email || ''
+                            }
+                        },
                         fields: {
                             billingDetails: {
                                 name: 'always',
