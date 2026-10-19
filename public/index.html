@@ -1116,26 +1116,34 @@
             document.getElementById('stripe-checkout-modal').style.display = 'flex';
 
             try {
-                const appearance = { 
-                    theme: 'night',
-                    variables: {
-                        colorPrimary: '#00ff88',
-                        colorBackground: '#131b2e',
-                        colorText: '#f8fafc',
-                        borderRadius: '10px',
-                    }
-                };
-
-                elements = stripe.elements({ 
-                    appearance, 
-                    clientSecret: 'pi_3M ' + Math.random().toString(36).substring(2) + '_secret_' + Math.random().toString(36).substring(2)
+                const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount: selectedCard.price, buyerId: currentUser.id, sellerId: selectedCard.user_id, cardId: selectedCard.id })
                 });
+                const data = await response.json();
                 
-                const paymentElement = elements.create('payment');
-                paymentElement.mount('#payment-element');
+                if (data.clientSecret) {
+                    clientSecret = data.clientSecret;
+                    
+                    const appearance = { 
+                        theme: 'night',
+                        variables: {
+                            colorPrimary: '#00ff88',
+                            colorBackground: '#131b2e',
+                            colorText: '#f8fafc',
+                            borderRadius: '10px',
+                        }
+                    };
 
+                    elements = stripe.elements({ appearance, clientSecret });
+                    const paymentElement = elements.create('payment');
+                    paymentElement.mount('#payment-element');
+                } else {
+                    showNotification('Errore Stripe: ' + (data.error?.message || 'Impossibile avviare il pagamento'), 'error');
+                }
             } catch (error) {
-                showNotification('Errore di caricamento modulo.', 'error');
+                showNotification('Errore di connessione al server di pagamento.', 'error');
             }
         }
 
@@ -1149,18 +1157,30 @@
             submitBtn.disabled = true;
             submitBtn.innerText = 'Elaborazione...';
 
-            selectedCard.is_sold = true;
-            
-            await supabaseClient
-                .from('cards')
-                .update({ is_sold: true })
-                .eq('id', selectedCard.id);
+            const { error } = await stripe.confirmPayment({
+                elements,
+                confirmParams: { return_url: window.location.href.split('?')[0] + '?payment_success=true' },
+                redirect: 'if_required'
+            });
 
-            closeStripeCheckoutModal();
-            showNotification(`💳 Pagamento completato! Fondi in Escrow.`);
-            loadCardsFromSupabase();
-            submitBtn.disabled = false;
-            submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
+            if (error) {
+                document.getElementById('payment-message').innerText = error.message;
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
+            } else {
+                selectedCard.is_sold = true;
+                
+                await supabaseClient
+                    .from('cards')
+                    .update({ is_sold: true })
+                    .eq('id', selectedCard.id);
+
+                closeStripeCheckoutModal();
+                showNotification(`💳 Pagamento completato! Fondi in Escrow.`);
+                loadCardsFromSupabase();
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
+            }
         });
 
         function makeOffer() {
