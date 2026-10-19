@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path'); 
 const app = express();
 
+
 const corsMiddleware = require('cors');
 app.use(corsMiddleware());
 app.use(express.json());
@@ -13,7 +14,7 @@ app.use((req, res, next) => {
         'Content-Security-Policy',
         "default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://*.stripe.com https://*.stripe.network; " +
         "script-src * 'self' 'unsafe-inline' 'unsafe-eval' https://*.stripe.com https://js.stripe.com; " +
-        "style-src * 'self' 'unsafe-inline' https://*.stripe.com; " +
+        "style-src * 'self' 'unsafe-inline' https://*.stripe.com https://m.stripe.network; " +
         "frame-src * https://*.stripe.com; " +
         "connect-src * https://*.stripe.com https://api.stripe.com;"
     );
