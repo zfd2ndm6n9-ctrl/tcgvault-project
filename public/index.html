@@ -879,6 +879,11 @@
 
         async function deleteCard(cardId) {
             if (confirm("Vuoi eliminare questo annuncio?")) {
+                // Aggiornamento ottimistico immediato per evitare il doppio click
+                allCards = allCards.filter(c => String(c.id) !== String(cardId));
+                applyFilters();
+                loadMyListings();
+
                 const { error } = await supabaseClient
                     .from('cards')
                     .delete()
@@ -886,10 +891,9 @@
 
                 if (error) {
                     showNotification('Errore eliminazione: ' + error.message, 'error');
-                } else {
-                    showNotification('Annuncio eliminato.');
                     loadCardsFromSupabase();
-                    loadMyListings();
+                } else {
+                    showNotification('Annuncio eliminato definitivamente.');
                 }
             }
         }
@@ -1138,7 +1142,6 @@
 
                     elements = stripe.elements({ appearance, clientSecret });
                     
-                    // Configurazione sicura e compatibile del Payment Element
                     const paymentElement = elements.create('payment', {
                         layout: 'auto'
                     });
