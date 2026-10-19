@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const path = require('path'); 
+const path = path = require('path'); 
 const app = express();
 
 const corsMiddleware = require('cors');
@@ -86,6 +86,14 @@ app.post('/api/create-payment-intent', async (req, res) => {
         };
         ordersDB.push(newOrder);
 
+        // Assicuriamoci che il venditore esista nel database dei wallet del server
+        if (sellerId && sellerId !== 'unknown') {
+            let seller = usersDB.find(u => u.id === sellerId);
+            if (!seller) {
+                usersDB.push({ id: sellerId, email: 'venditore@tcgvault.it', wallet: 0.00, iban: '' });
+            }
+        }
+
         res.send({ clientSecret: paymentIntent.client_secret, orderId: newOrder.id });
     } catch (error) {
         res.status(400).send({ error: { message: error.message } });
@@ -147,6 +155,10 @@ app.post('/api/orders/:orderId/complete', (req, res) => {
         return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
     }
 
+    if (order.status === 'completed') {
+        return res.json({ success: true, message: 'Ordine già completato in precedenza.', order });
+    }
+
     order.status = 'completed';
     order.completedAt = new Date().toISOString();
 
@@ -156,7 +168,7 @@ app.post('/api/orders/:orderId/complete', (req, res) => {
         seller = { id: order.sellerId, wallet: 0 };
         usersDB.push(seller);
     }
-    seller.wallet = (seller.wallet || 0) + order.amount;
+    seller.wallet = (seller.wallet || 0) + Number(order.amount);
 
     res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
 });
