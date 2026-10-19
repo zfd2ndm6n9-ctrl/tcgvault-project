@@ -236,6 +236,11 @@
         .bot-msg { background: rgba(0, 255, 136, 0.08); border: 1px solid rgba(0, 255, 136, 0.2); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; font-size: 0.9rem; font-weight: 500; }
         .user-msg { background: var(--panel-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; align-self: flex-end; font-size: 0.9rem; font-weight: 500; }
 
+        .escrow-alert-msg {
+            background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3);
+            color: var(--text-main); padding: 12px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 8px;
+        }
+
         .faq-item { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
         .faq-title { font-weight: 700; color: var(--accent-neon); margin-bottom: 8px; font-size: 1.02rem; }
         .faq-text { font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; }
@@ -522,7 +527,7 @@
     <div class="modal-overlay" id="my-messages-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>💬 I Miei Messaggi</h2>
+                <h2>💬 I Miei Messaggi & Notifiche Escrow</h2>
                 <button class="close-btn" onclick="closeMyMessagesModal()">&times;</button>
             </div>
             <div id="conversations-list" style="display: flex; flex-direction: column; gap: 10px;">
@@ -531,15 +536,15 @@
         </div>
     </div>
 
-    <!-- MODALE CHAT FLOTTANTE -->
+    <!-- MODALE CHAT FLOTTANTE CON GUIDA ESCROW -->
     <div id="chatModal">
         <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-            <strong style="color: var(--accent-neon);" id="chatTitle">Chat Venditore</strong>
+            <strong style="color: var(--accent-neon);" id="chatTitle">Chat & Gestione Escrow</strong>
             <button onclick="closeChat()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.1rem;">✕</button>
         </div>
         <div id="chatMessages" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
         <div style="padding: 10px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color);">
-            <input type="text" id="chatInput" placeholder="Scrivi un messaggio o un'offerta..." style="flex: 1; padding: 9px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendChatMessage()">
+            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 9px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendChatMessage()">
             <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 9px 14px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
         </div>
     </div>
@@ -648,6 +653,7 @@
         let selectedCard = null;
         let elements = null;
         let clientSecret = null;
+        let activeChatReceiverId = null;
 
         function isAdmin() {
             return currentUser && currentUser.email.toLowerCase() === 'francesco_delduca@icloud.com';
@@ -1120,7 +1126,7 @@
                 const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ amount: selectedCard.price, buyerId: currentUser.id, sellerId: selectedCard.user_id, cardId: selectedCard.id })
+                    body: JSON.stringify({ amount: selectedCard.price, buyerId: currentUser.id, sellerId: selectedCard.user_id, cardId: selectedCard.id, cardTitle: selectedCard.title })
                 });
                 const data = await response.json();
                 
@@ -1181,7 +1187,7 @@
                     .eq('id', selectedCard.id);
 
                 closeStripeCheckoutModal();
-                showNotification(`💳 Pagamento completato! Fondi in Escrow.`);
+                showNotification(`💳 Pagamento completato! Fondi custoditi in Escrow.`);
                 loadCardsFromSupabase();
                 submitBtn.disabled = false;
                 submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
@@ -1198,15 +1204,129 @@
 
         function openChatWithSeller() {
             if (!currentUser) { showNotification('Accedi per chattare.', 'error'); openAuthModal(); return; }
-            showNotification('Apertura chat con il venditore...');
+            if (selectedCard && selectedCard.user_id === currentUser.id) {
+                showNotification('Questo è il tuo annuncio.', 'error');
+                return;
+            }
+            openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat');
         }
 
-        function openMyMessagesModal() {
+        async function openMyMessagesModal() {
             if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
-            document.getElementById('my-messages-modal').style.display = 'flex';
+            try {
+                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
+                const messages = await res.json();
+                const container = document.getElementById('conversations-list');
+                
+                if (messages.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-muted);">Nessuna conversazione o notifica Escrow attiva.</p>';
+                } else {
+                    container.innerHTML = messages.map(m => `
+                        <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${m.senderId === currentUser.id ? m.receiverId : m.senderId}', 'Conversazione')">
+                            <div style="font-size: 0.75rem; color: var(--accent-neon); margin-bottom: 4px;">${new Date(m.timestamp).toLocaleTimeString()}</div>
+                            <div style="font-size: 0.92rem; font-weight: ${m.isEscrowAlert ? 'bold' : 'normal'};">${m.text}</div>
+                        </div>
+                    `).join('');
+                }
+                document.getElementById('my-messages-modal').style.display = 'flex';
+            } catch (err) {
+                showNotification('Errore caricamento messaggi.', 'error');
+            }
         }
 
         function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
+
+        async function openChatModal(receiverId, titleText) {
+            if (!currentUser) { openAuthModal(); return; }
+            activeChatReceiverId = receiverId;
+            document.getElementById('chatTitle').innerText = titleText || 'Chat';
+            document.getElementById('chatModal').style.display = 'flex';
+            closeMyMessagesModal();
+            loadChatMessages();
+        }
+
+        function closeChat() {
+            document.getElementById('chatModal').style.display = 'none';
+        }
+
+        async function loadChatMessages() {
+            if (!currentUser || !activeChatReceiverId) return;
+            try {
+                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
+                const messages = await res.json();
+                const container = document.getElementById('chatMessages');
+                
+                const relevant = messages.filter(m => 
+                    (m.senderId === currentUser.id && m.receiverId === activeChatReceiverId) ||
+                    (m.senderId === activeChatReceiverId && m.receiverId === currentUser.id) ||
+                    (m.receiverId === currentUser.id && m.senderId === 'SYSTEM_ESCROW')
+                );
+
+                if (relevant.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem; text-align: center;">Inizia la conversazione o visualizza qui gli avvisi Escrow.</p>';
+                    return;
+                }
+
+                container.innerHTML = relevant.map(m => {
+                    if (m.senderId === 'SYSTEM_ESCROW') {
+                        return `
+                            <div class="escrow-alert-msg">
+                                <div>${m.text}</div>
+                                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+                                    <button onclick="openEscrowGuideModal('${m.orderId}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">📦 Guida Spedizione & Tracking</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    const isMe = m.senderId === currentUser.id;
+                    return `<div class="${isMe ? 'user-msg' : 'bot-msg'}">${m.text}</div>`;
+                }).join('');
+                container.scrollTop = container.scrollHeight;
+            } catch (err) {
+                console.error('Errore chat:', err);
+            }
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chatInput');
+            const text = input.value.trim();
+            if (!text || !currentUser || !activeChatReceiverId) return;
+
+            try {
+                await fetch(`${window.location.origin}/api/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ senderId: currentUser.id, receiverId: activeChatReceiverId, text })
+                });
+                input.value = '';
+                loadChatMessages();
+            } catch (err) {
+                showNotification('Errore invio messaggio.', 'error');
+            }
+        }
+
+        function openEscrowGuideModal(orderId) {
+            const carrier = prompt("Inserisci il corriere utilizzato (es. Poste Italiane, InPost, BRT, GLS):", "Poste Italiane");
+            if (!carrier) return;
+            const tracking = prompt("Inserisci il numero di tracciamento (Tracking Number):");
+            if (!tracking) return;
+
+            fetch(`${window.location.origin}/api/orders/${orderId}/ship`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ carrier, trackingNumber: tracking })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('Spedizione registrata! L\'acquirente potrà confermare la ricezione.');
+                    closeChat();
+                } else {
+                    showNotification(data.error || 'Errore.', 'error');
+                }
+            })
+            .catch(() => showNotification('Errore di comunicazione.', 'error'));
+        }
 
         function checkAuthAndOpenSellModal() { if(!currentUser){ openAuthModal(); return; } document.getElementById('sell-modal').style.display='flex'; }
         function closeSellModal() { document.getElementById('sell-modal').style.display='none'; }
