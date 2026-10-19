@@ -164,21 +164,26 @@
 
         let elements;
 
-        // Legge i parametri dall'indirizzo (es. ?amount=15&seller=acct_123)
+        // Legge i parametri dall'indirizzo (es. ?amount=15&seller=user_123)
         const urlParams = new URLSearchParams(window.location.search);
-        const amountDaPagare = parseFloat(urlParams.get('amount')) || 10; // Default a 10 se non specificato
-        const sellerAccountId = urlParams.get('seller') || null;
+        const amountDaPagare = parseFloat(urlParams.get('amount')) || 10; 
+        const sellerId = urlParams.get('seller') || 'unknown';
+        const buyerId = urlParams.get('buyer') || 'guest';
+        const cardId = urlParams.get('card') || 'unknown';
 
         initialize();
 
         async function initialize() {
             try {
-                const response = await fetch("http://localhost:4242/api/create-payment-intent", {
+                // Chiamata relativa al backend sullo stesso dominio (funziona sia in locale che su Render)
+                const response = await fetch("/api/create-payment-intent", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ 
                         amount: amountDaPagare,
-                        sellerStripeAccountId: sellerAccountId 
+                        buyerId: buyerId,
+                        sellerId: sellerId,
+                        cardId: cardId
                     }),
                 });
                 const data = await response.json();
@@ -188,7 +193,6 @@
                     return;
                 }
 
-                // Mostra visivamente il prezzo calcolato comprensivo di fee
                 document.getElementById('total-display').textContent = `€ ${amountDaPagare.toFixed(2)}`;
 
                 const clientSecret = data.clientSecret;
@@ -221,7 +225,8 @@
             const { error } = await stripe.confirmPayment({
                 elements,
                 confirmParams: {
-                    return_url: "https://example.com/successo",
+                    // URL di ritorno reale sul tuo dominio custom
+                    return_url: window.location.origin + "/successo.html",
                 },
             });
 
