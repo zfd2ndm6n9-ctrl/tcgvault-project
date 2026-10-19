@@ -7,7 +7,7 @@ const corsMiddleware = require('cors');
 app.use(corsMiddleware());
 app.use(express.json());
 
-// SBLOCCO CSP PER CONSENTire A STRIPE DI CARICARE GLI STILI INLINE
+// SBLOCCO CSP PER CONSENTIRE A STRIPE DI CARICARE GLI STILI INLINE
 app.use((req, res, next) => {
     res.setHeader(
         "Content-Security-Policy",
