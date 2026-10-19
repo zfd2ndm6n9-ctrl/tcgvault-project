@@ -8,19 +8,6 @@ const corsMiddleware = require('cors');
 app.use(corsMiddleware());
 app.use(express.json());
 
-// Sblocca i criteri di sicurezza per consentire il caricamento degli script e degli stili di Stripe e hCaptcha
-app.use((req, res, next) => {
-    res.setHeader(
-        'Content-Security-Policy',
-        "default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://*.stripe.com https://*.stripe.network https://*.hcaptcha.com; " +
-        "script-src * 'self' 'unsafe-inline' 'unsafe-eval' https://*.stripe.com https://js.stripe.com https://*.hcaptcha.com; " +
-        "style-src * 'self' 'unsafe-inline' https://*.stripe.com https://m.stripe.network https://*.hcaptcha.com; " +
-        "frame-src * https://*.stripe.com https://*.hcaptcha.com; " +
-        "connect-src * https://*.stripe.com https://api.stripe.com https://*.hcaptcha.com;"
-    );
-    next();
-});
-
 // Gestione della cartella public
 app.use(express.static(path.join(__dirname, 'public')));
 
