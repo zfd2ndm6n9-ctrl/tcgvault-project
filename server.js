@@ -7,19 +7,6 @@ const corsMiddleware = require('cors');
 app.use(corsMiddleware());
 app.use(express.json());
 
-// SBLOCCO CSP PER CONSENTIRE A STRIPE DI CARICARE GLI STILI INLINE
-app.use((req, res, next) => {
-    res.setHeader(
-        "Content-Security-Policy",
-        "default-src 'self' https://*.stripe.com https://*.supabase.co; " +
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://cdn.jsdelivr.net; " +
-        "style-src 'self' 'unsafe-inline' https://*.stripe.com https://m.stripe.network; " +
-        "frame-src 'self' https://*.stripe.com; " +
-        "connect-src 'self' https://*.stripe.com https://*.supabase.co;"
-    );
-    next();
-});
-
 // Gestione della cartella public
 app.use(express.static(path.join(__dirname, 'public')));
 
