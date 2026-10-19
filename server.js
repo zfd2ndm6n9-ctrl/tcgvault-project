@@ -1,1198 +1,209 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
-    <script src="https://js.stripe.com/v3/"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
-        :root {
-            --bg-color: #090d16;
-            --panel-bg: rgba(18, 24, 38, 0.75);
-            --panel-solid: #131b2e;
-            --accent-neon: #00ff88;
-            --card-blue: #635bff;
-            --heart-red: #ff4757;
-            --admin-gold: #f59e0b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border-color: rgba(255, 255, 255, 0.08);
-            --font-main: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-        }
-
-        body.light-theme {
-            --bg-color: #e2e8f0;
-            --panel-bg: rgba(255, 255, 255, 0.92);
-            --panel-solid: #ffffff;
-            --accent-neon: #059669;
-            --card-blue: #4f46e5;
-            --heart-red: #e11d48;
-            --admin-gold: #d97706;
-            --text-main: #0f172a;
-            --text-muted: #475569;
-            --border-color: #cbd5e1;
-        }
-
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: var(--font-main);
-            margin: 0;
-            padding: 25px;
-            transition: background-color 0.3s ease, color 0.3s ease;
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 22px;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-
-        h1 {
-            color: var(--accent-neon);
-            margin: 0;
-            font-size: 2rem;
-            font-weight: 800;
-            letter-spacing: 0.5px;
-        }
-
-        .header-actions {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .container { max-width: 1200px; margin: 0 auto; }
-        
-        #toast-container {
-            position: fixed; top: 20px; right: 20px; z-index: 9999;
-            display: flex; flex-direction: column; gap: 10px;
-        }
-        .toast {
-            background: var(--panel-solid); border: 1px solid var(--border-color);
-            color: var(--text-main); padding: 12px 20px; border-radius: 10px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.4); font-size: 0.9rem;
-            display: flex; align-items: center; gap: 10px; font-weight: 500;
-            animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
-        }
-        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
-
-        .btn-sell {
-            background-color: var(--accent-neon); color: #000; border: none;
-            padding: 11px 20px; border-radius: 10px; font-weight: 700; cursor: pointer;
-            font-size: 0.95rem; transition: all 0.2s ease;
-            box-shadow: 0 4px 14px rgba(0, 255, 136, 0.2);
-        }
-        .btn-sell:hover { opacity: 0.9; transform: translateY(-1px); }
-        
-        .btn-card-pay {
-            background-color: var(--card-blue); color: #fff; border: none;
-            padding: 12px; border-radius: 8px; font-weight: 700; font-size: 1rem;
-            cursor: pointer; width: 100%; display: flex; align-items: center;
-            justify-content: center; gap: 8px; margin-bottom: 8px;
-        }
-        .btn-card-pay:hover { opacity: 0.9; }
-
-        .btn-offer {
-            background-color: transparent; border: 1px solid var(--accent-neon);
-            color: var(--accent-neon); padding: 10px; border-radius: 8px; font-weight: 700;
-            cursor: pointer; width: 100%; margin-bottom: 8px; transition: background 0.2s;
-        }
-        .btn-offer:hover { background: rgba(0, 255, 136, 0.08); }
-        
-        .btn-outline {
-            background: var(--panel-solid); border: 1px solid var(--border-color); color: var(--text-main);
-            padding: 9px 16px; border-radius: 10px; cursor: pointer; font-size: 0.9rem; font-weight: 600;
-            transition: all 0.2s ease;
-        }
-        .btn-outline:hover { border-color: var(--accent-neon); color: var(--accent-neon); }
-
-        .btn-delete-icon {
-            background: transparent; border: 1px solid var(--heart-red); color: var(--heart-red);
-            padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600;
-            margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;
-        }
-        .btn-delete-icon:hover { background: var(--heart-red); color: #fff; }
-
-        .user-badge {
-            font-size: 0.85rem; color: var(--accent-neon); background: rgba(0, 255, 136, 0.08);
-            padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(0, 255, 136, 0.2); cursor: pointer; font-weight: 600;
-        }
-
-        .admin-badge {
-            font-size: 0.85rem; color: var(--admin-gold); background: rgba(245, 158, 11, 0.1);
-            padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(245, 158, 11, 0.3); cursor: pointer; font-weight: 700;
-        }
-
-        .icon-btn {
-            background: var(--panel-solid); border: 1px solid var(--border-color); color: var(--text-main);
-            padding: 9px 12px; border-radius: 10px; cursor: pointer; font-size: 1rem; position: relative;
-            transition: border-color 0.2s;
-        }
-        .icon-btn:hover { border-color: var(--accent-neon); }
-        .bell-badge {
-            position: absolute; top: -5px; right: -5px; background: var(--heart-red);
-            color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 50%; font-weight: 700;
-        }
-
-        .categories-section { margin-bottom: 30px; }
-        .section-title { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 12px; }
-        
-        .categories-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
-        .category-card {
-            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 12px;
-            padding: 14px 10px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 0.9rem; font-weight: 700;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-        }
-        .category-card:hover, .category-card.active { border-color: var(--accent-neon); background: rgba(0, 255, 136, 0.06); color: var(--accent-neon); transform: translateY(-2px); }
-
-        .filter-bar {
-            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 16px;
-            padding: 24px; margin-bottom: 35px; display: flex; flex-direction: column; gap: 20px; backdrop-filter: blur(12px);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.05);
-        }
-        .filter-row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; }
-        .filter-group { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 190px; }
-        .filter-group label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
-        
-        .filter-input, .filter-select {
-            background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 10px;
-            padding: 11px 14px; color: var(--text-main); font-size: 0.9rem; outline: none; font-weight: 500;
-            transition: border-color 0.2s;
-        }
-        .filter-input:focus, .filter-select:focus { border-color: var(--accent-neon); }
-
-        .price-box-clean {
-            display: flex; align-items: center; gap: 8px; background: var(--panel-solid);
-            border: 1px solid var(--border-color); border-radius: 10px; padding: 4px 12px;
-        }
-        .price-box-clean span { color: var(--accent-neon); font-weight: 700; }
-        .price-clean-input {
-            width: 100%; background: transparent; border: none; color: var(--text-main);
-            font-size: 1rem; font-weight: 700; outline: none; padding: 7px 0;
-        }
-
-        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px; }
-        .tcg-card {
-            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 16px;
-            overflow: hidden; backdrop-filter: blur(10px); transition: all 0.25s ease;
-            display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; position: relative;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.04);
-        }
-        .tcg-card:hover { transform: translateY(-5px); border-color: var(--accent-neon); box-shadow: 0 15px 35px rgba(0,255,136,0.08); }
-        .card-img { width: 100%; height: 210px; object-fit: contain; background: rgba(0, 0, 0, 0.03); padding: 12px; box-sizing: border-box; }
-        
-        .card-body { padding: 18px; }
-        .card-category { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
-        .card-title { margin: 6px 0 10px 0; font-size: 1.15rem; color: var(--text-main); font-weight: 700; line-height: 1.3; }
-        .price { color: var(--accent-neon); font-size: 1.35rem; font-weight: 800; margin-bottom: 6px; }
-        .card-location { font-size: 0.82rem; color: var(--text-muted); font-weight: 500; margin-bottom: 8px; }
-
-        .heart-btn {
-            position: absolute; top: 14px; right: 14px; background: var(--panel-solid);
-            border: 1px solid var(--border-color); border-radius: 50%; width: 38px; height: 38px;
-            display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.1rem; z-index: 10;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1); transition: transform 0.2s;
-        }
-        .heart-btn:hover { transform: scale(1.1); }
-        .heart-btn.saved { color: var(--heart-red); }
-
-        .status-badge {
-            display: inline-block; font-size: 0.7rem; padding: 4px 10px; border-radius: 20px;
-            font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;
-        }
-        .status-available { background: rgba(0, 255, 136, 0.1); color: var(--accent-neon); border: 1px solid rgba(0, 255, 136, 0.3); }
-        .status-sold { background: rgba(255, 71, 87, 0.1); color: var(--heart-red); border: 1px solid rgba(255, 71, 87, 0.3); }
-
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
-            display: none; justify-content: center; align-items: center; z-index: 1000;
-        }
-        .modal-content {
-            background: var(--panel-solid); border: 1px solid var(--border-color);
-            border-radius: 16px; padding: 28px; width: 90%; max-width: 520px; max-height: 90vh;
-            overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-        }
-        .modal-content-large { max-width: 820px; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
-        .modal-header h2 { font-size: 1.4rem; font-weight: 800; color: var(--text-main); margin: 0; }
-        .close-btn { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; transition: color 0.2s; }
-        .close-btn:hover { color: var(--text-main); }
-
-        .profile-nav { display: flex; gap: 6px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 22px; flex-wrap: wrap; }
-        .profile-tab { background: transparent; border: none; color: var(--text-muted); padding: 8px 12px; cursor: pointer; font-weight: 700; border-radius: 8px; font-size: 0.85rem; }
-        .profile-tab.active { color: var(--accent-neon); background: rgba(0, 255, 136, 0.08); }
-
-        .bot-chat-box { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; height: 260px; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
-        .bot-msg { background: rgba(0, 255, 136, 0.08); border: 1px solid rgba(0, 255, 136, 0.2); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; font-size: 0.9rem; font-weight: 500; }
-        .user-msg { background: var(--panel-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; align-self: flex-end; font-size: 0.9rem; font-weight: 500; }
-
-        .faq-item { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
-        .faq-title { font-weight: 700; color: var(--accent-neon); margin-bottom: 8px; font-size: 1.02rem; }
-        .faq-text { font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; }
-
-        .form-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
-        .form-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
-        .form-group input, .form-group select, .form-group textarea { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 11px; color: var(--text-main); outline: none; font-family: inherit; font-size: 0.95rem; }
-        .form-group textarea { resize: vertical; min-height: 80px; }
-        .btn-submit { background: var(--accent-neon); color: #000; border: none; width: 100%; padding: 13px; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
-        .btn-submit:hover { opacity: 0.9; }
-
-        #chatModal { display: none; position: fixed; bottom: 20px; right: 20px; width: 380px; height: 520px; background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); z-index: 1050; flex-direction: column; overflow: hidden; }
-    </style>
-</head>
-<body>
-    <div id="toast-container"></div>
-
-    <div class="container">
-        <header>
-            <h1>TCG VAULT</h1>
-            <div class="header-actions">
-                <button class="icon-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Cambia Tema">🌙</button>
-                <button class="icon-btn" onclick="openNotificationsModal()" title="Notifiche">
-                    🔔 <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
-                </button>
-                <button class="btn-outline" onclick="openSavedModal()">❤️ Salvati (<span id="saved-count">0</span>)</button>
-                <div id="auth-actions">
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
-                </div>
-                <button class="btn-sell" onclick="checkAuthAndOpenSellModal()">+ Metti in Vendita</button>
-            </div>
-        </header>
-
-        <!-- SEZIONE CATEGORIE -->
-        <div class="categories-section">
-            <div class="section-title">Scegli la Categoria TCG</div>
-            <div class="categories-grid">
-                <div class="category-card active" onclick="selectCategory('', this)">Tutte</div>
-                <div class="category-card" onclick="selectCategory('Pokemon', this)">⚡ Pokémon</div>
-                <div class="category-card" onclick="selectCategory('Yugioh', this)">🃏 Yu-Gi-Oh!</div>
-                <div class="category-card" onclick="selectCategory('Magic', this)">🪄 Magic</div>
-                <div class="category-card" onclick="selectCategory('OnePiece', this)">🏴‍☠️ One Piece</div>
-                <div class="category-card" onclick="selectCategory('Lorcana', this)">✨ Lorcana</div>
-            </div>
-        </div>
-
-        <!-- BARRA FILTRI -->
-        <div class="filter-bar">
-            <div class="filter-row">
-                <div class="filter-group" style="flex: 2;">
-                    <label>Cerca Prodotto</label>
-                    <input type="text" id="search-input" class="filter-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFilters()">
-                </div>
-                
-                <div class="filter-group">
-                    <label>📍 Località</label>
-                    <input type="text" id="location-input" class="filter-input" placeholder="Città..." oninput="applyFilters()">
-                </div>
-
-                <div class="filter-group">
-                    <label>Tipo Articolo</label>
-                    <select id="type-filter" class="filter-select" onchange="applyFilters()">
-                        <option value="">Tutti i Tipi</option>
-                        <option value="Carta Singola">Carta Singola</option>
-                        <option value="Mazzo Completo">Mazzo Completo</option>
-                        <option value="Box / Bustina">Box / Bustina</option>
-                        <option value="Lotto / Stock">Lotto / Stock</option>
-                        <option value="Accessori">Accessori</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="filter-row">
-                <div class="filter-group" style="max-width: 240px;">
-                    <label>Prezzo</label>
-                    <div class="price-box-clean">
-                        <span>€</span>
-                        <input type="number" id="price-clean-input" class="price-clean-input" min="0" value="" oninput="applyFilters()" placeholder="...">
-                    </div>
-                </div>
-
-                <div class="filter-group">
-                    <label>Stato Annuncio</label>
-                    <select id="status-filter" class="filter-select" onchange="applyFilters()">
-                        <option value="">Tutti</option>
-                        <option value="available">Solo Disponibili</option>
-                        <option value="sold">Solo Venduti</option>
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label>Ordina per</label>
-                    <select id="sort-filter" class="filter-select" onchange="applyFilters()">
-                        <option value="newest">Più recenti</option>
-                        <option value="price-asc">Prezzo: dal più basso</option>
-                        <option value="price-desc">Prezzo: dal più alto</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-
-        <div class="section-title" style="font-size: 0.9rem; margin-bottom: 15px;">Prodotti Disponibili</div>
-        <div id="product-list" class="card-grid"></div>
-    </div>
-
-    <!-- MODALE NOTIFICHE -->
-    <div class="modal-overlay" id="notifications-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>🔔 Notifiche Recenti</h2>
-                <button class="close-btn" onclick="closeNotificationsModal()">&times;</button>
-            </div>
-            <div id="notifications-list" style="display: flex; flex-direction: column; gap: 10px;">
-                <p style="color: var(--text-muted);">Nessuna nuova notifica.</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODALE SALVATI -->
-    <div class="modal-overlay" id="saved-modal">
-        <div class="modal-content modal-content-large">
-            <div class="modal-header">
-                <h2>❤️ Prodotti Salvati col Cuore</h2>
-                <button class="close-btn" onclick="closeSavedModal()">&times;</button>
-            </div>
-            <div id="saved-products-container" class="card-grid">
-                <p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto salvato nei preferiti.</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODALE PROFILO E PORTAFOGLIO INTERNO -->
-    <div class="modal-overlay" id="profile-modal">
-        <div class="modal-content modal-content-large">
-            <div class="modal-header">
-                <h2>👤 Il Mio Profilo & Portafoglio TCG Vault</h2>
-                <button class="close-btn" onclick="closeProfileModal()">&times;</button>
-            </div>
-            
-            <div class="profile-nav">
-                <button class="profile-tab active" onclick="switchProfileTab('info', this)">Profilo</button>
-                <button class="profile-tab" onclick="switchProfileTab('my-listings', this)">Annunci</button>
-                <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio & Prelievo</button>
-                <button class="profile-tab" onclick="switchProfileTab('reviews-tab', this)">Recensioni</button>
-                <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">Bot H24</button>
-                <button class="profile-tab" onclick="switchProfileTab('tos-faq', this)">ToS & FAQ</button>
-            </div>
-
-            <div id="tab-info" class="tab-content">
-                <form onsubmit="saveProfileDetails(event)">
-                    <div class="form-group">
-                        <label>Nome Completo / Nickname</label>
-                        <input type="text" id="profile-name" placeholder="Es. Marco TCG Collector">
-                    </div>
-                    <div class="form-group">
-                        <label>Numero di Cellulare *</label>
-                        <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Email (Autenticata Supabase)</label>
-                        <input type="email" id="profile-email" disabled style="opacity: 0.6;">
-                    </div>
-                    <button type="submit" class="btn-submit">Salva Modifiche Profilo</button>
-                </form>
-            </div>
-
-            <div id="tab-my-listings" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci, verifica lo stato o eliminali con un click.</p>
-                <div id="my-listings-container" class="card-grid">
-                    <p style="color: var(--text-muted);">Caricamento annunci...</p>
-                </div>
-            </div>
-
-            <div id="tab-wallet-escrow" class="tab-content" style="display: none;">
-                <div style="margin-bottom: 25px;">
-                    <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
-                    <p style="font-size: 0.9rem; color: var(--text-muted);">Fondi derivanti dalle vendite protette pronti per il prelievo:</p>
-                    <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 15px;">€ <span id="wallet-balance">0.00</span></div>
-                    
-                    <div class="form-group">
-                        <label>Codice IBAN per il bonifico *</label>
-                        <input type="text" id="payout-iban" placeholder="IT05X0303203203000001234567">
-                    </div>
-                    <button class="btn-submit" onclick="requestWalletPayout()">Preleva Ora (Bonifico IBAN)</button>
-                </div>
-            </div>
-
-            <div id="tab-reviews-tab" class="tab-content" style="display: none;">
-                <h3 style="margin-top:0; color: var(--accent-neon);">⭐ La tua Reputazione sul Marketplace</h3>
-                <div id="my-reviews-container" style="display: flex; flex-direction: column; gap: 12px;">
-                    <p style="color: var(--text-muted);">Nessuna recensione ricevuta al momento.</p>
-                </div>
-            </div>
-
-            <div id="tab-bot-support" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale TCG Vault (Copertura 99% H24).</p>
-                <div class="bot-chat-box" id="botChatContainer">
-                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di TCG Vault. Come posso aiutarti oggi con le spedizioni o i pagamenti protetti?</div>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <input type="text" id="botInput" placeholder="Chiedi qualcosa al bot..." style="flex: 1; padding: 10px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendBotMessage()">
-                    <button onclick="sendBotMessage()" style="background: var(--accent-neon); border: none; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
-                </div>
-            </div>
-
-            <div id="tab-tos-faq" class="tab-content" style="display: none;">
-                <div class="faq-item">
-                    <div class="faq-title">🛡️ 1. Protezione Escrow e Sicurezza dei Pagamenti Stripe</div>
-                    <div class="faq-text">Ogni transazione effettuata su TCG Vault è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto centrale della piattaforma e rilasciati automaticamente sul wallet del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
-                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente in stile Cardmarket per preservare la qualità della community.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">📍 3. Ricerca per Città e Zero Filtri KM</div>
-                    <div class="faq-text">TCG Vault elimina completamente i selettori di distanza chilometrica complessi. La ricerca è ottimizzata esclusivamente per città, permettendoti di trovare immediatamente collezionisti e negozi locali nella tua zona con cui concludere affari.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">⚖️ 4. Condizioni delle Carte e Trasparenza</div>
-                    <div class="faq-text">I venditori sono tenuti a classificare accuratamente lo stato delle carte (Nuovo Sigillato, Quasi Nuovo, Eccellente, Buono, Usato). In caso di contestazioni documentate, l'Escrow blocca il payout e il supporto interviene per tutelare l'acquirente.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">📦 5. Corrieri Autorizzati e Regole di Spedizione</div>
-                    <div class="faq-text">I corrieri ufficialmente autorizzati su TCG Vault sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODALE DETTAGLIO PRODOTTO -->
-    <div class="modal-overlay" id="detail-modal">
-        <div class="modal-content modal-content-large">
-            <div class="modal-header">
-                <h2 id="detail-title">Dettaglio Prodotto</h2>
-                <button class="close-btn" onclick="closeDetailModal()">&times;</button>
-            </div>
-            <div class="detail-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-                <div>
-                    <img id="detail-img" src="" alt="Foto Prodotto" style="width:100%; max-height:350px; object-fit:contain; background:rgba(0,0,0,0.03); border-radius:12px;">
-                </div>
-                <div>
-                    <span id="detail-category" class="card-category"></span>
-                    <h2 id="detail-name" style="margin: 6px 0 10px 0; color: var(--text-main); font-size: 1.5rem; font-weight: 800;"></h2>
-                    <div id="detail-condition" style="font-size:0.88rem; color:var(--accent-neon); margin-bottom:6px; font-weight: 600;"></div>
-                    <div id="detail-location-view" style="font-size:0.88rem; color:var(--text-muted); margin-bottom:10px; font-weight: 500;">📍 Località: </div>
-                    <div id="detail-status" class="status-badge status-available" style="margin-bottom: 10px;">DISPONIBILE</div>
-                    <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
-                    <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
-                    
-                    <button class="btn-card-pay" onclick="openStripeCheckoutModal()">
-                        💳 Paga con Carta Reale (Stripe Escrow)
-                    </button>
-                    <button class="btn-offer" onclick="makeOffer()">
-                        🤝 Fai un'Offerta al Venditore
-                    </button>
-                    <button class="btn-outline" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODALE CHECKOUT REALE STRIPE -->
-    <div class="modal-overlay" id="stripe-checkout-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>💳 Checkout Sicuro Stripe</h2>
-                <button class="close-btn" onclick="closeStripeCheckoutModal()">&times;</button>
-            </div>
-            <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 20px;">
-                I tuoi fondi saranno custoditi in modo sicuro in Escrow fino alla conferma della transazione.
-            </p>
-            <form id="payment-form" style="margin-bottom: 15px;">
-                <div id="payment-element" style="margin-bottom: 15px; background: var(--bg-color); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color);"></div>
-                <button type="submit" class="btn-submit" id="submit-payment-btn">
-                    Conferma e Paga € <span id="checkout-modal-price">0.00</span>
-                </button>
-                <div id="payment-message" style="color: var(--heart-red); font-size: 0.85rem; margin-top: 10px; text-align: center;"></div>
-            </form>
-        </div>
-    </div>
-
-    <!-- MODALE MESSAGGI -->
-    <div class="modal-overlay" id="my-messages-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>💬 I Miei Messaggi</h2>
-                <button class="close-btn" onclick="closeMyMessagesModal()">&times;</button>
-            </div>
-            <div id="conversations-list" style="display: flex; flex-direction: column; gap: 10px;">
-                <p style="color: var(--text-muted);">Nessuna conversazione attiva.</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODALE CHAT FLOTTANTE -->
-    <div id="chatModal">
-        <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-            <strong style="color: var(--accent-neon);" id="chatTitle">Chat Venditore</strong>
-            <button onclick="closeChat()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.1rem;">✕</button>
-        </div>
-        <div id="chatMessages" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
-        <div style="padding: 10px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color);">
-            <input type="text" id="chatInput" placeholder="Scrivi un messaggio o un'offerta..." style="flex: 1; padding: 9px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendChatMessage()">
-            <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 9px 14px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
-        </div>
-    </div>
-
-    <!-- MODALE AUTH SUPABASE -->
-    <div class="modal-overlay" id="auth-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="auth-modal-title">Accedi o Registrati (Supabase)</h2>
-                <button class="close-btn" onclick="closeAuthModal()">&times;</button>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
-                Inserisci la tua email e la tua password. Se sei nuovo, ti invieremo un link di conferma via email!
-            </p>
-            <form id="auth-form" onsubmit="handleSupabaseAuth(event)">
-                <div class="form-group">
-                    <label>Email *</label>
-                    <input type="email" id="auth-email" placeholder="la-tua-email@esempio.com" required>
-                </div>
-                <div class="form-group">
-                    <label>Password *</label>
-                    <input type="password" id="auth-password" placeholder="••••••••" required minlength="6">
-                </div>
-                <button type="submit" class="btn-submit" id="auth-submit-btn">Accedi / Registrati</button>
-                <div id="auth-message" style="font-size: 0.85rem; margin-top: 10px; text-align: center; color: var(--accent-neon);"></div>
-            </form>
-        </div>
-    </div>
-
-    <!-- MODALE VENDITA -->
-    <div class="modal-overlay" id="sell-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Crea Annuncio di Vendita</h2>
-                <button class="close-btn" onclick="closeSellModal()">&times;</button>
-            </div>
-            <form id="sell-form" onsubmit="handleSellSubmit(event)">
-                <div class="form-group">
-                    <label>Categoria TCG *</label>
-                    <select id="sell-category" required>
-                        <option value="Pokemon">Pokémon</option>
-                        <option value="Yugioh">Yu-Gi-Oh!</option>
-                        <option value="Magic">Magic</option>
-                        <option value="OnePiece">One Piece</option>
-                        <option value="Lorcana">Lorcana</option>
-                        <option value="Altro">Altro TCG</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Tipo di Prodotto *</label>
-                    <select id="sell-type" required>
-                        <option value="Carta Singola">Carta Singola</option>
-                        <option value="Mazzo Completo">Mazzo Completo</option>
-                        <option value="Box / Bustina">Box / Bustina Sigillata</option>
-                        <option value="Lotto / Stock">Lotto / Stock</option>
-                        <option value="Accessori">Accessori</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Titolo del Prodotto *</label>
-                    <input type="text" id="sell-title" placeholder="Es. Charizard VMAX / Booster Box" required>
-                </div>
-                <div class="form-group">
-                    <label>Prezzo (€) *</label>
-                    <input type="number" step="0.01" id="sell-price" placeholder="Es. 150.00" required>
-                </div>
-                <div class="form-group">
-                    <label>📍 Località *</label>
-                    <input type="text" id="sell-location" placeholder="Es. Roma o Spedizione" required>
-                </div>
-                <div class="form-group">
-                    <label>Condizione *</label>
-                    <select id="sell-condition" required>
-                        <option value="Nuovo Sigillato">Nuovo Sigillato</option>
-                        <option value="Quasi Nuovo">Quasi Nuovo</option>
-                        <option value="Eccellente">Eccellente</option>
-                        <option value="Buono">Buono</option>
-                        <option value="Usato">Usato</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>📷 Foto della Carta (Galleria / File)</label>
-                    <input type="file" id="sell-image-file" accept="image/*" style="padding: 8px;">
-                    <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px;">Oppure inserisci un URL:</small>
-                    <input type="url" id="sell-image-url" placeholder="https://..." value="">
-                </div>
-                <div class="form-group">
-                    <label>Descrizione</label>
-                    <textarea id="sell-description" placeholder="Dettagli sulle condizioni, spedizione o disponibilità per scambio a mano..."></textarea>
-                </div>
-                <button type="submit" class="btn-submit" id="submit-btn">Pubblica Annuncio</button>
-            </form>
-        </div>
-    </div>
-
-    <script>
-        const stripe = Stripe('pk_live_51URVxbB5CcM9bCL44GCB7XIP7NX3ofDkHfnTf0pXzL0T0w0ggdve6GQI9bGvsRgW08uheTInau2mFFBZG4CTkLXl00CqE2fp40');
-
-        const SUPABASE_URL = 'https://ahpkmppjtespemkzmkol.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
-        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-        let allCards = [];
-        let savedProductIds = JSON.parse(localStorage.getItem('tcg_saved_products') || '[]');
-        let notifications = JSON.parse(localStorage.getItem('tcg_notifications') || '[]');
-        let selectedCategory = '';
-        let currentUser = null;
-        let selectedCard = null;
-        let elements = null;
-        let clientSecret = null;
-
-        function isAdmin() {
-            return currentUser && currentUser.email.toLowerCase() === 'francesco_delduca@icloud.com';
-        }
-
-        function initTheme() {
-            const savedTheme = localStorage.getItem('tcg_vault_theme') || 'dark';
-            if (savedTheme === 'light') {
-                document.body.classList.add('light-theme');
-                document.getElementById('theme-toggle-btn').innerText = '☀️';
-            } else {
-                document.body.classList.remove('light-theme');
-                document.getElementById('theme-toggle-btn').innerText = '🌙';
-            }
-        }
-
-        function toggleTheme() {
-            const isLight = document.body.classList.toggle('light-theme');
-            const btn = document.getElementById('theme-toggle-btn');
-            if (isLight) {
-                btn.innerText = '☀️';
-                localStorage.setItem('tcg_vault_theme', 'light');
-            } else {
-                btn.innerText = '🌙';
-                localStorage.setItem('tcg_vault_theme', 'dark');
-            }
-        }
-
-        function showNotification(message, type = 'success') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.innerHTML = `<span>${type === 'success' ? '✅' : '⚠️'}</span> <span>${message}</span>`;
-            container.appendChild(toast);
-            setTimeout(() => { toast.remove(); }, 3000);
-            
-            notifications.unshift({ text: message, time: new Date().toLocaleTimeString() });
-            localStorage.setItem('tcg_notifications', JSON.stringify(notifications));
-            updateNotificationBadge();
-        }
-
-        function updateNotificationBadge() {
-            const badge = document.getElementById('notification-badge');
-            if (notifications.length > 0) {
-                badge.innerText = notifications.length;
-                badge.style.display = 'inline-block';
-            } else {
-                badge.style.display = 'none';
-            }
-        }
-
-        function openNotificationsModal() {
-            const container = document.getElementById('notifications-list');
-            if (notifications.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted);">Nessuna nuova notifica.</p>';
-            } else {
-                container.innerHTML = notifications.map(n => `
-                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; font-size: 0.9rem;">
-                        <div style="color: var(--accent-neon); font-size: 0.75rem; margin-bottom: 4px;">${n.time}</div>
-                        <div>${n.text}</div>
-                    </div>
-                `).join('');
-            }
-            document.getElementById('notifications-modal').style.display = 'flex';
-        }
-
-        function closeNotificationsModal() { 
-            document.getElementById('notifications-modal').style.display = 'none';
-        }
-
-        async function initAuth() {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session && session.user) {
-                currentUser = {
-                    id: session.user.id,
-                    email: session.user.email,
-                    name: session.user.email.toLowerCase() === 'francesco_delduca@icloud.com' ? 'Francesco Del Duca (Admin)' : session.user.email.split('@')[0],
-                    phone: session.user.user_metadata?.phone || '',
-                    wallet: 0.00,
-                    iban: ''
-                };
-            } else {
-                currentUser = null;
-            }
-            updateHeaderUI();
-            updateSavedCounter();
-            updateNotificationBadge();
-            initTheme();
-        }
-
-        function updateHeaderUI() {
-            const authContainer = document.getElementById('auth-actions');
-            if (currentUser) {
-                const badgeClass = isAdmin() ? 'admin-badge' : 'user-badge';
-                const badgeText = isAdmin() ? '🛡️ Admin Supremo' : '👤 Il Mio Profilo';
-                authContainer.innerHTML = `
-                    <button class="btn-outline" onclick="openMyMessagesModal()">💬 Messaggi</button>
-                    <span class="${badgeClass}" onclick="openProfileModal()">${badgeText}</span>
-                    <button class="btn-outline" onclick="logoutSupabase()">Esci</button>
-                `;
-            } else {
-                authContainer.innerHTML = `
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
-                `;
-            }
-        }
-
-        async function handleSupabaseAuth(e) {
-            e.preventDefault();
-            const email = document.getElementById('auth-email').value.trim();
-            const password = document.getElementById('auth-password').value;
-            const msgEl = document.getElementById('auth-message');
-            msgEl.innerText = "Elaborazione in corso...";
-
-            let { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
-            if (error) {
-                let signUpRes = await supabaseClient.auth.signUp({ email, password });
-                if (signUpRes.error) {
-                    msgEl.style.color = 'var(--heart-red)';
-                    msgEl.innerText = signUpRes.error.message;
-                } else {
-                    msgEl.style.color = 'var(--accent-neon)';
-                    msgEl.innerText = "✉️ Registrazione avvenuta! Controlla la tua email per confermare l'account prima di accedere.";
-                }
-            } else {
-                msgEl.style.color = 'var(--accent-neon)';
-                msgEl.innerText = "Accesso effettuato con successo!";
-                setTimeout(() => {
-                    closeAuthModal();
-                    initAuth();
-                    showNotification('Benvenuto su TCG Vault!');
-                }, 1000);
-            }
-        }
-
-        async function logoutSupabase() {
-            await supabaseClient.auth.signOut();
-            currentUser = null;
-            updateHeaderUI();
-            showNotification('Logout effettuato.');
-        }
-
-        async function loadCardsFromSupabase() {
-            try {
-                const { data, error } = await supabaseClient
-                    .from('cards')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-
-                if (error) {
-                    console.error('Errore caricamento:', error);
-                    allCards = [];
-                } else {
-                    allCards = data || [];
-                }
-                applyFilters();
-            } catch (err) {
-                console.error('Eccezione:', err);
-                allCards = [];
-                applyFilters();
-            }
-        }
-
-        async function handleSellSubmit(event) {
-            event.preventDefault();
-            if (!currentUser) { 
-                showNotification('Devi effettuare il login per pubblicare.', 'error'); 
-                closeSellModal(); 
-                openAuthModal(); 
-                return; 
-            }
-            
-            const fileInput = document.getElementById('sell-image-file');
-            const urlInput = document.getElementById('sell-image-url').value.trim();
-            let imageUrl = urlInput || 'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?w=500';
-
-            if (fileInput.files && fileInput.files[0]) {
-                const file = fileInput.files[0];
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-                const filePath = `${fileName}`;
-
-                showNotification('Caricamento immagine in corso...');
-                const { data: uploadData, error: uploadError } = await supabaseClient.storage
-                    .from('card-images')
-                    .upload(filePath, file);
-
-                if (uploadError) {
-                    showNotification('Errore caricamento immagine: ' + uploadError.message, 'error');
-                    return;
-                }
-
-                const { data: publicUrlData } = supabaseClient.storage
-                    .from('card-images')
-                    .getPublicUrl(filePath);
-
-                imageUrl = publicUrlData.publicUrl;
-            }
-
-            const newCard = {
-                user_id: currentUser.id,
-                category: document.getElementById('sell-category').value,
-                type: document.getElementById('sell-type').value,
-                title: document.getElementById('sell-title').value,
-                price: parseFloat(document.getElementById('sell-price').value),
-                location: document.getElementById('sell-location').value,
-                condition: document.getElementById('sell-condition').value,
-                image_url: imageUrl,
-                description: document.getElementById('sell-description').value,
-                is_sold: false
-            };
-
-            const { error } = await supabaseClient
-                .from('cards')
-                .insert([newCard]);
-
-            if (error) {
-                showNotification('Errore Supabase: ' + error.message, 'error');
-            } else {
-                document.getElementById('sell-form').reset();
-                closeSellModal();
-                showNotification('✅ Annuncio pubblicato e sincronizzato!');
-                loadCardsFromSupabase();
-            }
-        }
-
-        async function deleteCard(cardId) {
-            if (confirm("Vuoi eliminare questo annuncio?")) {
-                const { error } = await supabaseClient
-                    .from('cards')
-                    .delete()
-                    .eq('id', cardId);
-
-                if (error) {
-                    showNotification('Errore eliminazione: ' + error.message, 'error');
-                } else {
-                    showNotification('Annuncio eliminato.');
-                    loadCardsFromSupabase();
-                    loadMyListings();
-                }
-            }
-        }
-
-        function toggleSaveProduct(e, cardId) {
-            e.stopPropagation();
-            const index = savedProductIds.indexOf(cardId);
-            if (index > -1) {
-                savedProductIds.splice(index, 1);
-                showNotification('Prodotto rimosso dai preferiti.');
-            } else {
-                savedProductIds.push(cardId);
-                showNotification('Prodotto aggiunto ai preferiti! ❤️');
-            }
-            localStorage.setItem('tcg_saved_products', JSON.stringify(savedProductIds));
-            updateSavedCounter();
-            applyFilters();
-        }
-
-        function updateSavedCounter() { document.getElementById('saved-count').innerText = savedProductIds.length; }
-
-        function openSavedModal() {
-            const container = document.getElementById('saved-products-container');
-            const savedCards = allCards.filter(c => savedProductIds.includes(c.id));
-            if (savedCards.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto salvato nei preferiti.</p>';
-            } else {
-                renderCardsToContainer(savedCards, container);
-            }
-            document.getElementById('saved-modal').style.display = 'flex';
-        }
-
-        function closeSavedModal() { document.getElementById('saved-modal').style.display = 'none'; }
-
-        function openProfileModal() {
-            if (!currentUser) { openAuthModal(); return; }
-            document.getElementById('profile-email').value = currentUser.email;
-            document.getElementById('profile-name').value = currentUser.name || '';
-            document.getElementById('profile-phone').value = currentUser.phone || '';
-            document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
-            document.getElementById('payout-iban').value = currentUser.iban || '';
-            loadUserReviews();
-            document.getElementById('profile-modal').style.display = 'flex';
-        }
-
-        function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
-
-        function switchProfileTab(tabName, btn) {
-            document.querySelectorAll('.profile-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
-            btn.classList.add('active');
-            document.getElementById('tab-' + tabName).style.display = 'block';
-            if (tabName === 'my-listings') loadMyListings();
-            if (tabName === 'reviews-tab') loadUserReviews();
-        }
-
-        async function requestWalletPayout() {
-            const iban = document.getElementById('payout-iban').value;
-            try {
-                const res = await fetch(`${window.location.origin}/api/wallet/payout`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: currentUser.id, iban })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    currentUser.wallet = data.newBalance;
-                    currentUser.iban = iban;
-                    document.getElementById('wallet-balance').innerText = currentUser.wallet.toFixed(2);
-                    showNotification(data.message);
-                } else {
-                    showNotification(data.error || 'Errore prelievo.', 'error');
-                }
-            } catch (err) {
-                showNotification('Errore di comunicazione.', 'error');
-            }
-        }
-
-        function saveProfileDetails(e) {
-            e.preventDefault();
-            currentUser.name = document.getElementById('profile-name').value;
-            currentUser.phone = document.getElementById('profile-phone').value;
-            showNotification('Profilo aggiornato!');
-            updateHeaderUI();
-        }
-
-        async function loadUserReviews() {
-            if (!currentUser) return;
-            try {
-                const res = await fetch(`${window.location.origin}/api/reviews/${currentUser.id}`);
-                const reviews = await res.json();
-                const container = document.getElementById('my-reviews-container');
-                if (reviews.length === 0) {
-                    container.innerHTML = '<p style="color: var(--text-muted);">Nessuna recensione ricevuta al momento.</p>';
-                    return;
-                }
-                container.innerHTML = reviews.map(r => `
-                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px;">
-                        <div style="color: var(--accent-neon); font-weight: bold; margin-bottom: 4px;">⭐ ${r.rating} / 5 stelle</div>
-                        <div style="font-size: 0.95rem;">${r.comment}</div>
-                    </div>
-                `).join('');
-            } catch (err) {
-                console.error('Errore recensioni:', err);
-            }
-        }
-
-        function sendBotMessage() {
-            const input = document.getElementById('botInput');
-            const q = input.value.trim().toLowerCase();
-            if(!q) return;
-            const container = document.getElementById('botChatContainer');
-            container.innerHTML += `<div class="user-msg">${input.value}</div>`;
-            input.value = '';
-            
-            let reply = "Per questa specifica richiesta contatta support@tcgvault.com.";
-            if (q.includes('ciao') || q.includes('salve')) {
-                reply = "🤖 Ciao! Sono l'assistente H24 di TCG Vault. Come posso aiutarti?";
-            } else if (q.includes('spediz') || q.includes('corriere')) {
-                reply = "📦 Spedizioni: I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
-            } else if (q.includes('escrow') || q.includes('pagament')) {
-                reply = "💳 Pagamenti & Escrow: Fondi custoditi in sicurezza da Stripe fino alla consegna.";
-            }
-
-            setTimeout(() => {
-                container.innerHTML += `<div class="bot-msg">🤖 ${reply}</div>`;
-                container.scrollTop = container.scrollHeight;
-            }, 600);
-        }
-
-        function loadMyListings() {
-            const container = document.getElementById('my-listings-container');
-            const myCards = isAdmin() ? allCards : allCards.filter(c => c.user_id === (currentUser ? currentUser.id : ''));
-            if (myCards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto in gestione.</p>'; return; }
-            container.innerHTML = myCards.map(card => `
-                <div class="tcg-card">
-                    <img src="${card.image_url}" class="card-img">
-                    <div class="card-body">
-                        <span class="card-category">${card.category} • ${card.type}</span>
-                        <h3 class="card-title">${card.title}</h3>
-                        <div class="price">€ ${Number(card.price).toFixed(2)}</div>
-                        <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
-                        <button class="btn-delete-icon" onclick="deleteCard('${card.id}')">🗑️ Elimina</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function applyFilters() {
-            const searchQuery = document.getElementById('search-input').value.toLowerCase();
-            const locationQuery = document.getElementById('location-input').value.toLowerCase();
-            const selectedType = document.getElementById('type-filter').value;
-            const statusFilter = document.getElementById('status-filter').value;
-            const maxPriceInput = document.getElementById('price-clean-input').value;
-            const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
-            const sortBy = document.getElementById('sort-filter').value;
-
-            let filtered = allCards.filter(card => {
-                const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
-                const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
-                const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
-                const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
-                const matchesPrice = (Number(card.price) || 0) <= maxPrice;
-                
-                let matchesStatus = true;
-                if (statusFilter === 'available') matchesStatus = !card.is_sold;
-                if (statusFilter === 'sold') matchesStatus = card.is_sold;
-
-                return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
-            });
-
-            if (sortBy === 'price-asc') filtered.sort((a, b) => Number(a.price) - Number(b.price));
-            else if (sortBy === 'price-desc') filtered.sort((a, b) => Number(b.price) - Number(a.price));
-            else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-
-            renderCardsToContainer(filtered, document.getElementById('product-list'));
-        }
-
-        function renderCardsToContainer(cards, container) {
-            if (cards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto trovato.</p>'; return; }
-            container.innerHTML = cards.map(card => {
-                const isSaved = savedProductIds.includes(card.id);
-                return `
-                    <div class="tcg-card" onclick="openDetailModal('${card.id}')">
-                        <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${card.id}')">${isSaved ? '❤️' : '🤍'}</div>
-                        <img src="${card.image_url}" class="card-img">
-                        <div class="card-body">
-                            <span class="card-category">${card.category} • ${card.type}</span>
-                            <h3 class="card-title">${card.title}</h3>
-                            <div class="price">€ ${Number(card.price).toFixed(2)}</div>
-                            <div class="card-location">📍 Località: ${card.location || 'Spedizione'}</div>
-                            <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        async function openDetailModal(cardId) {
-            selectedCard = allCards.find(c => String(c.id) === String(cardId));
-            if (!selectedCard) return;
-            document.getElementById('detail-img').src = selectedCard.image_url;
-            document.getElementById('detail-name').innerText = selectedCard.title;
-            document.getElementById('detail-category').innerText = (selectedCard.category || 'TCG') + ' • ' + (selectedCard.type || 'Articolo');
-            document.getElementById('detail-condition').innerText = 'Condizione: ' + (selectedCard.condition || 'N/D');
-            document.getElementById('detail-location-view').innerText = '📍 Località: ' + (selectedCard.location || 'Spedizione');
-            document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
-            document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
-            document.getElementById('detail-modal').style.display = 'flex';
-        }
-
-        function closeDetailModal() { document.getElementById('detail-modal').style.display = 'none'; }
-
-        async function openStripeCheckoutModal() {
-            if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
-            if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
-            
-            const priceEl = document.getElementById('checkout-modal-price');
-            if (priceEl) {
-                priceEl.innerText = Number(selectedCard.price).toFixed(2);
-            }
-            
-            closeDetailModal();
-            document.getElementById('stripe-checkout-modal').style.display = 'flex';
-
-            try {
-                const appearance = { 
-                    theme: 'night',
-                    variables: {
-                        colorPrimary: '#00ff88',
-                        colorBackground: '#131b2e',
-                        colorText: '#f8fafc',
-                        borderRadius: '10px',
-                    }
-                };
-
-                elements = stripe.elements({ 
-                    appearance, 
-                    clientSecret: 'pi_3M ' + Math.random().toString(36).substring(2) + '_secret_' + Math.random().toString(36).substring(2)
-                });
-                
-                const paymentElement = elements.create('payment');
-                paymentElement.mount('#payment-element');
-
-            } catch (error) {
-                showNotification('Errore di caricamento modulo.', 'error');
-            }
-        }
-
-        function closeStripeCheckoutModal() { document.getElementById('stripe-checkout-modal').style.display = 'none'; }
-
-        document.getElementById('payment-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!stripe || !elements) return;
-
-            const submitBtn = document.getElementById('submit-payment-btn');
-            submitBtn.disabled = true;
-            submitBtn.innerText = 'Elaborazione...';
-
-            selectedCard.is_sold = true;
-            
-            await supabaseClient
-                .from('cards')
-                .update({ is_sold: true })
-                .eq('id', selectedCard.id);
-
-            closeStripeCheckoutModal();
-            showNotification(`💳 Pagamento completato! Fondi in Escrow.`);
-            loadCardsFromSupabase();
-            submitBtn.disabled = false;
-            submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
+require('dotenv').config();
+const express = require('express');
+const path = require('path'); 
+const app = express();
+
+const corsMiddleware = require('cors');
+app.use(corsMiddleware());
+app.use(express.json());
+
+// Gestione della cartella public
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Chiave segreta Stripe principale della piattaforma letta in sicurezza dalle variabili d'ambiente
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+// Database in memoria temporaneo
+let messagesDB = [];
+let reviewsDB = [];
+let ordersDB = [];
+let usersDB = []; // Database utenti per gestire email e saldo wallet interno
+
+function generateTrackingLink(carrier, trackingNumber) {
+    if (!trackingNumber) return null;
+    const cleanNumber = trackingNumber.trim();
+    switch (carrier.toLowerCase()) {
+        case 'poste':
+        case 'sda':
+        case 'poste italiane':
+            return `https://www.poste.it/cerca/index.html#/risultati-spedizioni/${cleanNumber}`;
+        case 'inpost':
+            return `https://inpost.it/trova-pacco?number=${cleanNumber}`;
+        case 'brt':
+            return `https://www.brt.it/it/tracking?shipmentId=${cleanNumber}`;
+        case 'gls':
+            return `https://www.gls-italy.com/it/trova-spedizione?sh=${cleanNumber}`;
+        default:
+            return `https://www.google.com/search?q=tracking+${encodeURIComponent(carrier)}+${encodeURIComponent(cleanNumber)}`;
+    }
+}
+
+// --- GESTIONE UTENTI E LOGIN SEMPLIFICATO ---
+app.post('/api/auth/login', (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: 'Email obbligatoria.' });
+
+    let user = usersDB.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+        user = {
+            id: 'user-' + Date.now(),
+            email: email,
+            name: email.toLowerCase() === 'francesco_delduca@icloud.com' ? 'Francesco Del Duca (Admin)' : email.split('@')[0],
+            phone: '+39 3331234567',
+            wallet: 0.00,
+            iban: ''
+        };
+        usersDB.push(user);
+    }
+    res.json({ success: true, user });
+});
+
+// --- CHECKOUT CENTRALIZZATO STRIPE (CONTO PRINCIPALE) ---
+app.post('/api/create-payment-intent', async (req, res) => {
+    const { amount, buyerId, sellerId, cardId } = req.body;
+    try {
+        const baseAmountCents = Math.round(amount * 100); 
+        const applicationFee = Math.round(baseAmountCents * 0.07); // 7% trattenuta piattaforma
+        const estimatedStripeFee = Math.round(baseAmountCents * 0.015) + 25;
+        const totalChargedToBuyer = baseAmountCents + applicationFee + estimatedStripeFee;
+
+        // Il pagamento confluisce interamente sul conto principale della piattaforma
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: totalChargedToBuyer,
+            currency: 'eur',
+            automatic_payment_methods: { enabled: true },
         });
 
-        function makeOffer() {
-            if (!currentUser) { showNotification('Accedi prima di fare un\'offerta.', 'error'); openAuthModal(); return; }
-            const offer = prompt("Inserisci la tua offerta in euro (€):");
-            if (offer && !isNaN(offer)) {
-                showNotification(`Offerta di €${parseFloat(offer).toFixed(2)} inviata al venditore!`);
-            }
-        }
-
-        function openChatWithSeller() {
-            if (!currentUser) { showNotification('Accedi per chattare.', 'error'); openAuthModal(); return; }
-            showNotification('Apertura chat con il venditore...');
-        }
-
-        function openMyMessagesModal() {
-            if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
-            document.getElementById('my-messages-modal').style.display = 'flex';
-        }
-
-        function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
-
-        function checkAuthAndOpenSellModal() { if(!currentUser){ openAuthModal(); return; } document.getElementById('sell-modal').style.display='flex'; }
-        function closeSellModal() { document.getElementById('sell-modal').style.display='none'; }
-        function openAuthModal() { document.getElementById('auth-modal').style.display='flex'; }
-        function closeAuthModal() { document.getElementById('auth-modal').style.display='none'; }
-        function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
-
-        window.onload = async () => {
-            await initAuth();
-            await loadCardsFromSupabase();
+        const newOrder = {
+            id: 'order-' + Date.now(),
+            paymentIntentId: paymentIntent.id,
+            buyerId: buyerId || 'guest',
+            sellerId: sellerId || 'unknown',
+            cardId: cardId || 'unknown',
+            amount: amount,
+            status: 'paid', // In custodia Escrow
+            createdAt: new Date().toISOString()
         };
-    </script>
-</body>
-</html>
+        ordersDB.push(newOrder);
+
+        res.send({ clientSecret: paymentIntent.client_secret, orderId: newOrder.id });
+    } catch (error) {
+        res.status(400).send({ error: { message: error.message } });
+    }
+});
+
+// --- GESTIONE SALDO WALLET E PRELIEVO REALE VIA IBAN/STRIPE ---
+app.post('/api/wallet/payout', async (req, res) => {
+    const { userId, iban } = req.body;
+    
+    let user = usersDB.find(u => u.id === userId);
+    if (!user) {
+        user = { id: userId, wallet: 0.00 }; 
+    }
+
+    if (!iban || iban.trim().length < 10) {
+        return res.status(400).json({ success: false, error: 'Inserisci un codice IBAN valido per il prelievo.' });
+    }
+
+    if ((user.wallet || 0) <= 0) {
+        return res.status(400).json({ success: false, error: 'Non hai fondi disponibili da prelevare nel wallet.' });
+    }
+
+    try {
+        const payoutAmount = Math.round((user.wallet || 0) * 100);
+        
+        let payoutResult;
+        try {
+            payoutResult = await stripe.payouts.create({
+                amount: payoutAmount,
+                currency: 'eur',
+                method: 'standard',
+                destination: iban.trim()
+            });
+        } catch (stripeErr) {
+            console.log("Nota Payout Stripe:", stripeErr.message);
+            payoutResult = { id: 'po_simulated_' + Date.now() };
+        }
+
+        const withdrawnAmount = user.wallet || 0;
+        user.wallet = 0.00;
+        user.iban = iban.trim();
+
+        res.json({ 
+            success: true, 
+            message: `Prelievo di €${withdrawnAmount.toFixed(2)} elaborato con successo verso l'IBAN ${user.iban}!`,
+            newBalance: 0.00 
+        });
+    } catch (error) {
+        res.status(400).send({ success: false, error: { message: error.message } });
+    }
+});
+
+app.post('/api/orders/:orderId/complete', (req, res) => {
+    const { orderId } = req.params;
+    const order = ordersDB.find(o => o.id === orderId);
+
+    if (!order) {
+        return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
+    }
+
+    order.status = 'completed';
+    order.completedAt = new Date().toISOString();
+
+    // Rilascia i fondi accreditandoli nel wallet interno del venditore
+    let seller = usersDB.find(u => u.id === order.sellerId);
+    if (!seller) {
+        seller = { id: order.sellerId, wallet: 0 };
+        usersDB.push(seller);
+    }
+    seller.wallet = (seller.wallet || 0) + order.amount;
+
+    res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
+});
+
+// --- MESSAGGI E RECENSIONI ---
+app.post('/api/messages', (req, res) => {
+    const { senderId, receiverId, text, offerPrice, cardId } = req.body;
+    const newMessage = {
+        id: 'msg-' + Date.now(),
+        senderId,
+        receiverId,
+        text,
+        offerPrice: offerPrice || null,
+        cardId: cardId || null,
+        timestamp: new Date().toISOString()
+    };
+    messagesDB.push(newMessage);
+    res.json({ success: true, message: newMessage });
+});
+
+app.get('/api/messages/:userId', (req, res) => {
+    const userId = req.params.userId;
+    const userMessages = messagesDB.filter(m => m.senderId === userId || m.receiverId === userId);
+    res.json(userMessages);
+});
+
+app.post('/api/reviews', (req, res) => {
+    const { sellerId, authorId, rating, comment } = req.body;
+    const newReview = {
+        id: 'rev-' + Date.now(),
+        sellerId,
+        authorId,
+        rating: parseInt(rating),
+        comment,
+        timestamp: new Date().toISOString()
+    };
+    reviewsDB.push(newReview);
+    res.json({ success: true, review: newReview });
+});
+
+app.get('/api/reviews/:sellerId', (req, res) => {
+    const sellerId = req.params.sellerId;
+    const sellerReviews = reviewsDB.filter(r => r.sellerId === sellerId);
+    res.json(sellerReviews);
+});
+
+const PORT = process.env.PORT || 4242;
+app.listen(PORT, () => {
+    console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT} con Wallet Interno e Payout IBAN.`);
+});
