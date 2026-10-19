@@ -1137,7 +1137,24 @@
                     };
 
                     elements = stripe.elements({ appearance, clientSecret });
-                    const paymentElement = elements.create('payment');
+                    
+                    // Campi di fatturazione e contatto obbligatori
+                    const paymentElement = elements.create('payment', {
+                        fields: {
+                            billingDetails: {
+                                name: 'always',
+                                email: 'always',
+                                phone: 'always',
+                                address: {
+                                    country: 'always',
+                                    line1: 'always',
+                                    city: 'always',
+                                    postalCode: 'always'
+                                }
+                            }
+                        }
+                    });
+
                     paymentElement.mount('#payment-element');
                 } else {
                     showNotification('Errore Stripe: ' + (data.error?.message || 'Impossibile avviare il pagamento'), 'error');
