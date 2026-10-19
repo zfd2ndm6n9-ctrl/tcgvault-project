@@ -1120,12 +1120,25 @@
                 const data = await response.json();
                 if (data.clientSecret) {
                     clientSecret = data.clientSecret;
-                    elements = stripe.elements({ clientSecret });
+                    
+                    const appearance = { 
+                        theme: 'night',
+                        variables: {
+                            colorPrimary: '#00ff88',
+                            colorBackground: '#131b2e',
+                            colorText: '#f8fafc',
+                            borderRadius: '10px',
+                        }
+                    };
+
+                    elements = stripe.elements({ appearance, clientSecret });
                     const paymentElement = elements.create('payment');
                     paymentElement.mount('#payment-element');
+                } else if (data.error) {
+                    showNotification('Errore Stripe: ' + data.error.message, 'error');
                 }
             } catch (error) {
-                showNotification('Errore Stripe: ' + error.message, 'error');
+                showNotification('Errore di connessione al server di pagamento.', 'error');
             }
         }
 
