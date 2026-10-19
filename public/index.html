@@ -1138,21 +1138,9 @@
 
                     elements = stripe.elements({ appearance, clientSecret });
                     
-                    // Campi di fatturazione e contatto obbligatori
+                    // Configurazione sicura e compatibile del Payment Element
                     const paymentElement = elements.create('payment', {
-                        fields: {
-                            billingDetails: {
-                                name: 'always',
-                                email: 'always',
-                                phone: 'always',
-                                address: {
-                                    country: 'always',
-                                    line1: 'always',
-                                    city: 'always',
-                                    postalCode: 'always'
-                                }
-                            }
-                        }
+                        layout: 'auto'
                     });
 
                     paymentElement.mount('#payment-element');
