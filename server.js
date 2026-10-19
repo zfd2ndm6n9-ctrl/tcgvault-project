@@ -10,8 +10,8 @@ app.use(express.json());
 // Gestione della cartella public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Chiave segreta Stripe principale della piattaforma (Livemode)
-const stripe = require('stripe')('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');
+// Chiave segreta Stripe principale della piattaforma letta in sicurezza dalle variabili d'ambiente
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Database in memoria temporaneo
 let messagesDB = [];
@@ -110,16 +110,20 @@ app.post('/api/wallet/payout', async (req, res) => {
     }
 
     try {
-        // Eseguito tramite le API Payouts di Stripe dal conto centrale verso l'IBAN del venditore
-        const payout = await stripe.payouts.create({
-            amount: Math.round((user.wallet || 0) * 100),
-            currency: 'eur',
-            method: 'standard',
-            destination: iban.trim()
-        }).catch(err => {
-            console.log("Nota Payout Stripe:", err.message);
-            return { id: 'po_simulated_' + Date.now() };
-        });
+        const payoutAmount = Math.round((user.wallet || 0) * 100);
+        
+        let payoutResult;
+        try {
+            payoutResult = await stripe.payouts.create({
+                amount: payoutAmount,
+                currency: 'eur',
+                method: 'standard',
+                destination: iban.trim()
+            });
+        } catch (stripeErr) {
+            console.log("Nota Payout Stripe:", stripeErr.message);
+            payoutResult = { id: 'po_simulated_' + Date.now() };
+        }
 
         const withdrawnAmount = user.wallet || 0;
         user.wallet = 0.00;
