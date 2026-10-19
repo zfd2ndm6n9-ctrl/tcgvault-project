@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://*.stripe.com https://*.stripe.network https://*.hcaptcha.com; script-src * 'self' 'unsafe-inline' 'unsafe-eval' https://*.stripe.com https://js.stripe.com https://*.hcaptcha.com; style-src * 'self' 'unsafe-inline' https://*.stripe.com https://m.stripe.network https://*.hcaptcha.com; frame-src * https://*.stripe.com https://*.hcaptcha.com; connect-src * https://*.stripe.com https://api.stripe.com https://*.hcaptcha.com;">
     <title>Checkout Sicuro - TCG Vault</title>
     <script src="https://js.stripe.com/v3/"></script>
     <style>
@@ -164,7 +165,6 @@
 
         let elements;
 
-        // Legge i parametri dall'indirizzo (es. ?amount=15&seller=user_123)
         const urlParams = new URLSearchParams(window.location.search);
         const amountDaPagare = parseFloat(urlParams.get('amount')) || 10; 
         const sellerId = urlParams.get('seller') || 'unknown';
@@ -175,7 +175,6 @@
 
         async function initialize() {
             try {
-                // Chiamata relativa al backend sullo stesso dominio (funziona sia in locale che su Render)
                 const response = await fetch("/api/create-payment-intent", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -225,7 +224,6 @@
             const { error } = await stripe.confirmPayment({
                 elements,
                 confirmParams: {
-                    // URL di ritorno reale sul tuo dominio custom
                     return_url: window.location.origin + "/successo.html",
                 },
             });
