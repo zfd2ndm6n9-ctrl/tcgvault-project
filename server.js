@@ -13,11 +13,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Chiave segreta Stripe principale della piattaforma letta in sicurezza dalle variabili d'ambiente
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-// Database in memoria temporaneo
+// Database in memoria temporaneo (strutturato per ordini, messaggi, recensioni e wallet)
 let messagesDB = [];
 let reviewsDB = [];
 let ordersDB = [];
-let usersDB = []; // Database utenti per gestire email e saldo wallet interno
+let usersDB = []; 
 
 function generateTrackingLink(carrier, trackingNumber) {
     if (!trackingNumber) return null;
@@ -58,16 +58,15 @@ app.post('/api/auth/login', (req, res) => {
     res.json({ success: true, user });
 });
 
-// --- CHECKOUT CENTRALIZZATO STRIPE (CONTO PRINCIPALE) ---
+// --- CHECKOUT CENTRALIZZATO STRIPE (CONTO PRINCIPALE) & NOTIFICA AUTOMATICA VENDITORE ---
 app.post('/api/create-payment-intent', async (req, res) => {
-    const { amount, buyerId, sellerId, cardId } = req.body;
+    const { amount, buyerId, sellerId, cardId, cardTitle } = req.body;
     try {
         const baseAmountCents = Math.round(amount * 100); 
         const applicationFee = Math.round(baseAmountCents * 0.07); // 7% trattenuta piattaforma
         const estimatedStripeFee = Math.round(baseAmountCents * 0.015) + 25;
         const totalChargedToBuyer = baseAmountCents + applicationFee + estimatedStripeFee;
 
-        // Il pagamento confluisce interamente sul conto principale della piattaforma
         const paymentIntent = await stripe.paymentIntents.create({
             amount: totalChargedToBuyer,
             currency: 'eur',
@@ -81,7 +80,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
             sellerId: sellerId || 'unknown',
             cardId: cardId || 'unknown',
             amount: amount,
-            status: 'paid', // In custodia Escrow
+            status: 'paid', // In custodia Escrow - In attesa di spedizione
             createdAt: new Date().toISOString()
         };
         ordersDB.push(newOrder);
@@ -92,12 +91,70 @@ app.post('/api/create-payment-intent', async (req, res) => {
             if (!seller) {
                 usersDB.push({ id: sellerId, email: 'venditore@tcgvault.it', wallet: 0.00, iban: '' });
             }
+
+            // 🔔 CREAZIONE AUTOMATICA MESSAGGIO/NOTIFICA DI SISTEMA AL VENDITORE
+            const notificationMsg = {
+                id: 'msg-' + Date.now(),
+                senderId: 'SYSTEM_ESCROW',
+                receiverId: sellerId,
+                cardId: cardId || null,
+                text: `📦 VENDITA EFFETTUATA! Il tuo prodotto "${cardTitle || 'Articolo TCG'}" è stato acquistato per €${Number(amount).toFixed(2)}. I fondi sono al sicuro in Escrow. Clicca qui per visualizzare la guida alla spedizione, inserire il corriere e il codice di tracciamento.`,
+                isEscrowAlert: true,
+                orderId: newOrder.id,
+                timestamp: new Date().toISOString()
+            };
+            messagesDB.push(notificationMsg);
         }
 
         res.send({ clientSecret: paymentIntent.client_secret, orderId: newOrder.id });
     } catch (error) {
         res.status(400).send({ error: { message: error.message } });
     }
+});
+
+// --- AGGIORNAMENTO SPEDIZIONE E TRACKING DA PARTE DEL VENDITORE ---
+app.post('/api/orders/:orderId/ship', (req, res) => {
+    const { orderId } = req.params;
+    const { carrier, trackingNumber } = req.body;
+    
+    const order = ordersDB.find(o => o.id === orderId);
+    if (!order) {
+        return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
+    }
+
+    order.carrier = carrier;
+    order.trackingNumber = trackingNumber;
+    order.trackingLink = generateTrackingLink(carrier, trackingNumber);
+    order.status = 'shipped'; // In transito verso l'acquirente
+
+    res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
+});
+
+// --- CONFERMA RICEZIONE E SBLOCCO FONDI NEL WALLET (DA PARTE DELL'ACQUIRENTE) ---
+app.post('/api/orders/:orderId/complete', (req, res) => {
+    const { orderId } = req.params;
+    const order = ordersDB.find(o => o.id === orderId);
+
+    if (!order) {
+        return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
+    }
+
+    if (order.status === 'completed') {
+        return res.json({ success: true, message: 'Ordine già completato in precedenza.', order });
+    }
+
+    order.status = 'completed';
+    order.completedAt = new Date().toISOString();
+
+    // Rilascia i fondi accreditandoli nel wallet interno del venditore
+    let seller = usersDB.find(u => u.id === order.sellerId);
+    if (!seller) {
+        seller = { id: order.sellerId, wallet: 0 };
+        usersDB.push(seller);
+    }
+    seller.wallet = (seller.wallet || 0) + Number(order.amount);
+
+    res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
 });
 
 // --- GESTIONE SALDO WALLET E PRELIEVO REALE VIA IBAN/STRIPE ---
@@ -147,32 +204,6 @@ app.post('/api/wallet/payout', async (req, res) => {
     }
 });
 
-app.post('/api/orders/:orderId/complete', (req, res) => {
-    const { orderId } = req.params;
-    const order = ordersDB.find(o => o.id === orderId);
-
-    if (!order) {
-        return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
-    }
-
-    if (order.status === 'completed') {
-        return res.json({ success: true, message: 'Ordine già completato in precedenza.', order });
-    }
-
-    order.status = 'completed';
-    order.completedAt = new Date().toISOString();
-
-    // Rilascia i fondi accreditandoli nel wallet interno del venditore
-    let seller = usersDB.find(u => u.id === order.sellerId);
-    if (!seller) {
-        seller = { id: order.sellerId, wallet: 0 };
-        usersDB.push(seller);
-    }
-    seller.wallet = (seller.wallet || 0) + Number(order.amount);
-
-    res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
-});
-
 // --- MESSAGGI E RECENSIONI ---
 app.post('/api/messages', (req, res) => {
     const { senderId, receiverId, text, offerPrice, cardId } = req.body;
@@ -217,5 +248,5 @@ app.get('/api/reviews/:sellerId', (req, res) => {
 
 const PORT = process.env.PORT || 4242;
 app.listen(PORT, () => {
-    console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT} con Wallet Interno e Payout IBAN.`);
+    console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT} con Gestione Escrow e Notifiche Automatiche.`);
 });
