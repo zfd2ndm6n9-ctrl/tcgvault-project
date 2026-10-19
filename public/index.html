@@ -1132,7 +1132,24 @@
                     };
 
                     elements = stripe.elements({ appearance, clientSecret });
-                    const paymentElement = elements.create('payment');
+                    
+                    // Configurazione dei campi obbligatori per contatti e indirizzo di fatturazione
+                    const paymentElement = elements.create('payment', {
+                        fields: {
+                            billingDetails: {
+                                name: 'always',
+                                email: 'always',
+                                phone: 'always',
+                                address: {
+                                    line1: 'always',
+                                    city: 'always',
+                                    postalCode: 'always',
+                                    country: 'always'
+                                }
+                            }
+                        }
+                    });
+
                     paymentElement.mount('#payment-element');
                 } else if (data.error) {
                     showNotification('Errore Stripe: ' + data.error.message, 'error');
