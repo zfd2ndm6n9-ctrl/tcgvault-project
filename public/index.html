@@ -805,7 +805,6 @@
             const savedProfile = localStorage.getItem(profileKey);
             
             if (!savedProfile) {
-                // Se è loggato ma non ha ancora fatto il wizard, glielo apriamo
                 document.getElementById('onboarding-wizard-modal').style.display = 'flex';
                 nextWizardStep(1);
             }
@@ -822,7 +821,7 @@
             const address = document.getElementById('wizard-address').value.trim();
 
             if (!name || !address) {
-                showNotification('Compella tutti i campi obbligatori.', 'error');
+                showNotification('Compila tutti i campi obbligatori.', 'error');
                 return;
             }
 
@@ -859,7 +858,6 @@
             updateNotificationBadge();
             initTheme();
             
-            // Se l'utente è loggato ma non ha completato il wizard, fagli partire i passaggi
             if (currentUser) {
                 checkPostLoginOnboarding();
             }
@@ -1231,6 +1229,7 @@
         }
 
         function renderCardsToContainer(cards, container) {
+            if (!container) return;
             if (cards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto trovato.</p>'; return; }
             container.innerHTML = cards.map(card => {
                 const isSaved = savedProductIds.includes(card.id);
