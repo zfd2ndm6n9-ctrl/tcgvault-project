@@ -266,6 +266,7 @@
                 <button class="icon-btn" onclick="openNotificationsModal()" title="Notifiche">
                     🔔 <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
                 </button>
+                <button class="btn-outline" onclick="openCartModal()">🛒 Carrello (<span id="cart-count">0</span>)</button>
                 <button class="btn-outline" onclick="openSavedModal()">❤️ Salvati (<span id="saved-count">0</span>)</button>
                 <div id="auth-actions">
                     <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
@@ -346,6 +347,27 @@
         <div id="product-list" class="card-grid"></div>
     </div>
 
+    <!-- MODALE CARRELLO -->
+    <div class="modal-overlay" id="cart-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🛒 Carrello TCG Vault</h2>
+                <button class="close-btn" onclick="closeCartModal()">&times;</button>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
+                Regola Cardmarket: Ordine minimo €5.00 da un singolo venditore. Non è possibile mischiare prodotti di venditori diversi.
+            </p>
+            <div id="cart-items-container" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                <p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>
+            </div>
+            <div style="border-top: 1px solid var(--border-color); padding-top: 15px; margin-bottom: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 1.1rem;">
+                <span>Totale:</span>
+                <span style="color: var(--accent-neon);">€ <span id="cart-total-price">0.00</span></span>
+            </div>
+            <button class="btn-submit" onclick="proceedCartCheckout()">Procedi al Pagamento Sicuro</button>
+        </div>
+    </div>
+
     <!-- MODALE NOTIFICHE -->
     <div class="modal-overlay" id="notifications-modal">
         <div class="modal-content">
@@ -383,6 +405,7 @@
             <div class="profile-nav">
                 <button class="profile-tab active" onclick="switchProfileTab('info', this)">Profilo</button>
                 <button class="profile-tab" onclick="switchProfileTab('my-listings', this)">Annunci</button>
+                <button class="profile-tab" onclick="switchProfileTab('my-orders', this)">📦 I Miei Ordini</button>
                 <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio & Prelievo</button>
                 <button class="profile-tab" onclick="switchProfileTab('reviews-tab', this)">Recensioni</button>
                 <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">Bot H24</button>
@@ -411,6 +434,13 @@
                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci, verifica lo stato o eliminali con un click.</p>
                 <div id="my-listings-container" class="card-grid">
                     <p style="color: var(--text-muted);">Caricamento annunci...</p>
+                </div>
+            </div>
+
+            <div id="tab-my-orders" class="tab-content" style="display: none;">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Storico dei tuoi ordini d'acquisto protetti da Escrow.</p>
+                <div id="my-orders-container" style="display: flex; flex-direction: column; gap: 12px;">
+                    <p style="color: var(--text-muted);">Nessun ordine effettuato.</p>
                 </div>
             </div>
 
@@ -491,8 +521,11 @@
                     <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
                     <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
                     
-                    <button class="btn-card-pay" onclick="openStripeCheckoutModal()">
-                        💳 Paga con Carta Reale (Stripe Escrow)
+                    <button class="btn-card-pay" onclick="addToCart(selectedCard)">
+                        🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">0.00</span>)
+                    </button>
+                    <button class="btn-card-pay" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
+                        💳 Paga Subito con Carta (Stripe Escrow)
                     </button>
                     <button class="btn-offer" onclick="makeOffer()">
                         🤝 Fai un'Offerta al Venditore
@@ -648,6 +681,7 @@
         let allCards = [];
         let savedProductIds = JSON.parse(localStorage.getItem('tcg_saved_products') || '[]');
         let notifications = JSON.parse(localStorage.getItem('tcg_notifications') || '[]');
+        let cart = JSON.parse(localStorage.getItem('tcg_cart') || '[]');
         let selectedCategory = '';
         let currentUser = null;
         let selectedCard = null;
@@ -724,6 +758,105 @@
             document.getElementById('notifications-modal').style.display = 'none';
         }
 
+        // --- GESTIONE CARRELLO & REGOLE CARDMARKET ---
+        function addToCart(card) {
+            if (!card) return;
+            if (card.is_sold) {
+                showNotification('Questo prodotto è già stato venduto!', 'error');
+                return;
+            }
+
+            // Controllo anti-mischia venditori
+            if (cart.length > 0) {
+                const currentSellerId = cart[0].user_id;
+                if (currentSellerId !== card.user_id) {
+                    showNotification('Regola Cardmarket: Non puoi aggiungere articoli di venditori diversi nello stesso carrello!', 'error');
+                    return;
+                }
+            }
+
+            // Evita duplicati nello stesso carrello
+            if (cart.some(item => String(item.id) === String(card.id))) {
+                showNotification('Il prodotto è già nel carrello.');
+                return;
+            }
+
+            cart.push(card);
+            localStorage.setItem('tcg_cart', JSON.stringify(cart));
+            updateCartCounter();
+            showNotification('Prodotto aggiunto al carrello! 🛒');
+            closeDetailModal();
+        }
+
+        function removeFromCart(cardId) {
+            cart = cart.filter(item => String(item.id) !== String(cardId));
+            localStorage.setItem('tcg_cart', JSON.stringify(cart));
+            updateCartCounter();
+            renderCartModal();
+            showNotification('Prodotto rimosso dal carrello.');
+        }
+
+        function updateCartCounter() {
+            document.getElementById('cart-count').innerText = cart.length;
+        }
+
+        function openCartModal() {
+            renderCartModal();
+            document.getElementById('cart-modal').style.display = 'flex';
+        }
+
+        function closeCartModal() {
+            document.getElementById('cart-modal').style.display = 'none';
+        }
+
+        function renderCartModal() {
+            const container = document.getElementById('cart-items-container');
+            const totalPriceEl = document.getElementById('cart-total-price');
+
+            if (cart.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>';
+                totalPriceEl.innerText = '0.00';
+                return;
+            }
+
+            let total = 0;
+            container.innerHTML = cart.map(item => {
+                total += Number(item.price);
+                return `
+                    <div style="display: flex; align-items: center; justify-content: background; background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; gap: 12px;">
+                        <img src="${item.image_url}" style="width: 50px; height: 50px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; font-size: 0.95rem;">${item.title}</div>
+                            <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.9rem;">€ ${Number(item.price).toFixed(2)}</div>
+                        </div>
+                        <button class="btn-delete-icon" onclick="removeFromCart('${item.id}')" style="margin: 0; padding: 4px 8px; font-size: 0.8rem;">✕</button>
+                    </div>
+                `;
+            }).join('');
+
+            totalPriceEl.innerText = total.toFixed(2);
+        }
+
+        function proceedCartCheckout() {
+            if (cart.length === 0) {
+                showNotification('Il carrello è vuoto.', 'error');
+                return;
+            }
+
+            let total = cart.reduce((acc, item) => acc + Number(item.price), 0);
+
+            // Regola ordine minimo 5 euro
+            if (total < 5.00) {
+                showNotification('Regola Cardmarket: L\'ordine minimo per singolo venditore deve essere di almeno € 5.00.', 'error');
+                return;
+            }
+
+            // Per il checkout usiamo il primo elemento o passiamo al checkout cumulativo
+            selectedCard = cart[0]; 
+            closeCartModal();
+            openStripeCheckoutModal();
+        }
+
         async function initAuth() {
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session && session.user) {
@@ -740,6 +873,7 @@
             }
             updateHeaderUI();
             updateSavedCounter();
+            updateCartCounter();
             updateNotificationBadge();
             initTheme();
         }
@@ -939,6 +1073,7 @@
             document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
             document.getElementById('payout-iban').value = currentUser.iban || '';
             loadUserReviews();
+            loadMyOrders();
             document.getElementById('profile-modal').style.display = 'flex';
         }
 
@@ -950,7 +1085,33 @@
             btn.classList.add('active');
             document.getElementById('tab-' + tabName).style.display = 'block';
             if (tabName === 'my-listings') loadMyListings();
+            if (tabName === 'my-orders') loadMyOrders();
             if (tabName === 'reviews-tab') loadUserReviews();
+        }
+
+        async function loadMyOrders() {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`${window.location.origin}/api/orders/${currentUser.id}`);
+                const orders = await res.json();
+                const container = document.getElementById('my-orders-container');
+                if (!orders || orders.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-muted);">Nessun ordine effettuato.</p>';
+                    return;
+                }
+                container.innerHTML = orders.map(o => `
+                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: gap; gap: 10px;">
+                        <div>
+                            <div style="font-weight: bold; color: var(--accent-neon); margin-bottom: 4px;">Ordine #${o.id || 'N/D'}</div>
+                            <div style="font-size: 0.9rem; margin-bottom: 2px;">Stato: <b>${o.status || 'Pagato / In Escrow'}</b></div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">Totale: € ${Number(o.amount || 0).toFixed(2)}</div>
+                        </div>
+                        <button class="btn-outline" onclick="openChatModal('${o.sellerId}', 'Gestione Ordine Escrow')">💬 Apri Chat Venditore</button>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Errore caricamento ordini:', err);
+            }
         }
 
         async function requestWalletPayout() {
@@ -1105,6 +1266,7 @@
             document.getElementById('detail-location-view').innerText = '📍 Località: ' + (selectedCard.location || 'Spedizione');
             document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
+            document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-modal').style.display = 'flex';
         }
 
@@ -1242,6 +1404,7 @@
             document.getElementById('chatTitle').innerText = titleText || 'Chat';
             document.getElementById('chatModal').style.display = 'flex';
             closeMyMessagesModal();
+            closeProfileModal();
             loadChatMessages();
         }
 
