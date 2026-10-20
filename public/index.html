@@ -6,8 +6,6 @@
     <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Google Maps API Script con la tua chiave -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC0Jo7ie7Gn2wRkq8QteecuoxNzZ61PI_A&libraries=geometry,places" async defer></script>
     <style>
         :root {
             --bg-color: #090d16;
@@ -255,67 +253,38 @@
         .btn-submit:hover { opacity: 0.9; }
 
         #chatModal { display: none; position: fixed; bottom: 20px; right: 20px; width: 380px; height: 520px; background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); z-index: 1050; flex-direction: column; overflow: hidden; }
-        
-        /* Mappa stili */
-        #map-container { width: 100%; height: 320px; border-radius: 10px; margin-bottom: 15px; border: 1px solid var(--border-color); }
     </style>
 </head>
 <body>
     <div id="toast-container"></div>
 
-    <!-- MODALE ONBOARDING INIZIALE (BENVENUTO) -->
+    <!-- MODALE DI BENVENUTO E REGISTRAZIONE INDIRIZZO (ONBOARDING GGWORLD) -->
     <div class="modal-overlay" id="onboarding-modal" style="display: none; z-index: 2000;">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>👋 Benvenuto su TCG Vault!</h2>
+                <h2>👋 Benvenuto su GGWorld / TCG Vault</h2>
             </div>
             <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px;">
-                Rispondi a queste brevi domande per configurare al meglio la tua esperienza sul marketplace ufficiale.
+                Inserisci i tuoi dati per configurare il tuo profilo e indicare la tua posizione per gli scambi e gli acquisti.
             </p>
             <form onsubmit="handleOnboardingSubmit(event)">
                 <div class="form-group">
                     <label>Nome e Cognome / Nickname *</label>
-                    <input type="text" id="onboard-name" placeholder="Es. Marco Rossi" required>
+                    <input type="text" id="onboard-name" placeholder="Es. Mario Rossi" required>
                 </div>
                 <div class="form-group">
                     <label>Tipologia Utente *</label>
                     <select id="onboard-usertype" required>
-                        <option value="Privato">Privato / Hobbista</option>
-                        <option value="Azienda">Azienda / Negozio TCG</option>
+                        <option value="Privato">Privato</option>
+                        <option value="Negozio / Azienda">Negozio / Azienda</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Cosa ti interessa fare principalmente? *</label>
-                    <select id="onboard-goal" required>
-                        <option value="Comprare">Voglio Comprare Carte e Collezionare</option>
-                        <option value="Vendere">Voglio Vendere i miei TCG</option>
-                        <option value="Entrambi">Entrambi (Compro e Vendo)</option>
-                    </select>
+                    <label>Indirizzo di Casa o del Negozio *</label>
+                    <input type="text" id="onboard-address" placeholder="Es. Via Roma 10, Milano" required>
                 </div>
-                <button type="submit" class="btn-submit">Salva e Inizia a Esplorare 🚀</button>
+                <button type="submit" class="btn-submit">Salva e Entra nel Marketplace 🚀</button>
             </form>
-        </div>
-    </div>
-
-    <!-- MODALE MAPPA GOOGLE MAPS (RAGGIO & PIN) -->
-    <div class="modal-overlay" id="map-modal">
-        <div class="modal-content modal-content-large">
-            <div class="modal-header">
-                <h2 id="map-modal-title">📍 Seleziona Posizione & Raggio di Ricerca</h2>
-                <button class="close-btn" onclick="closeMapModal()">&times;</button>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                Trascina il pin sulla mappa o regola il cerchio chilometrico per definire l'area di scambio.
-            </p>
-            <div class="form-group" style="margin-bottom: 12px;">
-                <label>Raggio di Ricerca / Scambio: <span id="radius-label" style="color: var(--accent-neon);">15</span> km</label>
-                <input type="range" id="radius-slider" min="1" max="100" value="15" oninput="updateMapRadius(this.value)" style="width: 100%; accent-color: var(--accent-neon);">
-            </div>
-            <div id="map-container"></div>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn-submit" onclick="confirmMapSelection()">Conferma Posizione</button>
-                <button class="btn-outline" onclick="resetMapFilter()" style="width: auto;">Annulla Filtro</button>
-            </div>
         </div>
     </div>
 
@@ -358,11 +327,8 @@
                 </div>
                 
                 <div class="filter-group">
-                    <label>📍 Località & Raggio Mappa</label>
-                    <button class="btn-outline" onclick="openMapSearchModal()" id="map-filter-btn" style="width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center;">
-                        <span id="map-filter-text">Tutta Italia (Tutti i km)</span>
-                        <span>🗺️</span>
-                    </button>
+                    <label>📍 Località (Città o Indirizzo)</label>
+                    <input type="text" id="location-input" class="filter-input" placeholder="Es. Milano, Roma..." oninput="applyFilters()">
                 </div>
 
                 <div class="filter-group">
@@ -483,6 +449,10 @@
                         <input type="text" id="profile-name" placeholder="Es. Marco TCG Collector">
                     </div>
                     <div class="form-group">
+                        <label>Indirizzo di Casa / Negozio</label>
+                        <input type="text" id="profile-address" placeholder="Es. Via Roma 10, Milano">
+                    </div>
+                    <div class="form-group">
                         <label>Numero di Cellulare *</label>
                         <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567" required>
                     </div>
@@ -550,8 +520,8 @@
                     <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente in stile Cardmarket per preservare la qualità della community.</div>
                 </div>
                 <div class="faq-item">
-                    <div class="faq-title">📍 3. Ricerca per Città e Zero Filtri KM</div>
-                    <div class="faq-text">TCG Vault elimina completamente i selettori di distanza chilometrica complessi. La ricerca è ottimizzata esclusivamente per città, permettendoti di trovare immediatamente collezionisti e negozi locali nella tua zona con cui concludere affari.</div>
+                    <div class="faq-title">📍 3. Ricerca per Città e Indirizzo</div>
+                    <div class="faq-text">TCG Vault permette di cercare inserzioni basandosi direttamente sull'indirizzo di casa o del negozio inserito dal venditore, facilitando gli scambi locali.</div>
                 </div>
                 <div class="faq-item">
                     <div class="faq-title">⚖️ 4. Condizioni delle Carte e Trasparenza</div>
@@ -709,13 +679,8 @@
                     <input type="number" step="0.01" id="sell-price" required>
                 </div>
                 <div class="form-group">
-                    <label>📍 Località & Posizione sulla Mappa *</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="text" id="sell-location" placeholder="Es. Milano o seleziona sulla mappa" required style="flex: 1;">
-                        <button type="button" class="btn-outline" onclick="openSellMapModal()" style="white-space: nowrap;">🗺️ Mappa</button>
-                    </div>
-                    <input type="hidden" id="sell-lat">
-                    <input type="hidden" id="sell-lng">
+                    <label>📍 Indirizzo / Località dell'Oggetto *</label>
+                    <input type="text" id="sell-location" placeholder="Es. Via Roma 10, Milano" required>
                 </div>
                 <div class="form-group">
                     <label>Condizione *</label>
@@ -757,14 +722,6 @@
         let elements = null;
         let clientSecret = null;
         let activeChatReceiverId = null;
-
-        // Variabili Google Maps & Filtro Raggio
-        let googleMap = null;
-        let searchMarker = null;
-        let searchCircle = null;
-        let activeFilterCenter = null; // { lat, lng }
-        let activeFilterRadiusKm = 15;
-        let mapInteractionMode = 'filter'; // 'filter' oppure 'sell'
 
         function isAdmin() {
             return currentUser && currentUser.email.toLowerCase() === 'francesco_delduca@icloud.com';
@@ -835,9 +792,9 @@
             document.getElementById('notifications-modal').style.display = 'none';
         }
 
-        // --- ONBOARDING INIZIALE (PRIMA VISITA) ---
+        // --- ONBOARDING INIZIALE (GGWORLD / TCG VAULT) ---
         function checkOnboarding() {
-            const onboarded = localStorage.getItem('tcg_vault_onboarded');
+            const onboarded = localStorage.getItem('ggworld_onboarded');
             if (!onboarded) {
                 document.getElementById('onboarding-modal').style.display = 'flex';
             }
@@ -847,127 +804,20 @@
             e.preventDefault();
             const name = document.getElementById('onboard-name').value.trim();
             const usertype = document.getElementById('onboard-usertype').value;
-            const goal = document.getElementById('onboard-goal').value;
+            const address = document.getElementById('onboard-address').value.trim();
 
-            const profileData = { name, usertype, goal };
-            localStorage.setItem('tcg_vault_profile_setup', JSON.stringify(profileData));
-            localStorage.setItem('tcg_vault_onboarded', 'true');
+            const profileData = { name, usertype, address };
+            localStorage.setItem('ggworld_user_profile', JSON.stringify(profileData));
+            localStorage.setItem('ggworld_onboarded', 'true');
 
             document.getElementById('onboarding-modal').style.display = 'none';
-            showNotification(`Benvenuto ${name}! Profilo configurato con successo.`);
-        }
-
-        // --- GOOGLE MAPS & RAGGIO CHILOMETRICO (STILE MARKETPLACE) ---
-        function openMapSearchModal() {
-            mapInteractionMode = 'filter';
-            document.getElementById('map-modal-title').innerText = '📍 Seleziona Zona e Raggio di Ricerca';
-            document.getElementById('map-modal').style.display = 'flex';
-            setTimeout(initGoogleMapInstance, 200);
-        }
-
-        function openSellMapModal() {
-            mapInteractionMode = 'sell';
-            document.getElementById('map-modal-title').innerText = '📍 Imposta Posizione del tuo Annuncio';
-            document.getElementById('map-modal').style.display = 'flex';
-            setTimeout(initGoogleMapInstance, 200);
-        }
-
-        function closeMapModal() {
-            document.getElementById('map-modal').style.display = 'none';
-        }
-
-        function initGoogleMapInstance() {
-            const defaultCenter = { lat: 45.4642, lng: 9.1900 }; // Milano di default
-            const center = activeFilterCenter || defaultCenter;
-
-            const mapOptions = {
-                center: center,
-                zoom: 11,
-                styles: [
-                    { elementType: "geometry", stylers: [{ color: "#1d2c4d" }] },
-                    { elementType: "labels.text.fill", stylers: [{ color: "#8ec3b9" }] },
-                    { elementType: "labels.text.stroke", stylers: [{ color: "#1a3646" }] },
-                    { featureType: "road", elementType: "geometry", stylers: [{ color: "#304a7d" }] },
-                    { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1626" }] }
-                ]
-            };
-
-            const mapElement = document.getElementById('map-container');
-            googleMap = new google.maps.Map(mapElement, mapOptions);
-
-            searchMarker = new google.maps.Marker({
-                position: center,
-                map: googleMap,
-                draggable: true,
-                title: "Trascina per impostare la posizione"
-            });
-
-            searchCircle = new google.maps.Circle({
-                strokeColor: '#00ff88',
-                strokeOpacity: 0.8,
-                strokeWeight: 2,
-                fillColor: '#00ff88',
-                fillOpacity: 0.15,
-                map: googleMap,
-                center: center,
-                radius: activeFilterRadiusKm * 1000 // in metri
-            });
-
-            // Aggiorna cerchio quando si sposta il pin
-            searchMarker.addListener('drag', (event) => {
-                const pos = event.latLng;
-                searchCircle.setCenter(pos);
-            });
-        }
-
-        function updateMapRadius(val) {
-            activeFilterRadiusKm = parseInt(val);
-            document.getElementById('radius-label').innerText = activeFilterRadiusKm;
-            if (searchCircle) {
-                searchCircle.setRadius(activeFilterRadiusKm * 1000);
+            showNotification(`Benvenuto ${name}! Indirizzo registrato con successo.`);
+            
+            // Pre-compila l'indirizzo nel form di vendita se disponibile
+            const sellLoc = document.getElementById('sell-location');
+            if (sellLoc && address) {
+                sellLoc.value = address;
             }
-        }
-
-        function confirmMapSelection() {
-            const pos = searchMarker.getPosition();
-            const lat = pos.lat();
-            const lng = pos.lng();
-
-            if (mapInteractionMode === 'filter') {
-                activeFilterCenter = { lat, lng };
-                document.getElementById('map-filter-text').innerText = `Raggio: ${activeFilterRadiusKm} km (${lat.toFixed(2)}, ${lng.toFixed(2)})`;
-                closeMapModal();
-                applyFilters();
-                showNotification('Filtro per raggio geografico applicato!');
-            } else {
-                // Modalità vendita
-                document.getElementById('sell-lat').value = lat;
-                document.getElementById('sell-lng').value = lng;
-                document.getElementById('sell-location').value = `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
-                closeMapModal();
-                showNotification('Posizione dell\'annuncio impostata!');
-            }
-        }
-
-        function resetMapFilter() {
-            activeFilterCenter = null;
-            document.getElementById('map-filter-text').innerText = 'Tutta Italia (Tutti i km)';
-            closeMapModal();
-            applyFilters();
-            showNotification('Filtro mappa rimosso.');
-        }
-
-        // Calcolo distanza geometrica (formula di Haversine in km)
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371; // Raggio della terra in km
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = 
-                Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
         }
 
         // --- GESTIONE CARRELLO & REGOLE CARDMARKET ---
@@ -1197,9 +1047,6 @@
 
             const imageUrl = publicUrlData.publicUrl;
 
-            const latVal = document.getElementById('sell-lat').value;
-            const lngVal = document.getElementById('sell-lng').value;
-
             const newCard = {
                 user_id: currentUser.id,
                 category: document.getElementById('sell-category').value,
@@ -1207,8 +1054,6 @@
                 title: document.getElementById('sell-title').value,
                 price: parseFloat(document.getElementById('sell-price').value),
                 location: document.getElementById('sell-location').value,
-                latitude: latVal ? parseFloat(latVal) : null,
-                longitude: lngVal ? parseFloat(lngVal) : null,
                 condition: document.getElementById('sell-condition').value,
                 image_url: imageUrl,
                 description: document.getElementById('sell-description').value,
@@ -1284,6 +1129,10 @@
             document.getElementById('profile-email').value = currentUser.email;
             document.getElementById('profile-name').value = currentUser.name || '';
             document.getElementById('profile-phone').value = currentUser.phone || '';
+            
+            const savedProfile = JSON.parse(localStorage.getItem('ggworld_user_profile') || '{}');
+            document.getElementById('profile-address').value = savedProfile.address || '';
+
             document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
             document.getElementById('payout-iban').value = currentUser.iban || '';
             loadUserReviews();
@@ -1354,6 +1203,12 @@
             e.preventDefault();
             currentUser.name = document.getElementById('profile-name').value;
             currentUser.phone = document.getElementById('profile-phone').value;
+            
+            const newAddress = document.getElementById('profile-address').value;
+            let savedProfile = JSON.parse(localStorage.getItem('ggworld_user_profile') || '{}');
+            savedProfile.address = newAddress;
+            localStorage.setItem('ggworld_user_profile', JSON.stringify(savedProfile));
+
             showNotification('Profilo aggiornato!');
             updateHeaderUI();
         }
@@ -1413,6 +1268,7 @@
                         <span class="card-category">${card.category} • ${card.type}</span>
                         <h3 class="card-title">${card.title}</h3>
                         <div class="price">€ ${Number(card.price).toFixed(2)}</div>
+                        <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
                         <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
                         <button class="btn-delete-icon" onclick="deleteCard('${card.id}')">🗑️ Elimina</button>
                     </div>
@@ -1422,6 +1278,7 @@
 
         function applyFilters() {
             const searchQuery = document.getElementById('search-input').value.toLowerCase();
+            const locationQuery = document.getElementById('location-input').value.toLowerCase();
             const selectedType = document.getElementById('type-filter').value;
             const statusFilter = document.getElementById('status-filter').value;
             const maxPriceInput = document.getElementById('price-clean-input').value;
@@ -1430,6 +1287,7 @@
 
             let filtered = allCards.filter(card => {
                 const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
+                const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
                 const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
                 const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
                 const matchesPrice = (Number(card.price) || 0) <= maxPrice;
@@ -1438,19 +1296,7 @@
                 if (statusFilter === 'available') matchesStatus = !card.is_sold;
                 if (statusFilter === 'sold') matchesStatus = card.is_sold;
 
-                // Filtro geografico per raggio Mappa
-                let matchesMapRadius = true;
-                if (activeFilterCenter && card.latitude && card.longitude) {
-                    const dist = calculateDistance(activeFilterCenter.lat, activeFilterCenter.lng, card.latitude, card.longitude);
-                    if (dist > activeFilterRadiusKm) {
-                        matchesMapRadius = false;
-                    }
-                } else if (activeFilterCenter && (!card.latitude || !card.longitude)) {
-                    // Se l'utente ha impostato il filtro mappa ma la carta non ha coordinate salvate, la escludiamo
-                    matchesMapRadius = false;
-                }
-
-                return matchesSearch && matchesCategory && matchesType && matchesPrice && matchesStatus && matchesMapRadius;
+                return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
             });
 
             if (sortBy === 'price-asc') filtered.sort((a, b) => Number(a.price) - Number(b.price));
@@ -1472,7 +1318,7 @@
                             <span class="card-category">${card.category} • ${card.type}</span>
                             <h3 class="card-title">${card.title}</h3>
                             <div class="price">€ ${Number(card.price).toFixed(2)}</div>
-                            <div class="card-location">📍 Località: ${card.location || 'Spedizione'}</div>
+                            <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
                             <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
                         </div>
                     </div>
@@ -1487,7 +1333,7 @@
             document.getElementById('detail-name').innerText = selectedCard.title;
             document.getElementById('detail-category').innerText = (selectedCard.category || 'TCG') + ' • ' + (selectedCard.type || 'Articolo');
             document.getElementById('detail-condition').innerText = 'Condizione: ' + (selectedCard.condition || 'N/D');
-            document.getElementById('detail-location-view').innerText = '📍 Località: ' + (selectedCard.location || 'Spedizione');
+            document.getElementById('detail-location-view').innerText = '📍 Indirizzo: ' + (selectedCard.location || 'Non specificato');
             document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
@@ -1715,7 +1561,18 @@
             .catch(() => showNotification('Errore di comunicazione.', 'error'));
         }
 
-        function checkAuthAndOpenSellModal() { if(!currentUser){ openAuthModal(); return; } document.getElementById('sell-modal').style.display='flex'; }
+        function checkAuthAndOpenSellModal() { 
+            if(!currentUser){ openAuthModal(); return; } 
+            
+            // Pre-compila con l'indirizzo salvato nell'onboarding se presente
+            const savedProfile = JSON.parse(localStorage.getItem('ggworld_user_profile') || '{}');
+            if (savedProfile.address) {
+                document.getElementById('sell-location').value = savedProfile.address;
+            }
+
+            document.getElementById('sell-modal').style.display='flex'; 
+        }
+
         function closeSellModal() { document.getElementById('sell-modal').style.display='none'; }
         function openAuthModal() { document.getElementById('auth-modal').style.display='flex'; }
         function closeAuthModal() { document.getElementById('auth-modal').style.display='none'; }
