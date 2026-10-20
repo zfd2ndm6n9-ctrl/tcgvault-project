@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
+    <title>GGWorld / TCG Vault - Marketplace Ufficiale</title>
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -258,33 +258,51 @@
 <body>
     <div id="toast-container"></div>
 
-    <!-- MODALE DI BENVENUTO E REGISTRAZIONE INDIRIZZO (ONBOARDING GGWORLD) -->
-    <div class="modal-overlay" id="onboarding-modal" style="display: none; z-index: 2000;">
+    <!-- MODALE STEP-BY-STEP DI ONBOARDING (DOPO LOGIN) -->
+    <div class="modal-overlay" id="onboarding-wizard-modal" style="display: none; z-index: 2500;">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>👋 Benvenuto su GGWorld / TCG Vault</h2>
+                <h2 id="wizard-title">👋 Completa il tuo Profilo GGWorld</h2>
             </div>
-            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px;">
-                Inserisci i tuoi dati per configurare il tuo profilo e indicare la tua posizione per gli scambi e gli acquisti.
-            </p>
-            <form onsubmit="handleOnboardingSubmit(event)">
+            
+            <!-- STEP 1: NOME E COGNOME -->
+            <div id="wizard-step-1" class="wizard-step">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Come ti chiami o qual è il nome del tuo negozio?</p>
                 <div class="form-group">
                     <label>Nome e Cognome / Nickname *</label>
-                    <input type="text" id="onboard-name" placeholder="Es. Mario Rossi" required>
+                    <input type="text" id="wizard-name" placeholder="Es. Marco Rossi o TCG Store Milano">
                 </div>
+                <button type="button" class="btn-submit" onclick="nextWizardStep(2)">Continua ➡️</button>
+            </div>
+
+            <!-- STEP 2: PRIVATO O NEGOZIO -->
+            <div id="wizard-step-2" class="wizard-step" style="display: none;">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Seleziona la tua tipologia di utente:</p>
                 <div class="form-group">
                     <label>Tipologia Utente *</label>
-                    <select id="onboard-usertype" required>
-                        <option value="Privato">Privato</option>
-                        <option value="Negozio / Azienda">Negozio / Azienda</option>
+                    <select id="wizard-usertype">
+                        <option value="Privato">Privato / Hobbista</option>
+                        <option value="Negozio / Azienda">Negozio / Attività Commerciale</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Indirizzo di Casa o del Negozio *</label>
-                    <input type="text" id="onboard-address" placeholder="Es. Via Roma 10, Milano" required>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-outline" onclick="nextWizardStep(1)">⬅️ Indietro</button>
+                    <button type="button" class="btn-submit" onclick="nextWizardStep(3)" style="flex: 1;">Continua ➡️</button>
                 </div>
-                <button type="submit" class="btn-submit">Salva e Entra nel Marketplace 🚀</button>
-            </form>
+            </div>
+
+            <!-- STEP 3: INDIRIZZO -->
+            <div id="wizard-step-3" class="wizard-step" style="display: none;">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Inserisci il tuo indirizzo (via e città) per gli scambi e le spedizioni:</p>
+                <div class="form-group">
+                    <label>Indirizzo Completo *</label>
+                    <input type="text" id="wizard-address" placeholder="Es. Via Dante 15, Milano">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-outline" onclick="nextWizardStep(2)">⬅️ Indietro</button>
+                    <button type="button" class="btn-submit" onclick="finishWizardOnboarding()" style="flex: 1;">Salva e Inizia a Usare il Sito 🚀</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -428,7 +446,7 @@
     <div class="modal-overlay" id="profile-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
-                <h2>👤 Il Mio Profilo & Portafoglio TCG Vault</h2>
+                <h2>👤 Il Mio Profilo & Portafoglio GGWorld</h2>
                 <button class="close-btn" onclick="closeProfileModal()">&times;</button>
             </div>
             
@@ -445,19 +463,19 @@
             <div id="tab-info" class="tab-content">
                 <form onsubmit="saveProfileDetails(event)">
                     <div class="form-group">
-                        <label>Nome Completo / Nickname</label>
+                        <label>Nome / Nickname</label>
                         <input type="text" id="profile-name" placeholder="Es. Marco TCG Collector">
                     </div>
                     <div class="form-group">
-                        <label>Indirizzo di Casa / Negozio</label>
+                        <label>Indirizzo</label>
                         <input type="text" id="profile-address" placeholder="Es. Via Roma 10, Milano">
                     </div>
                     <div class="form-group">
-                        <label>Numero di Cellulare *</label>
-                        <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567" required>
+                        <label>Numero di Cellulare (Facoltativo)</label>
+                        <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567">
                     </div>
                     <div class="form-group">
-                        <label>Email (Autenticata Supabase)</label>
+                        <label>Email (Autenticata)</label>
                         <input type="email" id="profile-email" disabled style="opacity: 0.6;">
                     </div>
                     <button type="submit" class="btn-submit">Salva Modifiche Profilo</button>
@@ -500,9 +518,9 @@
             </div>
 
             <div id="tab-bot-support" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale TCG Vault (Copertura 99% H24).</p>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale GGWorld (Copertura 99% H24).</p>
                 <div class="bot-chat-box" id="botChatContainer">
-                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di TCG Vault. Come posso aiutarti oggi con le spedizioni o i pagamenti protetti?</div>
+                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di GGWorld. Come posso aiutarti oggi?</div>
                 </div>
                 <div style="display: flex; gap: 8px;">
                     <input type="text" id="botInput" placeholder="Chiedi qualcosa al bot..." style="flex: 1; padding: 10px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendBotMessage()">
@@ -513,23 +531,11 @@
             <div id="tab-tos-faq" class="tab-content" style="display: none;">
                 <div class="faq-item">
                     <div class="faq-title">🛡️ 1. Protezione Escrow e Sicurezza dei Pagamenti Stripe</div>
-                    <div class="faq-text">Ogni transazione effettuata su TCG Vault è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto centrale della piattaforma e rilasciati automaticamente sul wallet del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
+                    <div class="faq-text">Ogni transazione effettuata è protetta dal sistema Escrow integrato con Stripe Payments.</div>
                 </div>
                 <div class="faq-item">
-                    <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
-                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente in stile Cardmarket per preservare la qualità della community.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">📍 3. Ricerca per Città e Indirizzo</div>
-                    <div class="faq-text">TCG Vault permette di cercare inserzioni basandosi direttamente sull'indirizzo di casa o del negozio inserito dal venditore, facilitando gli scambi locali.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">⚖️ 4. Condizioni delle Carte e Trasparenza</div>
-                    <div class="faq-text">I venditori sono tenuti a classificare accuratamente lo stato delle carte (Nuovo Sigillato, Quasi Nuovo, Eccellente, Buono, Usato). In caso di contestazioni documentate, l'Escrow blocca il payout e il supporto interviene per tutelare l'acquirente.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">📦 5. Corrieri Autorizzati e Regole di Spedizione</div>
-                    <div class="faq-text">I corrieri ufficialmente autorizzati su TCG Vault sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
+                    <div class="faq-title">📍 2. Indirizzi Verificati e Scambi Locali</div>
+                    <div class="faq-text">Ogni utente e negoziante indica la propria via e città per facilitare gli scambi a mano o le spedizioni tracciate.</div>
                 </div>
             </div>
         </div>
@@ -550,7 +556,7 @@
                     <span id="detail-category" class="card-category"></span>
                     <h2 id="detail-name" style="margin: 6px 0 10px 0; color: var(--text-main); font-size: 1.5rem; font-weight: 800;"></h2>
                     <div id="detail-condition" style="font-size:0.88rem; color:var(--accent-neon); margin-bottom:6px; font-weight: 600;"></div>
-                    <div id="detail-location-view" style="font-size:0.88rem; color:var(--text-muted); margin-bottom:10px; font-weight: 500;">📍 Località: </div>
+                    <div id="detail-location-view" style="font-size:0.88rem; color:var(--text-muted); margin-bottom:10px; font-weight: 500;">📍 Indirizzo: </div>
                     <div id="detail-status" class="status-badge status-available" style="margin-bottom: 10px;">DISPONIBILE</div>
                     <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
                     <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
@@ -603,7 +609,7 @@
         </div>
     </div>
 
-    <!-- MODALE CHAT FLOTTANTE CON GUIDA ESCROW -->
+    <!-- MODALE CHAT FLOTTANTE -->
     <div id="chatModal">
         <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
             <strong style="color: var(--accent-neon);" id="chatTitle">Chat & Gestione Escrow</strong>
@@ -616,15 +622,15 @@
         </div>
     </div>
 
-    <!-- MODALE AUTH SUPABASE -->
+    <!-- MODALE AUTH SUPABASE (LOGIN / REGISTRAZIONE PRIMA) -->
     <div class="modal-overlay" id="auth-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="auth-modal-title">Accedi o Registrati (Supabase)</h2>
+                <h2 id="auth-modal-title">Accedi o Registrati (GGWorld)</h2>
                 <button class="close-btn" onclick="closeAuthModal()">&times;</button>
             </div>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
-                Inserisci la tua email e la tua password. Se sei nuovo, ti invieremo un link di conferma via email!
+                Inserisci la tua email e password. Una volta effettuato l'accesso, configureremo il tuo indirizzo!
             </p>
             <form id="auth-form" onsubmit="handleSupabaseAuth(event)">
                 <div class="form-group">
@@ -728,7 +734,7 @@
         }
 
         function initTheme() {
-            const savedTheme = localStorage.getItem('tcg_vault_theme') || 'dark';
+            const savedTheme = localStorage.getItem('ggworld_theme') || 'dark';
             if (savedTheme === 'light') {
                 document.body.classList.add('light-theme');
                 document.getElementById('theme-toggle-btn').innerText = '☀️';
@@ -743,10 +749,10 @@
             const btn = document.getElementById('theme-toggle-btn');
             if (isLight) {
                 btn.innerText = '☀️';
-                localStorage.setItem('tcg_vault_theme', 'light');
+                localStorage.setItem('ggworld_theme', 'light');
             } else {
                 btn.innerText = '🌙';
-                localStorage.setItem('tcg_vault_theme', 'dark');
+                localStorage.setItem('ggworld_theme', 'dark');
             }
         }
 
@@ -792,136 +798,54 @@
             document.getElementById('notifications-modal').style.display = 'none';
         }
 
-        // --- ONBOARDING INIZIALE (GGWORLD / TCG VAULT) ---
-        function checkOnboarding() {
-            const onboarded = localStorage.getItem('ggworld_onboarded');
-            if (!onboarded) {
-                document.getElementById('onboarding-modal').style.display = 'flex';
-            }
-        }
-
-        function handleOnboardingSubmit(e) {
-            e.preventDefault();
-            const name = document.getElementById('onboard-name').value.trim();
-            const usertype = document.getElementById('onboard-usertype').value;
-            const address = document.getElementById('onboard-address').value.trim();
-
-            const profileData = { name, usertype, address };
-            localStorage.setItem('ggworld_user_profile', JSON.stringify(profileData));
-            localStorage.setItem('ggworld_onboarded', 'true');
-
-            document.getElementById('onboarding-modal').style.display = 'none';
-            showNotification(`Benvenuto ${name}! Indirizzo registrato con successo.`);
+        // --- FLUSSO WIZARD ONBOARDING POST-LOGIN ---
+        function checkPostLoginOnboarding() {
+            if (!currentUser) return;
+            const profileKey = `ggworld_profile_${currentUser.id}`;
+            const savedProfile = localStorage.getItem(profileKey);
             
-            // Pre-compila l'indirizzo nel form di vendita se disponibile
-            const sellLoc = document.getElementById('sell-location');
-            if (sellLoc && address) {
-                sellLoc.value = address;
+            if (!savedProfile) {
+                // Se è loggato ma non ha ancora fatto il wizard, glielo apriamo
+                document.getElementById('onboarding-wizard-modal').style.display = 'flex';
+                nextWizardStep(1);
             }
         }
 
-        // --- GESTIONE CARRELLO & REGOLE CARDMARKET ---
-        function addToCart(card) {
-            if (!card) return;
-            if (card.is_sold) {
-                showNotification('Questo prodotto è già stato venduto!', 'error');
+        function nextWizardStep(stepNum) {
+            document.querySelectorAll('.wizard-step').forEach(s => s.style.display = 'none');
+            document.getElementById(`wizard-step-${stepNum}`).style.display = 'block';
+        }
+
+        function finishWizardOnboarding() {
+            const name = document.getElementById('wizard-name').value.trim();
+            const usertype = document.getElementById('wizard-usertype').value;
+            const address = document.getElementById('wizard-address').value.trim();
+
+            if (!name || !address) {
+                showNotification('Compella tutti i campi obbligatori.', 'error');
                 return;
             }
 
-            if (cart.length > 0) {
-                const currentSellerId = cart[0].user_id;
-                if (currentSellerId !== card.user_id) {
-                    showNotification('Regola Cardmarket: Non puoi aggiungere articoli di venditori diversi nello stesso carrello!', 'error');
-                    return;
-                }
-            }
+            const profileData = { name, usertype, address, email: currentUser.email };
+            localStorage.setItem(`ggworld_profile_${currentUser.id}`, JSON.stringify(profileData));
 
-            if (cart.some(item => String(item.id) === String(card.id))) {
-                showNotification('Il prodotto è già nel carrello.');
-                return;
-            }
+            currentUser.name = name;
+            currentUser.address = address;
 
-            cart.push(card);
-            localStorage.setItem('tcg_cart', JSON.stringify(cart));
-            updateCartCounter();
-            showNotification('Prodotto aggiunto al carrello! 🛒');
-            closeDetailModal();
-        }
-
-        function removeFromCart(cardId) {
-            cart = cart.filter(item => String(item.id) !== String(cardId));
-            localStorage.setItem('tcg_cart', JSON.stringify(cart));
-            updateCartCounter();
-            renderCartModal();
-            showNotification('Prodotto rimosso dal carrello.');
-        }
-
-        function updateCartCounter() {
-            document.getElementById('cart-count').innerText = cart.length;
-        }
-
-        function openCartModal() {
-            renderCartModal();
-            document.getElementById('cart-modal').style.display = 'flex';
-        }
-
-        function closeCartModal() {
-            document.getElementById('cart-modal').style.display = 'none';
-        }
-
-        function renderCartModal() {
-            const container = document.getElementById('cart-items-container');
-            const totalPriceEl = document.getElementById('cart-total-price');
-
-            if (cart.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>';
-                totalPriceEl.innerText = '0.00';
-                return;
-            }
-
-            let total = 0;
-            container.innerHTML = cart.map(item => {
-                total += Number(item.price);
-                return `
-                    <div style="display: flex; align-items: center; justify-content: background; background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; gap: 12px;">
-                        <img src="${item.image_url}" style="width: 50px; height: 50px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px;">
-                        <div style="flex: 1;">
-                            <div style="font-weight: bold; font-size: 0.95rem;">${item.title}</div>
-                            <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.9rem;">€ ${Number(item.price).toFixed(2)}</div>
-                        </div>
-                        <button class="btn-delete-icon" onclick="removeFromCart('${item.id}')" style="margin: 0; padding: 4px 8px; font-size: 0.8rem;">✕</button>
-                    </div>
-                `;
-            }).join('');
-
-            totalPriceEl.innerText = total.toFixed(2);
-        }
-
-        function proceedCartCheckout() {
-            if (cart.length === 0) {
-                showNotification('Il carrello è vuoto.', 'error');
-                return;
-            }
-
-            let total = cart.reduce((acc, item) => acc + Number(item.price), 0);
-
-            if (total < 5.00) {
-                showNotification('Regola Cardmarket: L\'ordine minimo per singolo venditore deve essere di almeno € 5.00.', 'error');
-                return;
-            }
-
-            selectedCard = cart[0]; 
-            closeCartModal();
-            openStripeCheckoutModal();
+            document.getElementById('onboarding-wizard-modal').style.display = 'none';
+            showNotification('Profilo configurato con successo! Benvenuto in GGWorld.');
+            updateHeaderUI();
         }
 
         async function initAuth() {
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session && session.user) {
+                const savedProfile = JSON.parse(localStorage.getItem(`ggworld_profile_${session.user.id}`) || '{}');
                 currentUser = {
                     id: session.user.id,
                     email: session.user.email,
-                    name: session.user.email.toLowerCase() === 'francesco_delduca@icloud.com' ? 'Francesco Del Duca (Admin)' : session.user.email.split('@')[0],
+                    name: savedProfile.name || (session.user.email.toLowerCase() === 'francesco_delduca@icloud.com' ? 'Francesco Del Duca (Admin)' : session.user.email.split('@')[0]),
+                    address: savedProfile.address || '',
                     phone: session.user.user_metadata?.phone || '',
                     wallet: 0.00,
                     iban: ''
@@ -934,14 +858,18 @@
             updateCartCounter();
             updateNotificationBadge();
             initTheme();
-            checkOnboarding();
+            
+            // Se l'utente è loggato ma non ha completato il wizard, fagli partire i passaggi
+            if (currentUser) {
+                checkPostLoginOnboarding();
+            }
         }
 
         function updateHeaderUI() {
             const authContainer = document.getElementById('auth-actions');
             if (currentUser) {
                 const badgeClass = isAdmin() ? 'admin-badge' : 'user-badge';
-                const badgeText = isAdmin() ? '🛡️ Admin Supremo' : '👤 Il Mio Profilo';
+                const badgeText = isAdmin() ? '🛡️ Admin Supremo' : `👤 ${currentUser.name || 'Profilo'}`;
                 authContainer.innerHTML = `
                     <button class="btn-outline" onclick="openMyMessagesModal()">💬 Messaggi</button>
                     <span class="${badgeClass}" onclick="openProfileModal()">${badgeText}</span>
@@ -959,7 +887,7 @@
             const email = document.getElementById('auth-email').value.trim();
             const password = document.getElementById('auth-password').value;
             const msgEl = document.getElementById('auth-message');
-            msgEl.innerText = "Elaborazione in corso...";
+            msgEl.innerText = "Autenticazione in corso...";
 
             let { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
 
@@ -970,16 +898,16 @@
                     msgEl.innerText = signUpRes.error.message;
                 } else {
                     msgEl.style.color = 'var(--accent-neon)';
-                    msgEl.innerText = "✉️ Registrazione avvenuta! Controlla la tua email per confermare l'account prima di accedere.";
+                    msgEl.innerText = "✉️ Registrazione avvenuta! Controlla la tua email per confermare l'account.";
                 }
             } else {
                 msgEl.style.color = 'var(--accent-neon)';
-                msgEl.innerText = "Accesso effettuato con successo!";
+                msgEl.innerText = "Accesso effettuato!";
                 setTimeout(() => {
                     closeAuthModal();
                     initAuth();
-                    showNotification('Benvenuto su TCG Vault!');
-                }, 1000);
+                    showNotification('Accesso eseguito con successo!');
+                }, 800);
             }
         }
 
@@ -1128,11 +1056,8 @@
             if (!currentUser) { openAuthModal(); return; }
             document.getElementById('profile-email').value = currentUser.email;
             document.getElementById('profile-name').value = currentUser.name || '';
+            document.getElementById('profile-address').value = currentUser.address || '';
             document.getElementById('profile-phone').value = currentUser.phone || '';
-            
-            const savedProfile = JSON.parse(localStorage.getItem('ggworld_user_profile') || '{}');
-            document.getElementById('profile-address').value = savedProfile.address || '';
-
             document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
             document.getElementById('payout-iban').value = currentUser.iban || '';
             loadUserReviews();
@@ -1202,12 +1127,11 @@
         function saveProfileDetails(e) {
             e.preventDefault();
             currentUser.name = document.getElementById('profile-name').value;
+            currentUser.address = document.getElementById('profile-address').value;
             currentUser.phone = document.getElementById('profile-phone').value;
             
-            const newAddress = document.getElementById('profile-address').value;
-            let savedProfile = JSON.parse(localStorage.getItem('ggworld_user_profile') || '{}');
-            savedProfile.address = newAddress;
-            localStorage.setItem('ggworld_user_profile', JSON.stringify(savedProfile));
+            const profileData = { name: currentUser.name, address: currentUser.address, email: currentUser.email };
+            localStorage.setItem(`ggworld_profile_${currentUser.id}`, JSON.stringify(profileData));
 
             showNotification('Profilo aggiornato!');
             updateHeaderUI();
@@ -1244,7 +1168,7 @@
             
             let reply = "Per questa specifica richiesta contatta support@tcgvault.com.";
             if (q.includes('ciao') || q.includes('salve')) {
-                reply = "🤖 Ciao! Sono l'assistente H24 di TCG Vault. Come posso aiutarti?";
+                reply = "🤖 Ciao! Sono l'assistente H24 di GGWorld. Come posso aiutarti?";
             } else if (q.includes('spediz') || q.includes('corriere')) {
                 reply = "📦 Spedizioni: I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
             } else if (q.includes('escrow') || q.includes('pagament')) {
@@ -1564,10 +1488,8 @@
         function checkAuthAndOpenSellModal() { 
             if(!currentUser){ openAuthModal(); return; } 
             
-            // Pre-compila con l'indirizzo salvato nell'onboarding se presente
-            const savedProfile = JSON.parse(localStorage.getItem('ggworld_user_profile') || '{}');
-            if (savedProfile.address) {
-                document.getElementById('sell-location').value = savedProfile.address;
+            if (currentUser.address) {
+                document.getElementById('sell-location').value = currentUser.address;
             }
 
             document.getElementById('sell-modal').style.display='flex'; 
