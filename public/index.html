@@ -126,14 +126,14 @@
         .user-badge {
             font-size: 0.85rem; color: var(--accent-neon); background: rgba(0, 255, 136, 0.08);
             padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(0, 255, 136, 0.2); 
-            cursor: pointer; font-weight: 600; max-width: 180px; white-space: nowrap; 
+            cursor: pointer; font-weight: 600; max-width: 150px; white-space: nowrap; 
             overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle;
         }
 
         .admin-badge {
             font-size: 0.85rem; color: var(--admin-gold); background: rgba(245, 158, 11, 0.1);
             padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(245, 158, 11, 0.3); 
-            cursor: pointer; font-weight: 700; max-width: 180px; white-space: nowrap; 
+            cursor: pointer; font-weight: 700; max-width: 150px; white-space: nowrap; 
             overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle;
         }
 
@@ -258,6 +258,78 @@
         .btn-submit:hover { opacity: 0.9; }
 
         #chatModal { display: none; position: fixed; bottom: 20px; right: 20px; width: 380px; height: 520px; background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); z-index: 1050; flex-direction: column; overflow: hidden; }
+
+        /* --- STILI RESPONSIVE DEDICATI ESCLUSIVAMENTE AL CELLULARE (LASCIANDO INALTERATO IL PC) --- */
+        @media screen and (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+            header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+                padding-bottom: 15px;
+                margin-bottom: 20px;
+            }
+            h1 {
+                font-size: 1.5rem;
+                text-align: center;
+            }
+            .header-actions {
+                justify-content: center;
+                gap: 8px;
+            }
+            .btn-outline, .btn-sell, .user-badge, .admin-badge {
+                font-size: 0.8rem;
+                padding: 7px 12px;
+            }
+            .user-badge, .admin-badge {
+                max-width: 130px;
+            }
+            .card-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+            .tcg-card {
+                border-radius: 12px;
+            }
+            .card-img {
+                height: 140px;
+                padding: 6px;
+            }
+            .card-body {
+                padding: 10px;
+            }
+            .card-title {
+                font-size: 0.9rem;
+            }
+            .price {
+                font-size: 1.1rem;
+            }
+            .modal-content {
+                width: 95% !important;
+                max-height: 92vh !important;
+                padding: 18px !important;
+                border-radius: 14px;
+            }
+            .detail-grid {
+                grid-template-columns: 1fr !important;
+                gap: 15px !important;
+            }
+            #chatModal {
+                width: 92vw !important;
+                height: 420px !important;
+                bottom: 10px !important;
+                right: 4vw !important;
+            }
+            .filter-bar {
+                padding: 14px;
+                gap: 12px;
+            }
+            .filter-row {
+                gap: 10px;
+            }
+        }
     </style>
 </head>
 <body>
