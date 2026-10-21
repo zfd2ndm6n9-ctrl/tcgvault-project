@@ -1036,8 +1036,12 @@
 
             const imageUrl = publicUrlData.publicUrl;
 
+            // SALVIAMO ANCHE IL NOME DEL VENDITORE DIRETTAMENTE NEL DB SUPABASE
+            const sellerRealName = currentUser.name || currentUser.email.split('@')[0];
+
             const newCard = {
                 user_id: currentUser.id,
+                seller_name: sellerRealName,
                 category: document.getElementById('sell-category').value,
                 type: document.getElementById('sell-type').value,
                 title: document.getElementById('sell-title').value,
@@ -1312,23 +1316,29 @@
             }).join('');
         }
 
-        // --- FUNZIONE PER RICAVARE IL NOME REALE DEL VENDITORE ---
+        // --- FUNZIONE PER ESTRARRE IL NOME REALE DAL DATABASE DEGLI ANNUNCI O DAL PROFILO ---
         function getProfileDisplayName(userId) {
             if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
             
-            // 1. Cerca nel localStorage il profilo salvato
+            // 1. Cerca se c'è un annuncio pubblicato da questo utente che contiene già il seller_name sincronizzato dal DB
+            const userCard = allCards.find(c => c.user_id === userId && c.seller_name);
+            if (userCard && userCard.seller_name) {
+                return userCard.seller_name;
+            }
+
+            // 2. Cerca nel localStorage locale
             const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${userId}`) || '{}');
             if (savedProfile && savedProfile.name) {
                 return savedProfile.name;
             }
 
-            // 2. Se è l'utente attuale loggato
+            // 3. Utente corrente
             if (currentUser && currentUser.id === userId) {
                 return currentUser.name || currentUser.email.split('@')[0];
             }
 
-            // 3. Fallback pulito e professionale
-            return `Collezionista TCG Vault`;
+            // 4. Fallback pulito e professionale
+            return `Utente TCG Vault`;
         }
 
         // --- APRI PROFILO PUBBLICO DEL VENDITORE DAL DETTAGLIO ---
@@ -1339,7 +1349,7 @@
             }
             
             const sellerId = selectedCard.user_id;
-            const sellerName = getProfileDisplayName(sellerId);
+            const sellerName = selectedCard.seller_name || getProfileDisplayName(sellerId);
             
             // Chiude il modale dell'annuncio
             closeDetailModal();
@@ -1507,7 +1517,7 @@
             if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
             if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
             
-            // APPLICHIAMO LA SOGLIA MINIMA DI 5€ ANCHE AL PAGAMENTO DIRETTO DAL DETTAGLIO
+            // SOGLIA MINIMA DI 5€ APPLICATA ANCHE AL PAGAMENTO DIRETTO DAL DETTAGLIO
             if (Number(selectedCard.price) < 5.00) {
                 showNotification('L\'ordine minimo deve essere di almeno € 5.00.', 'error');
                 return;
