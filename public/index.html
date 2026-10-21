@@ -639,7 +639,7 @@
         </div>
     </div>
 
-    <!-- MODALE DETTAGLIO PRODOTTO CON TUTTI I PULSANTI RIPRISTINATI -->
+    <!-- MODALE DETTAGLIO PRODOTTO CON OPZIONI RIPRISTINATE -->
     <div class="modal-overlay" id="detail-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
@@ -662,17 +662,19 @@
                     <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
                     <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
                     
-                    <!-- BOTTONI E OPZIONI RIPRISTINATE E PROTETTE -->
-                    <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
-                        🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">0.00</span>)
-                    </button>
-                    <button class="btn-card-pay" id="detail-buy-now-btn" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
-                        💳 Paga Subito con Carta (Stripe Escrow)
-                    </button>
-                    <button class="btn-offer" id="detail-offer-btn" onclick="makeOffer()">
-                        🤝 Fai un'Offerta al Venditore
-                    </button>
-                    <button class="btn-outline" id="detail-contact-btn" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
+                    <!-- BOTTONI E OPZIONI DI ACQUISTO PROTETTI -->
+                    <div id="detail-action-buttons" style="display: flex; flex-direction: column; gap: 8px;">
+                        <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
+                            🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">0.00</span>)
+                        </button>
+                        <button class="btn-card-pay" id="detail-buy-now-btn" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
+                            💳 Paga Subito con Carta (Stripe Escrow)
+                        </button>
+                        <button class="btn-offer" id="detail-offer-btn" onclick="makeOffer()">
+                            🤝 Fai un'Offerta al Venditore
+                        </button>
+                        <button class="btn-outline" id="detail-contact-btn" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1441,6 +1443,7 @@
         }
 
         function removeFromCart(cardId) {
+            // FIX DEFINITIVO BUG CARRELLO: conversione pulita in stringa per confronto ID esatto
             cart = cart.filter(item => String(item.id) !== String(cardId));
             localStorage.setItem('tcg_cart', JSON.stringify(cart));
             updateCartCounter();
@@ -1519,11 +1522,29 @@
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
 
-            const isMyCard = currentUser && selectedCard.user_id === currentUser.id;
-            document.getElementById('detail-add-cart-btn').style.display = isMyCard ? 'none' : 'flex';
-            document.getElementById('detail-buy-now-btn').style.display = isMyCard ? 'none' : 'flex';
-            document.getElementById('detail-offer-btn').style.display = isMyCard ? 'none' : 'block';
-            document.getElementById('detail-contact-btn').style.display = isMyCard ? 'none' : 'block';
+            // FIX: Controllo rigoroso anche su smartphone per nascondere i tasti di acquisto sui propri annunci
+            const isMyCard = currentUser && String(selectedCard.user_id) === String(currentUser.id);
+            const actionButtonsContainer = document.getElementById('detail-action-buttons');
+            
+            if (isMyCard) {
+                actionButtonsContainer.innerHTML = `
+                    <p style="color: var(--admin-gold); font-weight: bold; text-align: center; margin: 10px 0;">🛡️ Questo è un tuo annuncio in vendita</p>
+                    <button class="btn-outline" onclick="openSellerPublicProfile()" style="width: 100%;">👤 Gestisci i tuoi Annunci</button>
+                `;
+            } else {
+                actionButtonsContainer.innerHTML = `
+                    <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
+                        🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">${Number(selectedCard.price).toFixed(2)}</span>)
+                    </button>
+                    <button class="btn-card-pay" id="detail-buy-now-btn" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
+                        💳 Paga Subito con Carta (Stripe Escrow)
+                    </button>
+                    <button class="btn-offer" id="detail-offer-btn" onclick="makeOffer()">
+                        🤝 Fai un'Offerta al Venditore
+                    </button>
+                    <button class="btn-outline" id="detail-contact-btn" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
+                `;
+            }
 
             document.getElementById('detail-modal').style.display = 'flex';
         }
