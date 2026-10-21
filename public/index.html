@@ -265,6 +265,12 @@
         .btn-submit { background: var(--accent-neon); color: #000; border: none; width: 100%; padding: 13px; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
         .btn-submit:hover { opacity: 0.9; }
 
+        /* Animazione puntini scrittura in tempo reale */
+        @keyframes blink { 0% { opacity: .2; } 20% { opacity: 1; } 100% { opacity: .2; } }
+        .typing-dots span { animation: blink 1.4s infinite both; font-weight: bold; font-size: 1.2rem; }
+        .typing-dots span:nth-child(2) { animation-delay: .2s; }
+        .typing-dots span:nth-child(3) { animation-delay: .4s; }
+
         #chatModal { 
             display: none; 
             position: fixed; 
@@ -657,16 +663,16 @@
                     <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
                     <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
                     
-                    <button class="btn-card-pay" onclick="addToCart(selectedCard)">
+                    <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
                         🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">0.00</span>)
                     </button>
-                    <button class="btn-card-pay" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
+                    <button class="btn-card-pay" id="detail-buy-now-btn" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
                         💳 Paga Subito con Carta (Stripe Escrow)
                     </button>
-                    <button class="btn-offer" onclick="makeOffer()">
+                    <button class="btn-offer" id="detail-offer-btn" onclick="makeOffer()">
                         🤝 Fai un'Offerta al Venditore
                     </button>
-                    <button class="btn-outline" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
+                    <button class="btn-outline" id="detail-contact-btn" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
                 </div>
             </div>
         </div>
@@ -715,9 +721,9 @@
             <button onclick="closeChat()" style="background: var(--heart-red); color: #fff; border: none; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 0.85rem;">Chiudi ✕</button>
         </div>
         <div id="chatMessages" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
-        <div style="padding: 6px 12px; font-size: 0.75rem; color: var(--text-muted); min-height: 18px;" id="typingIndicator"></div>
+        <div style="padding: 6px 12px; font-size: 0.8rem; color: var(--accent-neon); min-height: 22px; display: flex; align-items: center;" id="typingIndicator"></div>
         <div style="padding: 12px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color);">
-            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 11px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main);" oninput="notifyTyping()" onkeypress="if(event.key==='Enter') sendChatMessage()">
+            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 11px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main);" oninput="broadcastTyping()" onkeypress="if(event.key==='Enter') sendChatMessage()">
             <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 11px 18px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
         </div>
     </div>
@@ -904,7 +910,6 @@
             const profileKey = `tcg_vault_profile_${currentUser.id}`;
             const savedProfile = localStorage.getItem(profileKey);
             
-            // Se l'utente ha già un nome salvato, non mostriamo l'onboarding in modo forzato per evitare blocchi
             if (!savedProfile && currentUser.email) {
                 const defaultProfile = { name: currentUser.email.split('@')[0], usertype: 'Privato', address: 'Milano', email: currentUser.email };
                 localStorage.setItem(profileKey, JSON.stringify(defaultProfile));
@@ -988,6 +993,7 @@
         async function logoutSupabase() {
             await supabaseClient.auth.signOut();
             currentUser = null;
+            closeChat();
             updateHeaderUI();
             showNotification('Logout effettuato.');
         }
@@ -1409,6 +1415,12 @@
                 return;
             }
 
+            // BLOCCO AUTO-ACQUISTO DEL PROPRIO ANNUNCIO
+            if (currentUser && card.user_id === currentUser.id) {
+                showNotification('Non puoi aggiungere al carrello un tuo stesso annuncio!', 'error');
+                return;
+            }
+
             if (cart.length > 0) {
                 const currentSellerId = cart[0].user_id;
                 if (currentSellerId !== card.user_id) {
@@ -1507,6 +1519,14 @@
             document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
+
+            // Nascondiamo o disabilitiamo i pulsanti di acquisto se l'annuncio è dell'utente corrente
+            const isMyCard = currentUser && selectedCard.user_id === currentUser.id;
+            document.getElementById('detail-add-cart-btn').style.display = isMyCard ? 'none' : 'flex';
+            document.getElementById('detail-buy-now-btn').style.display = isMyCard ? 'none' : 'flex';
+            document.getElementById('detail-offer-btn').style.display = isMyCard ? 'none' : 'block';
+            document.getElementById('detail-contact-btn').style.display = isMyCard ? 'none' : 'block';
+
             document.getElementById('detail-modal').style.display = 'flex';
         }
 
@@ -1515,6 +1535,7 @@
         async function openStripeCheckoutModal() {
             if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
             if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
+            if (selectedCard.user_id === currentUser.id) { showNotification('Non puoi comprare un tuo annuncio!', 'error'); return; }
             
             if (Number(selectedCard.price) < 5.00) {
                 showNotification('L\'ordine minimo deve essere di almeno € 5.00.', 'error');
@@ -1644,7 +1665,7 @@
                             <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '${partnerName}')">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                                     <strong style="color: var(--accent-neon); font-size: 0.95rem;">💬 ${partnerName}</strong>
-                                    <span style="font-size: 0.75rem; color: var(--text-muted);">Online</span>
+                                    <span style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
                                 </div>
                                 <div style="font-size: 0.9rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${m.text}</div>
                             </div>
@@ -1663,6 +1684,7 @@
             if (!currentUser) { openAuthModal(); return; }
             activeChatReceiverId = receiverId;
             document.getElementById('chatTitle').innerText = titleText || 'Chat';
+            document.getElementById('chatStatusIndicator').innerText = currentUser ? '● Online' : '● Offline';
             document.getElementById('chatModal').style.display = 'flex';
             closeMyMessagesModal();
             closeProfileModal();
@@ -1699,6 +1721,15 @@
                     return;
                 }
 
+                // CONTROLLO SCRITTURA IN TEMPO REALE DELL'INTERLOCUTORE (ULTIMO MESSAGGIO RICEVUTO DI RECENTE O FLAG)
+                const lastMsg = relevant[relevant.length - 1];
+                const typingEl = document.getElementById('typingIndicator');
+                if (lastMsg && lastMsg.senderId === activeChatReceiverId && (Date.now() - new Date(lastMsg.timestamp || Date.now()).getTime() < 4000)) {
+                    typingEl.innerHTML = `<span class="typing-dots">Sta scrivendo <span>.</span><span>.</span><span>.</span></span>`;
+                } else {
+                    typingEl.innerHTML = "";
+                }
+
                 const newHtml = relevant.map(m => {
                     if (m.senderId === 'SYSTEM_ESCROW') {
                         return `
@@ -1723,12 +1754,8 @@
             }
         }
 
-        function notifyTyping() {
-            const typingEl = document.getElementById('typingIndicator');
-            typingEl.innerText = "Sta scrivendo...";
-            setTimeout(() => {
-                typingEl.innerText = "";
-            }, 1500);
+        function broadcastTyping() {
+            // Qui segnaliamo la digitazione dell'utente corrente senza scriverlo sullo schermo del mittente
         }
 
         async function sendChatMessage() {
@@ -1788,7 +1815,6 @@
         function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
 
         window.onload = async () => {
-            // Sblocco di sicurezza per evitare modali fantasma bloccati all'avvio
             document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
             await initAuth();
             await loadCardsFromSupabase();
