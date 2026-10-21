@@ -192,12 +192,12 @@
             font-size: 1rem; font-weight: 700; outline: none; padding: 7px 0;
         }
 
-        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px; position: relative; z-index: 5; }
         .tcg-card {
             background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 16px;
             overflow: hidden; backdrop-filter: blur(10px); transition: all 0.25s ease;
             display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; position: relative;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.04);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.04); z-index: 6; pointer-events: auto !important;
         }
         .tcg-card:hover { transform: translateY(-5px); border-color: var(--accent-neon); box-shadow: 0 15px 35px rgba(0,255,136,0.08); }
         .card-img { width: 100%; height: 210px; object-fit: contain; background: rgba(0, 0, 0, 0.03); padding: 12px; box-sizing: border-box; }
@@ -1330,7 +1330,7 @@
             container.innerHTML = cards.map(card => {
                 const isSaved = savedProductIds.includes(card.id);
                 return `
-                    <div class="tcg-card" onclick="openDetailModal('${card.id}')">
+                    <div class="tcg-card" data-id="${card.id}" onclick="openDetailModal('${card.id}')">
                         <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${card.id}')">${isSaved ? '❤️' : '🤍'}</div>
                         <img src="${card.image_url}" class="card-img">
                         <div class="card-body">
@@ -1562,7 +1562,7 @@
 
         function closeDetailModal() { 
             document.getElementById('detail-modal').style.display = 'none'; 
-            selectedCard = null; // Azzeramento fondamentale per sbloccare i click successivi
+            selectedCard = null; 
         }
 
         async function openStripeCheckoutModal() {
