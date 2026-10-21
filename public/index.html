@@ -119,14 +119,21 @@
         .btn-outline {
             background: var(--panel-solid); border: 1px solid var(--border-color); color: var(--text-main);
             padding: 9px 16px; border-radius: 10px; cursor: pointer; font-size: 0.9rem; font-weight: 600;
-            transition: all 0.2s ease;
+            transition: all 0.2s ease; position: relative;
         }
         .btn-outline:hover { border-color: var(--accent-neon); color: var(--accent-neon); }
 
+        .btn-edit-icon {
+            background: rgba(99, 91, 255, 0.15); border: 1px solid var(--card-blue); color: #fff;
+            padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+            margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; width: 100%; justify-content: center; box-sizing: border-box;
+        }
+        .btn-edit-icon:hover { background: var(--card-blue); }
+
         .btn-delete-icon {
             background: transparent; border: 1px solid var(--heart-red); color: var(--heart-red);
-            padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600;
-            margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;
+            padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+            margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; width: 100%; justify-content: center; box-sizing: border-box;
         }
         .btn-delete-icon:hover { background: var(--heart-red); color: #fff; }
 
@@ -150,6 +157,7 @@
             transition: border-color 0.2s;
         }
         .icon-btn:hover { border-color: var(--accent-neon); }
+        
         .bell-badge {
             position: absolute; top: -5px; right: -5px; background: var(--heart-red);
             color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 50%; font-weight: 700;
@@ -367,6 +375,42 @@
         </div>
     </div>
 
+    <!-- MODALE MODIFICA ANNUNCIO -->
+    <div class="modal-overlay" id="edit-listing-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✏️ Modifica Annuncio</h2>
+                <button class="close-btn" onclick="closeEditListingModal()">&times;</button>
+            </div>
+            <form id="edit-listing-form" onsubmit="handleEditListingSubmit(event)">
+                <input type="hidden" id="edit-card-id">
+                <div class="form-group">
+                    <label>Titolo del Prodotto *</label>
+                    <input type="text" id="edit-title" required>
+                </div>
+                <div class="form-group">
+                    <label>Prezzo (€) *</label>
+                    <input type="number" step="0.01" id="edit-price" required>
+                </div>
+                <div class="form-group">
+                    <label>Condizione *</label>
+                    <select id="edit-condition" required>
+                        <option value="Nuovo Sigillato">Nuovo Sigillato</option>
+                        <option value="Quasi Nuovo">Quasi Nuovo</option>
+                        <option value="Eccellente">Eccellente</option>
+                        <option value="Buono">Buono</option>
+                        <option value="Usato">Usato</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Descrizione</label>
+                    <textarea id="edit-description"></textarea>
+                </div>
+                <button type="submit" class="btn-submit">Salva Modifiche 💾</button>
+            </form>
+        </div>
+    </div>
+
     <!-- MODALE PROFILO VENDITORE -->
     <div class="modal-overlay" id="seller-public-profile-modal">
         <div class="modal-content modal-content-large">
@@ -569,7 +613,7 @@
             </div>
 
             <div id="tab-my-listings" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci, verifica lo stato o eliminali con un click.</p>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci, modificali o eliminali con un click.</p>
                 <div id="my-listings-container" class="card-grid">
                     <p style="color: var(--text-muted);">Caricamento annunci...</p>
                 </div>
@@ -829,6 +873,7 @@
         let savedProductIds = JSON.parse(localStorage.getItem('tcg_saved_products') || '[]');
         let notifications = JSON.parse(localStorage.getItem('tcg_notifications') || '[]');
         let cart = JSON.parse(localStorage.getItem('tcg_cart') || '[]');
+        let unreadMessagesCount = parseInt(localStorage.getItem('tcg_unread_msg_count') || '0');
         let selectedCategory = '';
         let currentUser = null;
         let selectedCard = null;
@@ -836,6 +881,7 @@
         let clientSecret = null;
         let activeChatReceiverId = null;
         let chatInterval = null;
+        let unreadCheckInterval = null;
 
         function isAdmin() {
             return currentUser && currentUser.email.toLowerCase() === 'francesco_delduca@icloud.com';
@@ -887,6 +933,26 @@
             }
         }
 
+        function updateUnreadMessagesBadge() {
+            const container = document.getElementById('auth-actions');
+            // Aggiorna o crea il bollino rosso sul bottone messaggi se l'utente è loggato
+            const msgBtn = document.getElementById('messages-btn-nav');
+            if (msgBtn) {
+                let badge = msgBtn.querySelector('.bell-badge');
+                if (unreadMessagesCount > 0) {
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'bell-badge';
+                        msgBtn.appendChild(badge);
+                    }
+                    badge.innerText = unreadMessagesCount;
+                    badge.style.display = 'inline-block';
+                } else if (badge) {
+                    badge.style.display = 'none';
+                }
+            }
+        }
+
         function openNotificationsModal() {
             const container = document.getElementById('notifications-list');
             if (notifications.length === 0) {
@@ -904,17 +970,6 @@
 
         function closeNotificationsModal() { 
             document.getElementById('notifications-modal').style.display = 'none';
-        }
-
-        function checkPostLoginOnboarding() {
-            if (!currentUser) return;
-            const profileKey = `tcg_vault_profile_${currentUser.id}`;
-            const savedProfile = localStorage.getItem(profileKey);
-            
-            if (!savedProfile && currentUser.email) {
-                const defaultProfile = { name: currentUser.email.split('@')[0], usertype: 'Privato', address: 'Milano', email: currentUser.email };
-                localStorage.setItem(profileKey, JSON.stringify(defaultProfile));
-            }
         }
 
         async function initAuth() {
@@ -937,10 +992,11 @@
             updateSavedCounter();
             updateCartCounter();
             updateNotificationBadge();
+            updateUnreadMessagesBadge();
             initTheme();
             
             if (currentUser) {
-                checkPostLoginOnboarding();
+                startUnreadMessagesPolling();
             }
         }
 
@@ -950,7 +1006,9 @@
                 const badgeClass = isAdmin() ? 'admin-badge' : 'user-badge';
                 const badgeText = isAdmin() ? '🛡️ Admin Supremo' : `👤 ${currentUser.name || currentUser.email}`;
                 authContainer.innerHTML = `
-                    <button class="btn-outline" onclick="openMyMessagesModal()">💬 Messaggi</button>
+                    <button class="btn-outline" id="messages-btn-nav" onclick="openMyMessagesModal()">
+                        💬 Messaggi ${unreadMessagesCount > 0 ? `<span class="bell-badge">${unreadMessagesCount}</span>` : ''}
+                    </button>
                     <span class="${badgeClass}" onclick="openProfileModal()" title="${currentUser.email}">${badgeText}</span>
                     <button class="btn-outline" onclick="logoutSupabase()">Esci</button>
                 `;
@@ -995,6 +1053,7 @@
             await supabaseClient.auth.signOut();
             currentUser = null;
             closeChat();
+            if (unreadCheckInterval) clearInterval(unreadCheckInterval);
             updateHeaderUI();
             showNotification('Logout effettuato.');
         }
@@ -1092,6 +1151,47 @@
                 closeSellModal();
                 showNotification('✅ Annuncio pubblicato e sincronizzato!');
                 loadCardsFromSupabase();
+            }
+        }
+
+        // GESTIONE MODIFICA ANNUNCIO
+        function openEditListingModal(cardId) {
+            const card = allCards.find(c => String(c.id) === String(cardId));
+            if (!card) return;
+            document.getElementById('edit-card-id').value = card.id;
+            document.getElementById('edit-title').value = card.title || '';
+            document.getElementById('edit-price').value = card.price || '';
+            document.getElementById('edit-condition').value = card.condition || 'Nuovo Sigillato';
+            document.getElementById('edit-description').value = card.description || '';
+            document.getElementById('profile-modal').style.display = 'none';
+            document.getElementById('edit-listing-modal').style.display = 'flex';
+        }
+
+        function closeEditListingModal() {
+            document.getElementById('edit-listing-modal').style.display = 'none';
+        }
+
+        async function handleEditListingSubmit(e) {
+            e.preventDefault();
+            const cardId = document.getElementById('edit-card-id').value;
+            const title = document.getElementById('edit-title').value;
+            const price = parseFloat(document.getElementById('edit-price').value);
+            const condition = document.getElementById('edit-condition').value;
+            const description = document.getElementById('edit-description').value;
+
+            const { error } = await supabaseClient
+                .from('cards')
+                .update({ title, price, condition, description })
+                .eq('id', cardId);
+
+            if (error) {
+                showNotification('Errore modifica: ' + error.message, 'error');
+            } else {
+                showNotification('✅ Annuncio modificato con successo!');
+                closeEditListingModal();
+                loadCardsFromSupabase();
+                openProfileModal();
+                switchProfileTab('my-listings', document.querySelectorAll('.profile-tab')[1]);
             }
         }
 
@@ -1288,6 +1388,7 @@
                         <div class="price">€ ${Number(card.price).toFixed(2)}</div>
                         <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
                         <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
+                        <button class="btn-edit-icon" onclick="openEditListingModal('${card.id}')">✏️ Modifica</button>
                         <button class="btn-delete-icon" onclick="deleteCard('${card.id}')">🗑️ Elimina</button>
                     </div>
                 </div>
@@ -1526,7 +1627,6 @@
             selectedCard = allCards.find(c => String(c.id) === String(cardId));
             if (!selectedCard) return;
 
-            // Se l'annuncio è tuo, apriamo direttamente il profilo nella sezione dei tuoi annunci senza creare conflitti nei modali
             if (currentUser && String(selectedCard.user_id) === String(currentUser.id)) {
                 openProfileModal();
                 switchProfileTab('my-listings', document.querySelectorAll('.profile-tab')[1]);
@@ -1659,6 +1759,12 @@
 
         async function openMyMessagesModal() {
             if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
+            
+            // Azzera il contatore messaggi non letti quando si apre la modale
+            unreadMessagesCount = 0;
+            localStorage.setItem('tcg_unread_msg_count', '0');
+            updateUnreadMessagesBadge();
+
             try {
                 const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
                 const messages = await res.json();
@@ -1787,6 +1893,39 @@
             } catch (err) {
                 showNotification('Errore invio messaggio.', 'error');
             }
+        }
+
+        // POLLING MESSAGGI NON LETTI PER BOLLINO ROSSO E NOTIFICHE
+        function startUnreadMessagesPolling() {
+            if (unreadCheckInterval) clearInterval(unreadCheckInterval);
+            let lastCheckedMsgCount = -1;
+
+            unreadCheckInterval = setInterval(async () => {
+                if (!currentUser) return;
+                try {
+                    const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
+                    const messages = await res.json();
+                    if (messages && messages.length > 0) {
+                        const incoming = messages.filter(m => m.receiverId === currentUser.id && m.senderId !== currentUser.id);
+                        if (lastCheckedMsgCount !== -1 && incoming.length > lastCheckedMsgCount) {
+                            const newest = incoming[incoming.length - 1];
+                            const senderName = getProfileDisplayName(newest.senderId);
+                            showNotification(`💬 Nuovo messaggio da ${senderName}: "${newest.text.substring(0, 30)}..."`);
+                            
+                            unreadMessagesCount++;
+                            localStorage.setItem('tcg_unread_msg_count', unreadMessagesCount);
+                            updateUnreadMessagesBadge();
+                        }
+                        if (lastCheckedMsgCount === -1) {
+                            lastCheckedMsgCount = incoming.length;
+                        } else {
+                            lastCheckedMsgCount = incoming.length;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Errore controllo messaggi:', e);
+                }
+            }, 5000);
         }
 
         function openEscrowGuideModal(orderId) {
