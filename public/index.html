@@ -533,11 +533,23 @@
             <div id="tab-tos-faq" class="tab-content" style="display: none;">
                 <div class="faq-item">
                     <div class="faq-title">🛡️ 1. Protezione Escrow e Sicurezza dei Pagamenti Stripe</div>
-                    <div class="faq-text">Ogni transazione effettuata è protetta dal sistema Escrow integrato con Stripe Payments.</div>
+                    <div class="faq-text">Ogni transazione effettuata su GGWorld è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto centrale della piattaforma e rilasciati automaticamente sul wallet del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
                 </div>
                 <div class="faq-item">
-                    <div class="faq-title">📍 2. Indirizzi Verificati e Scambi Locali</div>
-                    <div class="faq-text">Ogni utente e negoziante indica la propria via e città per facilitare gli scambi a mano o le spedizioni tracciate.</div>
+                    <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
+                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente in stile Cardmarket per preservare la qualità della community.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">📍 3. Indirizzi Verificati e Scambi Locali</div>
+                    <div class="faq-text">Ogni utente e negoziante indica la propria via e città per facilitare gli scambi a mano o le spedizioni tracciate all'interno della community.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">⚖️ 4. Condizioni delle Carte e Trasparenza</div>
+                    <div class="faq-text">I venditori sono tenuti a classificare accuratamente lo stato delle carte (Nuovo Sigillato, Quasi Nuovo, Eccellente, Buono, Usato). In caso di contestazioni documentate, l'Escrow blocca il payout e il supporto interviene per tutelare l'acquirente.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">📦 5. Corrieri Autorizzati e Regole di Spedizione</div>
+                    <div class="faq-text">I corrieri ufficialmente autorizzati su GGWorld sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
                 </div>
             </div>
         </div>
@@ -1250,6 +1262,101 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        // --- GESTIONE CARRELLO & REGOLE CARDMARKET ---
+        function addToCart(card) {
+            if (!card) return;
+            if (card.is_sold) {
+                showNotification('Questo prodotto è già stato venduto!', 'error');
+                return;
+            }
+
+            if (cart.length > 0) {
+                const currentSellerId = cart[0].user_id;
+                if (currentSellerId !== card.user_id) {
+                    showNotification('Regola Cardmarket: Non puoi aggiungere articoli di venditori diversi nello stesso carrello!', 'error');
+                    return;
+                }
+            }
+
+            if (cart.some(item => String(item.id) === String(card.id))) {
+                showNotification('Il prodotto è già nel carrello.');
+                return;
+            }
+
+            cart.push(card);
+            localStorage.setItem('tcg_cart', JSON.stringify(cart));
+            updateCartCounter();
+            showNotification('Prodotto aggiunto al carrello! 🛒');
+            closeDetailModal();
+        }
+
+        function removeFromCart(cardId) {
+            cart = cart.filter(item => String(item.id) !== String(cardId));
+            localStorage.setItem('tcg_cart', JSON.stringify(cart));
+            updateCartCounter();
+            renderCartModal();
+            showNotification('Prodotto rimosso dal carrello.');
+        }
+
+        function updateCartCounter() {
+            document.getElementById('cart-count').innerText = cart.length;
+        }
+
+        function openCartModal() {
+            renderCartModal();
+            document.getElementById('cart-modal').style.display = 'flex';
+        }
+
+        function closeCartModal() {
+            document.getElementById('cart-modal').style.display = 'none';
+        }
+
+        function renderCartModal() {
+            const container = document.getElementById('cart-items-container');
+            const totalPriceEl = document.getElementById('cart-total-price');
+
+            if (cart.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>';
+                totalPriceEl.innerText = '0.00';
+                return;
+            }
+
+            let total = 0;
+            container.innerHTML = cart.map(item => {
+                total += Number(item.price);
+                return `
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; gap: 12px;">
+                        <img src="${item.image_url}" style="width: 50px; height: 50px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; font-size: 0.95rem;">${item.title}</div>
+                            <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.9rem;">€ ${Number(item.price).toFixed(2)}</div>
+                        </div>
+                        <button class="btn-delete-icon" onclick="removeFromCart('${item.id}')" style="margin: 0; padding: 4px 8px; font-size: 0.8rem;">✕</button>
+                    </div>
+                `;
+            }).join('');
+
+            totalPriceEl.innerText = total.toFixed(2);
+        }
+
+        function proceedCartCheckout() {
+            if (cart.length === 0) {
+                showNotification('Il carrello è vuoto.', 'error');
+                return;
+            }
+
+            let total = cart.reduce((acc, item) => acc + Number(item.price), 0);
+
+            if (total < 5.00) {
+                showNotification('Regola Cardmarket: L\'ordine minimo per singolo venditore deve essere di almeno € 5.00.', 'error');
+                return;
+            }
+
+            selectedCard = cart[0]; 
+            closeCartModal();
+            openStripeCheckoutModal();
         }
 
         async function openDetailModal(cardId) {
