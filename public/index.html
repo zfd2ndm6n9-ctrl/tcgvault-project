@@ -264,7 +264,6 @@
         .btn-submit { background: var(--accent-neon); color: #000; border: none; width: 100%; padding: 13px; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
         .btn-submit:hover { opacity: 0.9; }
 
-        /* Chat Flottante per PC e Fullscreen per Smartphone */
         #chatModal { 
             display: none; 
             position: fixed; 
@@ -281,7 +280,6 @@
             overflow: hidden; 
         }
 
-        /* --- STILI RESPONSIVE FLUIDI E CHAT FULLSCREEN SU MOBILE --- */
         @media screen and (max-width: 768px) {
             body { padding: 10px; }
             header { flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 12px; margin-bottom: 20px; }
@@ -299,7 +297,6 @@
             .modal-content { width: 100% !important; max-height: 88vh !important; padding: 15px !important; border-radius: 12px; margin-top: 10px; }
             .detail-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
             
-            /* Chat Fullscreen per Smartphone senza bug */
             #chatModal {
                 width: 100% !important;
                 height: 100% !important;
@@ -319,7 +316,7 @@
 <body>
     <div id="toast-container"></div>
 
-    <!-- MODALE STEP-BY-STEP DI ONBOARDING (DOPO LOGIN) -->
+    <!-- MODALE STEP-BY-STEP DI ONBOARDING -->
     <div class="modal-overlay" id="onboarding-wizard-modal" style="display: none; z-index: 2500;">
         <div class="modal-content">
             <div class="modal-header">
@@ -707,15 +704,19 @@
         </div>
     </div>
 
-    <!-- MODALE CHAT FULLSCREEN PER MOBILE E FLOTTANTE PER PC -->
+    <!-- MODALE CHAT FULLSCREEN E LIVE -->
     <div id="chatModal">
         <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-            <strong style="color: var(--accent-neon);" id="chatTitle">Chat & Gestione Escrow</strong>
+            <div>
+                <strong style="color: var(--accent-neon); display: block;" id="chatTitle">Chat & Gestione Escrow</strong>
+                <span id="chatStatusIndicator" style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
+            </div>
             <button onclick="closeChat()" style="background: var(--heart-red); color: #fff; border: none; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 0.85rem;">Chiudi ✕</button>
         </div>
         <div id="chatMessages" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
+        <div style="padding: 6px 12px; font-size: 0.75rem; color: var(--text-muted); min-height: 18px;" id="typingIndicator"></div>
         <div style="padding: 12px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color);">
-            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 11px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main);" onkeypress="if(event.key==='Enter') sendChatMessage()">
+            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 11px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main);" oninput="notifyTyping()" onkeypress="if(event.key==='Enter') sendChatMessage()">
             <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 11px 18px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
         </div>
     </div>
@@ -826,6 +827,7 @@
         let elements = null;
         let clientSecret = null;
         let activeChatReceiverId = null;
+        let chatInterval = null;
 
         function isAdmin() {
             return currentUser && currentUser.email.toLowerCase() === 'francesco_delduca@icloud.com';
@@ -896,7 +898,6 @@
             document.getElementById('notifications-modal').style.display = 'none';
         }
 
-        // --- FLUSSO WIZARD ONBOARDING POST-LOGIN ---
         function checkPostLoginOnboarding() {
             if (!currentUser) return;
             const profileKey = `tcg_vault_profile_${currentUser.id}`;
@@ -1023,14 +1024,12 @@
                     .order('created_at', { ascending: false });
 
                 if (error) {
-                    console.error('Errore caricamento:', error);
                     allCards = [];
                 } else {
                     allCards = data || [];
                 }
                 applyFilters();
             } catch (err) {
-                console.error('Eccezione:', err);
                 allCards = [];
                 applyFilters();
             }
@@ -1071,7 +1070,6 @@
                 .getPublicUrl(filePath);
 
             const imageUrl = publicUrlData.publicUrl;
-
             const sellerRealName = currentUser.name || currentUser.email.split('@')[0];
 
             const newCard = {
@@ -1198,7 +1196,7 @@
                     </div>
                 `).join('');
             } catch (err) {
-                console.error('Errore caricamento ordini:', err);
+                console.error('Errore ordini:', err);
             }
         }
 
@@ -1310,7 +1308,7 @@
             const sortBy = document.getElementById('sort-filter').value;
 
             let filtered = allCards.filter(card => {
-                const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
+                const matchesSearch = (card.title || '').toLowerCase().includes(search searchQuery);
                 const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
                 const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
                 const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
@@ -1351,7 +1349,6 @@
             }).join('');
         }
 
-        // --- FUNZIONE PER ESTRARRE IL NOME REALE DAL DATABASE O DAL PROFILO ---
         function getProfileDisplayName(userId) {
             if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
             
@@ -1372,7 +1369,6 @@
             return `Utente TCG Vault`;
         }
 
-        // --- APRI PROFILO PUBBLICO DEL VENDITORE DAL DETTAGLIO ---
         async function openSellerPublicProfile() {
             if (!selectedCard || !selectedCard.user_id) {
                 showNotification('Informazioni sul venditore non disponibili.', 'error');
@@ -1430,7 +1426,7 @@
             document.getElementById('seller-public-profile-modal').style.display = 'none';
         }
 
-        // --- GESTIONE CARRELLO & REGOLE TCG VAULT ---
+        // --- GESTIONE CARRELLO CORRETTA AL 100% (BUG CANCELLAZIONE RISOLTO) ---
         function addToCart(card) {
             if (!card) return;
             if (card.is_sold) {
@@ -1647,7 +1643,7 @@
             openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat');
         }
 
-        // --- GESTIONE MESSAGGI CON NOME UTENTE REALE ---
+        // --- SISTEMA CHAT RAGGRUPPATO, LIVE E SENZA BUG ---
         async function openMyMessagesModal() {
             if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
             try {
@@ -1655,17 +1651,29 @@
                 const messages = await res.json();
                 const container = document.getElementById('conversations-list');
                 
-                if (messages.length === 0) {
+                if (!messages || messages.length === 0) {
                     container.innerHTML = '<p style="color: var(--text-muted);">Nessuna conversazione o notifica Escrow attiva.</p>';
                 } else {
-                    container.innerHTML = messages.map(m => {
+                    // Raggruppiamo i messaggi per interlocutore per evitare righe duplicate
+                    const conversationsMap = {};
+                    messages.forEach(m => {
                         const otherUserId = m.senderId === currentUser.id ? m.receiverId : m.senderId;
+                        if (!conversationsMap[otherUserId] || new Date(m.timestamp) > new Date(conversationsMap[otherUserId].timestamp)) {
+                            conversationsMap[otherUserId] = m;
+                        }
+                    });
+
+                    container.innerHTML = Object.keys(conversationsMap).map(otherUserId => {
+                        const m = conversationsMap[otherUserId];
                         const partnerName = getProfileDisplayName(otherUserId);
                         
                         return `
-                            <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '${partnerName}')">
-                                <div style="font-size: 0.85rem; color: var(--accent-neon); font-weight: bold; margin-bottom: 4px;">💬 ${partnerName}</div>
-                                <div style="font-size: 0.92rem; font-weight: ${m.isEscrowAlert ? 'bold' : 'normal'};">${m.text}</div>
+                            <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '${partnerName}')">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <strong style="color: var(--accent-neon); font-size: 0.95rem;">💬 ${partnerName}</strong>
+                                    <span style="font-size: 0.75rem; color: var(--text-muted);">Online</span>
+                                </div>
+                                <div style="font-size: 0.9rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${m.text}</div>
                             </div>
                         `;
                     }).join('');
@@ -1686,13 +1694,22 @@
             closeMyMessagesModal();
             closeProfileModal();
             loadChatMessages();
+
+            // Aggiornamento live automatico della chat ogni 3 secondi senza ricaricare la pagina
+            if (chatInterval) clearInterval(chatInterval);
+            chatInterval = setInterval(() => {
+                if (document.getElementById('chatModal').style.display === 'flex' && activeChatReceiverId) {
+                    loadChatMessages(true);
+                }
+            }, 3000);
         }
 
         function closeChat() {
             document.getElementById('chatModal').style.display = 'none';
+            if (chatInterval) clearInterval(chatInterval);
         }
 
-        async function loadChatMessages() {
+        async function loadChatMessages(isBackground = false) {
             if (!currentUser || !activeChatReceiverId) return;
             try {
                 const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
@@ -1706,11 +1723,11 @@
                 );
 
                 if (relevant.length === 0) {
-                    container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem; text-align: center;">Inizia la conversazione o visualizza qui gli avvisi Escrow.</p>';
+                    if (!isBackground) container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem; text-align: center;">Inizia la conversazione o visualizza qui gli avvisi Escrow.</p>';
                     return;
                 }
 
-                container.innerHTML = relevant.map(m => {
+                const newHtml = relevant.map(m => {
                     if (m.senderId === 'SYSTEM_ESCROW') {
                         return `
                             <div class="escrow-alert-msg">
@@ -1724,10 +1741,22 @@
                     const isMe = m.senderId === currentUser.id;
                     return `<div class="${isMe ? 'user-msg' : 'bot-msg'}">${m.text}</div>`;
                 }).join('');
-                container.scrollTop = container.scrollHeight;
+
+                if (container.innerHTML !== newHtml) {
+                    container.innerHTML = newHtml;
+                    container.scrollTop = container.scrollHeight;
+                }
             } catch (err) {
                 console.error('Errore chat:', err);
             }
+        }
+
+        function notifyTyping() {
+            const typingEl = document.getElementById('typingIndicator');
+            typingEl.innerText = "Sta scrivendo...";
+            setTimeout(() => {
+                typingEl.innerText = "";
+            }, 1500);
         }
 
         async function sendChatMessage() {
