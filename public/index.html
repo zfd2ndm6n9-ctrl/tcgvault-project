@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GGWorld / TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
+    <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -267,7 +267,7 @@
     <div class="modal-overlay" id="onboarding-wizard-modal" style="display: none; z-index: 2500;">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>👋 Completa il tuo Profilo GGWorld</h2>
+                <h2>👋 Completa il tuo Profilo TCG Vault</h2>
             </div>
             
             <div id="wizard-step-1" class="wizard-step">
@@ -448,7 +448,7 @@
     <div class="modal-overlay" id="profile-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
-                <h2>👤 Il Mio Profilo & Portafoglio GGWorld</h2>
+                <h2>👤 Il Mio Profilo & Portafoglio TCG Vault</h2>
                 <button class="close-btn" onclick="closeProfileModal()">&times;</button>
             </div>
             
@@ -520,9 +520,9 @@
             </div>
 
             <div id="tab-bot-support" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale GGWorld (Copertura 99% H24).</p>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale TCG Vault (Copertura 99% H24).</p>
                 <div class="bot-chat-box" id="botChatContainer">
-                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di GGWorld. Come posso aiutarti oggi?</div>
+                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di TCG Vault. Come posso aiutarti oggi?</div>
                 </div>
                 <div style="display: flex; gap: 8px;">
                     <input type="text" id="botInput" placeholder="Chiedi qualcosa al bot..." style="flex: 1; padding: 10px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendBotMessage()">
@@ -533,7 +533,7 @@
             <div id="tab-tos-faq" class="tab-content" style="display: none;">
                 <div class="faq-item">
                     <div class="faq-title">🛡️ 1. Protezione Escrow e Sicurezza dei Pagamenti Stripe</div>
-                    <div class="faq-text">Ogni transazione effettuata su GGWorld è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto centrale della piattaforma e rilasciati automaticamente sul wallet del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
+                    <div class="faq-text">Ogni transazione effettuata su TCG Vault è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto centrale della piattaforma e rilasciati automaticamente sul wallet del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
                 </div>
                 <div class="faq-item">
                     <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
@@ -549,7 +549,7 @@
                 </div>
                 <div class="faq-item">
                     <div class="faq-title">📦 5. Corrieri Autorizzati e Regole di Spedizione</div>
-                    <div class="faq-text">I corrieri ufficialmente autorizzati su GGWorld sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
+                    <div class="faq-text">I corrieri ufficialmente autorizzati su TCG Vault sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
                 </div>
             </div>
         </div>
@@ -640,7 +640,7 @@
     <div class="modal-overlay" id="auth-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="auth-modal-title">Accedi o Registrati (GGWorld)</h2>
+                <h2 id="auth-modal-title">Accedi o Registrati (TCG Vault)</h2>
                 <button class="close-btn" onclick="closeAuthModal()">&times;</button>
             </div>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
@@ -748,7 +748,7 @@
         }
 
         function initTheme() {
-            const savedTheme = localStorage.getItem('ggworld_theme') || 'dark';
+            const savedTheme = localStorage.getItem('tcg_vault_theme') || 'dark';
             if (savedTheme === 'light') {
                 document.body.classList.add('light-theme');
                 document.getElementById('theme-toggle-btn').innerText = '☀️';
@@ -763,10 +763,10 @@
             const btn = document.getElementById('theme-toggle-btn');
             if (isLight) {
                 btn.innerText = '☀️';
-                localStorage.setItem('ggworld_theme', 'light');
+                localStorage.setItem('tcg_vault_theme', 'light');
             } else {
                 btn.innerText = '🌙';
-                localStorage.setItem('ggworld_theme', 'dark');
+                localStorage.setItem('tcg_vault_theme', 'dark');
             }
         }
 
@@ -815,7 +815,7 @@
         // --- FLUSSO WIZARD ONBOARDING POST-LOGIN ---
         function checkPostLoginOnboarding() {
             if (!currentUser) return;
-            const profileKey = `ggworld_profile_${currentUser.id}`;
+            const profileKey = `tcg_vault_profile_${currentUser.id}`;
             const savedProfile = localStorage.getItem(profileKey);
             
             if (!savedProfile) {
@@ -840,20 +840,20 @@
             }
 
             const profileData = { name, usertype, address, email: currentUser.email };
-            localStorage.setItem(`ggworld_profile_${currentUser.id}`, JSON.stringify(profileData));
+            localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify(profileData));
 
             currentUser.name = name;
             currentUser.address = address;
 
             document.getElementById('onboarding-wizard-modal').style.display = 'none';
-            showNotification('Profilo configurato con successo! Benvenuto in GGWorld.');
+            showNotification('Profilo configurato con successo! Benvenuto in TCG Vault.');
             updateHeaderUI();
         }
 
         async function initAuth() {
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session && session.user) {
-                const savedProfile = JSON.parse(localStorage.getItem(`ggworld_profile_${session.user.id}`) || '{}');
+                const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${session.user.id}`) || '{}');
                 currentUser = {
                     id: session.user.id,
                     email: session.user.email,
@@ -1144,7 +1144,7 @@
             currentUser.phone = document.getElementById('profile-phone').value;
             
             const profileData = { name: currentUser.name, address: currentUser.address, email: currentUser.email };
-            localStorage.setItem(`ggworld_profile_${currentUser.id}`, JSON.stringify(profileData));
+            localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify(profileData));
 
             showNotification('Profilo aggiornato!');
             updateHeaderUI();
@@ -1181,7 +1181,7 @@
             
             let reply = "Per questa specifica richiesta contatta support@tcgvault.com.";
             if (q.includes('ciao') || q.includes('salve')) {
-                reply = "🤖 Ciao! Sono l'assistente H24 di GGWorld. Come posso aiutarti?";
+                reply = "🤖 Ciao! Sono l'assistente H24 di TCG Vault. Come posso aiutarti?";
             } else if (q.includes('spediz') || q.includes('corriere')) {
                 reply = "📦 Spedizioni: I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
             } else if (q.includes('escrow') || q.includes('pagament')) {
