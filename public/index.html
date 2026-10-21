@@ -34,7 +34,6 @@
             --border-color: #cbd5e1;
         }
 
-        /* Correzione cruciale per permettere lo scrolling fluido su mobile ed evitare blocchi */
         html {
             height: 100%;
             overflow-x: hidden;
@@ -265,9 +264,24 @@
         .btn-submit { background: var(--accent-neon); color: #000; border: none; width: 100%; padding: 13px; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
         .btn-submit:hover { opacity: 0.9; }
 
-        #chatModal { display: none; position: fixed; bottom: 20px; right: 20px; width: 380px; height: 520px; background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); z-index: 1050; flex-direction: column; overflow: hidden; }
+        /* Chat Flottante per PC e Fullscreen per Smartphone */
+        #chatModal { 
+            display: none; 
+            position: fixed; 
+            bottom: 20px; 
+            right: 20px; 
+            width: 380px; 
+            height: 520px; 
+            background: var(--panel-solid); 
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5); 
+            z-index: 1050; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
 
-        /* --- STILI RESPONSIVE FLUIDI E SENZA BUG PER SMARTPHONE --- */
+        /* --- STILI RESPONSIVE FLUIDI E CHAT FULLSCREEN SU MOBILE --- */
         @media screen and (max-width: 768px) {
             body { padding: 10px; }
             header { flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 12px; margin-bottom: 20px; }
@@ -284,7 +298,19 @@
             .modal-overlay { padding: 10px; align-items: flex-start; }
             .modal-content { width: 100% !important; max-height: 88vh !important; padding: 15px !important; border-radius: 12px; margin-top: 10px; }
             .detail-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
-            #chatModal { width: 96vw !important; height: 380px !important; bottom: 5px !important; right: 2vw !important; }
+            
+            /* Chat Fullscreen per Smartphone senza bug */
+            #chatModal {
+                width: 100% !important;
+                height: 100% !important;
+                bottom: 0 !important;
+                right: 0 !important;
+                left: 0 !important;
+                top: 0 !important;
+                border-radius: 0 !important;
+                z-index: 9999 !important;
+            }
+
             .filter-bar { padding: 12px; gap: 10px; }
             .filter-row { gap: 8px; }
         }
@@ -681,16 +707,16 @@
         </div>
     </div>
 
-    <!-- MODALE CHAT FLOTTANTE -->
+    <!-- MODALE CHAT FULLSCREEN PER MOBILE E FLOTTANTE PER PC -->
     <div id="chatModal">
         <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
             <strong style="color: var(--accent-neon);" id="chatTitle">Chat & Gestione Escrow</strong>
-            <button onclick="closeChat()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.1rem;">✕</button>
+            <button onclick="closeChat()" style="background: var(--heart-red); color: #fff; border: none; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 0.85rem;">Chiudi ✕</button>
         </div>
         <div id="chatMessages" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
-        <div style="padding: 10px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color);">
-            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 9px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendChatMessage()">
-            <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 9px 14px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
+        <div style="padding: 12px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color);">
+            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 11px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main);" onkeypress="if(event.key==='Enter') sendChatMessage()">
+            <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 11px 18px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
         </div>
     </div>
 
@@ -1325,7 +1351,7 @@
             }).join('');
         }
 
-        // --- FUNZIONE PER ESTRARRE IL NOME REALE DAL DATABASE DEGLI ANNUNCI O DAL PROFILO ---
+        // --- FUNZIONE PER ESTRARRE IL NOME REALE DAL DATABASE O DAL PROFILO ---
         function getProfileDisplayName(userId) {
             if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
             
@@ -1712,7 +1738,7 @@
             try {
                 await fetch(`${window.location.origin}/api/messages`, {
                     method: 'POST',
-                    headers: { 'Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ senderId: currentUser.id, receiverId: activeChatReceiverId, text })
                 });
                 input.value = '';
