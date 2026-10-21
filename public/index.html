@@ -658,7 +658,7 @@
         </div>
     </div>
 
-    <!-- MODALE MESSAGGI (SOLO I MIEI MESSAGGI CON NOME VENDITORE) -->
+    <!-- MODALE MESSAGGI -->
     <div class="modal-overlay" id="my-messages-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -1312,7 +1312,17 @@
             }).join('');
         }
 
-        // --- APRI PROFILO PUBBLICO DEL VENDITORE DAL DETTAGLIO ---
+        // --- FUNZIONE DI SUPPORTO PER IL NOME REALE DELL'UTENTE ---
+        function getProfileDisplayName(userId) {
+            if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
+            const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${userId}`) || '{}');
+            if (savedProfile && savedProfile.name) {
+                return savedProfile.name;
+            }
+            return `Utente (${userId.substring(0, 6)}...)`;
+        }
+
+        // --- APRI PROFILO PUBBLICO DEL VENDITORE DAL DETTAGLIO (CHIUDENDO PRIMA IL DETTAGLIO) ---
         async function openSellerPublicProfile() {
             if (!selectedCard || !selectedCard.user_id) {
                 showNotification('Informazioni sul venditore non disponibili.', 'error');
@@ -1320,7 +1330,12 @@
             }
             
             const sellerId = selectedCard.user_id;
-            document.getElementById('seller-profile-name').innerText = `👤 Venditore ID: ${sellerId.substring(0, 8)}...`;
+            const sellerName = getProfileDisplayName(sellerId);
+            
+            // Chiude il modale di dettaglio per evitare sovrapposizioni
+            closeDetailModal();
+
+            document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
             document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
             document.getElementById('seller-profile-location').innerText = `📍 Località: ${selectedCard.location || 'Non specificata'}`;
 
@@ -1345,13 +1360,13 @@
 
             // Carica altri annunci dello stesso venditore
             const sellerCardsContainer = document.getElementById('seller-profile-listings');
-            const sellerCards = allCards.filter(c => c.user_id === sellerId && c.id !== selectedCard.id && !c.is_sold);
+            const sellerCards = allCards.filter(c => c.user_id === sellerId && selectedCard && c.id !== selectedCard.id && !c.is_sold);
             
             if (sellerCards.length === 0) {
                 sellerCardsContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; grid-column: 1/-1;">Nessun altro annuncio attivo da questo venditore.</p>';
             } else {
                 sellerCardsContainer.innerHTML = sellerCards.map(card => `
-                    <div class="tcg-card" onclick="closeSellerProfileModal(); closeDetailModal(); openDetailModal('${card.id}')" style="cursor: pointer;">
+                    <div class="tcg-card" onclick="closeSellerProfileModal(); openDetailModal('${card.id}')" style="cursor: pointer;">
                         <img src="${card.image_url}" class="card-img" style="height: 120px;">
                         <div class="card-body" style="padding: 10px;">
                             <h4 class="card-title" style="font-size: 0.9rem; margin: 0 0 4px 0;">${card.title}</h4>
@@ -1580,7 +1595,7 @@
             openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat');
         }
 
-        // --- GESTIONE MESSAGGI (SOLO I MIEI MESSAGGI CON NOME VENDITORE AL POSTO DELL'ORARIO) ---
+        // --- GESTIONE MESSAGGI CON NOME UTENTE REALE AL POSTO DELL'ID ---
         async function openMyMessagesModal() {
             if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
             try {
@@ -1593,11 +1608,11 @@
                 } else {
                     container.innerHTML = messages.map(m => {
                         const otherUserId = m.senderId === currentUser.id ? m.receiverId : m.senderId;
-                        const partnerName = otherUserId === 'SYSTEM_ESCROW' ? '🛡️ Sistema Escrow TCG Vault' : `👤 Utente (${otherUserId.substring(0, 6)}...)`;
+                        const partnerName = getProfileDisplayName(otherUserId);
                         
                         return `
                             <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '${partnerName}')">
-                                <div style="font-size: 0.8rem; color: var(--accent-neon); font-weight: bold; margin-bottom: 4px;">💬 ${partnerName}</div>
+                                <div style="font-size: 0.85rem; color: var(--accent-neon); font-weight: bold; margin-bottom: 4px;">💬 ${partnerName}</div>
                                 <div style="font-size: 0.92rem; font-weight: ${m.isEscrowAlert ? 'bold' : 'normal'};">${m.text}</div>
                             </div>
                         `;
