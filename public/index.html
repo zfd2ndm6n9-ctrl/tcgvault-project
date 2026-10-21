@@ -125,8 +125,8 @@
 
         .btn-delete-icon {
             background: transparent; border: 1px solid var(--heart-red); color: var(--heart-red);
-            padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600;
-            margin-top: 5px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;
+            padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+            margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;
         }
         .btn-delete-icon:hover { background: var(--heart-red); color: #fff; }
 
@@ -1526,6 +1526,14 @@
             selectedCard = allCards.find(c => String(c.id) === String(cardId));
             if (!selectedCard) return;
 
+            // Se l'annuncio è tuo, apriamo direttamente il profilo nella sezione dei tuoi annunci senza creare conflitti nei modali
+            if (currentUser && String(selectedCard.user_id) === String(currentUser.id)) {
+                openProfileModal();
+                switchProfileTab('my-listings', document.querySelectorAll('.profile-tab')[1]);
+                showNotification('Gestisci i tuoi annunci direttamente qui.');
+                return;
+            }
+
             document.getElementById('detail-img').src = selectedCard.image_url;
             document.getElementById('detail-name').innerText = selectedCard.title;
             document.getElementById('detail-category').innerText = (selectedCard.category || 'TCG') + ' • ' + (selectedCard.type || 'Articolo');
@@ -1534,30 +1542,6 @@
             document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
-
-            const isMyCard = currentUser && String(selectedCard.user_id) === String(currentUser.id);
-            const actionButtonsContainer = document.getElementById('detail-action-buttons');
-            
-            if (isMyCard) {
-                actionButtonsContainer.innerHTML = `
-                    <p style="color: var(--admin-gold); font-weight: bold; text-align: center; margin: 10px 0;">🛡️ Questo è un tuo annuncio</p>
-                    <button class="btn-outline" onclick="closeDetailModal(); openSellerPublicProfile();" style="width: 100%; margin-bottom: 8px;">👤 Visualizza il tuo Profilo Pubblico</button>
-                    <button class="btn-delete-icon" onclick="closeDetailModal(); deleteCard('${selectedCard.id}');" style="width: 100%; justify-content: center;">🗑️ Elimina questo Annuncio</button>
-                `;
-            } else {
-                actionButtonsContainer.innerHTML = `
-                    <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
-                        🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">${Number(selectedCard.price).toFixed(2)}</span>)
-                    </button>
-                    <button class="btn-card-pay" id="detail-buy-now-btn" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
-                        💳 Paga Subito con Carta (Stripe Escrow)
-                    </button>
-                    <button class="btn-offer" id="detail-offer-btn" onclick="makeOffer()">
-                        🤝 Fai un'Offerta al Venditore
-                    </button>
-                    <button class="btn-outline" id="detail-contact-btn" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
-                `;
-            }
 
             document.getElementById('detail-modal').style.display = 'flex';
         }
