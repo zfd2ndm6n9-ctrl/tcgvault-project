@@ -80,7 +80,7 @@
         
         #toast-container {
             position: fixed; top: 20px; right: 20px; z-index: 9999;
-            display: flex; flex-direction: column; gap: 10px;
+            display: flex; flex-direction: column; gap: 10px; pointer-events: none;
         }
         .toast {
             background: var(--panel-solid); border: 1px solid var(--border-color);
@@ -88,6 +88,7 @@
             box-shadow: 0 10px 25px rgba(0,0,0,0.4); font-size: 0.9rem;
             display: flex; align-items: center; gap: 10px; font-weight: 500;
             animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+            pointer-events: auto;
         }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
@@ -316,7 +317,7 @@
 <body>
     <div id="toast-container"></div>
 
-    <!-- MODALE STEP-BY-STEP DI ONBOARDING -->
+    <!-- MODALE ONBOARDING -->
     <div class="modal-overlay" id="onboarding-wizard-modal" style="display: none; z-index: 2500;">
         <div class="modal-content">
             <div class="modal-header">
@@ -361,7 +362,7 @@
         </div>
     </div>
 
-    <!-- MODALE PROFILO PUBBLICO VENDITORE -->
+    <!-- MODALE PROFILO VENDITORE -->
     <div class="modal-overlay" id="seller-public-profile-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
@@ -522,7 +523,7 @@
         </div>
     </div>
 
-    <!-- MODALE PROFILO E PORTAFOGLIO INTERNO -->
+    <!-- MODALE PROFILO -->
     <div class="modal-overlay" id="profile-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
@@ -671,7 +672,7 @@
         </div>
     </div>
 
-    <!-- MODALE CHECKOUT REALE STRIPE -->
+    <!-- MODALE CHECKOUT STRIPE -->
     <div class="modal-overlay" id="stripe-checkout-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -704,7 +705,7 @@
         </div>
     </div>
 
-    <!-- MODALE CHAT FULLSCREEN E LIVE -->
+    <!-- MODALE CHAT -->
     <div id="chatModal">
         <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
             <div>
@@ -903,36 +904,11 @@
             const profileKey = `tcg_vault_profile_${currentUser.id}`;
             const savedProfile = localStorage.getItem(profileKey);
             
-            if (!savedProfile) {
-                document.getElementById('onboarding-wizard-modal').style.display = 'flex';
-                nextWizardStep(1);
+            // Se l'utente ha già un nome salvato, non mostriamo l'onboarding in modo forzato per evitare blocchi
+            if (!savedProfile && currentUser.email) {
+                const defaultProfile = { name: currentUser.email.split('@')[0], usertype: 'Privato', address: 'Milano', email: currentUser.email };
+                localStorage.setItem(profileKey, JSON.stringify(defaultProfile));
             }
-        }
-
-        function nextWizardStep(stepNum) {
-            document.querySelectorAll('.wizard-step').forEach(s => s.style.display = 'none');
-            document.getElementById(`wizard-step-${stepNum}`).style.display = 'block';
-        }
-
-        function finishWizardOnboarding() {
-            const name = document.getElementById('wizard-name').value.trim();
-            const usertype = document.getElementById('wizard-usertype').value;
-            const address = document.getElementById('wizard-address').value.trim();
-
-            if (!name || !address) {
-                showNotification('Compila tutti i campi obbligatori.', 'error');
-                return;
-            }
-
-            const profileData = { name, usertype, address, email: currentUser.email };
-            localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify(profileData));
-
-            currentUser.name = name;
-            currentUser.address = address;
-
-            document.getElementById('onboarding-wizard-modal').style.display = 'none';
-            showNotification('Profilo configurato con successo! Benvenuto in TCG Vault.');
-            updateHeaderUI();
         }
 
         async function initAuth() {
@@ -1308,7 +1284,7 @@
             const sortBy = document.getElementById('sort-filter').value;
 
             let filtered = allCards.filter(card => {
-                const matchesSearch = (card.title || '').toLowerCase().includes(search searchQuery);
+                const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
                 const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
                 const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
                 const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
@@ -1426,7 +1402,6 @@
             document.getElementById('seller-public-profile-modal').style.display = 'none';
         }
 
-        // --- GESTIONE CARRELLO CORRETTA AL 100% (BUG CANCELLAZIONE RISOLTO) ---
         function addToCart(card) {
             if (!card) return;
             if (card.is_sold) {
@@ -1643,7 +1618,6 @@
             openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat');
         }
 
-        // --- SISTEMA CHAT RAGGRUPPATO, LIVE E SENZA BUG ---
         async function openMyMessagesModal() {
             if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
             try {
@@ -1654,7 +1628,6 @@
                 if (!messages || messages.length === 0) {
                     container.innerHTML = '<p style="color: var(--text-muted);">Nessuna conversazione o notifica Escrow attiva.</p>';
                 } else {
-                    // Raggruppiamo i messaggi per interlocutore per evitare righe duplicate
                     const conversationsMap = {};
                     messages.forEach(m => {
                         const otherUserId = m.senderId === currentUser.id ? m.receiverId : m.senderId;
@@ -1695,7 +1668,6 @@
             closeProfileModal();
             loadChatMessages();
 
-            // Aggiornamento live automatico della chat ogni 3 secondi senza ricaricare la pagina
             if (chatInterval) clearInterval(chatInterval);
             chatInterval = setInterval(() => {
                 if (document.getElementById('chatModal').style.display === 'flex' && activeChatReceiverId) {
@@ -1816,6 +1788,8 @@
         function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
 
         window.onload = async () => {
+            // Sblocco di sicurezza per evitare modali fantasma bloccati all'avvio
+            document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
             await initAuth();
             await loadCardsFromSupabase();
         };
