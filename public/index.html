@@ -639,7 +639,7 @@
         </div>
     </div>
 
-    <!-- MODALE DETTAGLIO PRODOTTO CON OPZIONI RIPRISTINATE -->
+    <!-- MODALE DETTAGLIO PRODOTTO CON TUTTI I PULSANTI RIPRISTINATI -->
     <div class="modal-overlay" id="detail-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
@@ -662,19 +662,17 @@
                     <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
                     <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
                     
-                    <!-- OPZIONI E BOTTONI RIPRISTINATI E PROTETTI -->
-                    <div id="detail-actions-container">
-                        <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
-                            🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">0.00</span>)
-                        </button>
-                        <button class="btn-card-pay" id="detail-buy-now-btn" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
-                            💳 Paga Subito con Carta (Stripe Escrow)
-                        </button>
-                        <button class="btn-offer" id="detail-offer-btn" onclick="makeOffer()">
-                            🤝 Fai un'Offerta al Venditore
-                        </button>
-                        <button class="btn-outline" id="detail-contact-btn" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
-                    </div>
+                    <!-- BOTTONI E OPZIONI RIPRISTINATE E PROTETTE -->
+                    <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
+                        🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">0.00</span>)
+                    </button>
+                    <button class="btn-card-pay" id="detail-buy-now-btn" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
+                        💳 Paga Subito con Carta (Stripe Escrow)
+                    </button>
+                    <button class="btn-offer" id="detail-offer-btn" onclick="makeOffer()">
+                        🤝 Fai un'Offerta al Venditore
+                    </button>
+                    <button class="btn-outline" id="detail-contact-btn" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
                 </div>
             </div>
         </div>
@@ -1721,7 +1719,6 @@
                     return;
                 }
 
-                // GESTIONE CORRETTA: Mostra i puntini animati solo se l'ultimo messaggio è dell'interlocutore ed è recente
                 const lastMsg = relevant[relevant.length - 1];
                 const typingEl = document.getElementById('typingIndicator');
                 if (lastMsg && lastMsg.senderId === activeChatReceiverId && (Date.now() - new Date(lastMsg.timestamp || Date.now()).getTime() < 5000)) {
