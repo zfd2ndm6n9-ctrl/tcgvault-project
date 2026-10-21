@@ -1312,17 +1312,26 @@
             }).join('');
         }
 
-        // --- FUNZIONE DI SUPPORTO PER IL NOME REALE DELL'UTENTE ---
+        // --- FUNZIONE DI SUPPORTO AVANZATA PER NOME UTENTE REALE ---
         function getProfileDisplayName(userId) {
             if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
+            
+            // 1. Cerca nel localStorage locale del browser
             const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${userId}`) || '{}');
             if (savedProfile && savedProfile.name) {
                 return savedProfile.name;
             }
-            return `Utente (${userId.substring(0, 6)}...)`;
+
+            // 2. Se corrisponde all'utente attualmente in sessione
+            if (currentUser && currentUser.id === userId) {
+                return currentUser.name || currentUser.email.split('@')[0];
+            }
+
+            // 3. Fallback pulito e professionale senza stringhe tecniche
+            return `Utente Verificato TCG Vault`;
         }
 
-        // --- APRI PROFILO PUBBLICO DEL VENDITORE DAL DETTAGLIO (CHIUDENDO PRIMA IL DETTAGLIO) ---
+        // --- APRI PROFILO PUBBLICO DEL VENDITORE DAL DETTAGLIO ---
         async function openSellerPublicProfile() {
             if (!selectedCard || !selectedCard.user_id) {
                 showNotification('Informazioni sul venditore non disponibili.', 'error');
@@ -1332,7 +1341,7 @@
             const sellerId = selectedCard.user_id;
             const sellerName = getProfileDisplayName(sellerId);
             
-            // Chiude il modale di dettaglio per evitare sovrapposizioni
+            // Chiude il modale dell'annuncio per evitare sovrapposizioni
             closeDetailModal();
 
             document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
@@ -1355,7 +1364,7 @@
                     `).join('');
                 }
             } catch (err) {
-                console.error('Errore caricamento recensioni venditore:', err);
+                console.error('Errore recensioni:', err);
             }
 
             // Carica altri annunci dello stesso venditore
