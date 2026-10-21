@@ -450,7 +450,7 @@
                 <button class="close-btn" onclick="closeCartModal()">&times;</button>
             </div>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
-                Regola Cardmarket: Ordine minimo €5.00 da un singolo venditore. Non è possibile mischiare prodotti di venditori diversi.
+                Regola TCG Vault: Ordine minimo €5.00 da un singolo venditore. Non è possibile mischiare prodotti di venditori diversi.
             </p>
             <div id="cart-items-container" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
                 <p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>
@@ -582,7 +582,7 @@
                 </div>
                 <div class="faq-item">
                     <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
-                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente in stile Cardmarket per preservare la qualità della community.</div>
+                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente per preservare la qualità della community.</div>
                 </div>
                 <div class="faq-item">
                     <div class="faq-title">📍 3. Indirizzi Verificati e Scambi Locali</div>
@@ -1312,23 +1312,23 @@
             }).join('');
         }
 
-        // --- FUNZIONE DI SUPPORTO AVANZATA PER NOME UTENTE REALE ---
+        // --- FUNZIONE PER RICAVARE IL NOME REALE DEL VENDITORE ---
         function getProfileDisplayName(userId) {
             if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
             
-            // 1. Cerca nel localStorage locale del browser
+            // 1. Cerca nel localStorage il profilo salvato
             const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${userId}`) || '{}');
             if (savedProfile && savedProfile.name) {
                 return savedProfile.name;
             }
 
-            // 2. Se corrisponde all'utente attualmente in sessione
+            // 2. Se è l'utente attuale loggato
             if (currentUser && currentUser.id === userId) {
                 return currentUser.name || currentUser.email.split('@')[0];
             }
 
-            // 3. Fallback pulito e professionale senza stringhe tecniche
-            return `Utente Verificato TCG Vault`;
+            // 3. Fallback pulito e professionale
+            return `Collezionista TCG Vault`;
         }
 
         // --- APRI PROFILO PUBBLICO DEL VENDITORE DAL DETTAGLIO ---
@@ -1341,7 +1341,7 @@
             const sellerId = selectedCard.user_id;
             const sellerName = getProfileDisplayName(sellerId);
             
-            // Chiude il modale dell'annuncio per evitare sovrapposizioni
+            // Chiude il modale dell'annuncio
             closeDetailModal();
 
             document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
@@ -1392,7 +1392,7 @@
             document.getElementById('seller-public-profile-modal').style.display = 'none';
         }
 
-        // --- GESTIONE CARRELLO & REGOLE CARDMARKET ---
+        // --- GESTIONE CARRELLO & REGOLE TCG VAULT ---
         function addToCart(card) {
             if (!card) return;
             if (card.is_sold) {
@@ -1403,7 +1403,7 @@
             if (cart.length > 0) {
                 const currentSellerId = cart[0].user_id;
                 if (currentSellerId !== card.user_id) {
-                    showNotification('Regola Cardmarket: Non puoi aggiungere articoli di venditori diversi nello stesso carrello!', 'error');
+                    showNotification('Non puoi aggiungere articoli di venditori diversi nello stesso carrello!', 'error');
                     return;
                 }
             }
@@ -1478,7 +1478,7 @@
             let total = cart.reduce((acc, item) => acc + Number(item.price), 0);
 
             if (total < 5.00) {
-                showNotification('Regola Cardmarket: L\'ordine minimo per singolo venditore deve essere di almeno € 5.00.', 'error');
+                showNotification('L\'ordine minimo deve essere di almeno € 5.00.', 'error');
                 return;
             }
 
@@ -1506,6 +1506,12 @@
         async function openStripeCheckoutModal() {
             if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
             if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
+            
+            // APPLICHIAMO LA SOGLIA MINIMA DI 5€ ANCHE AL PAGAMENTO DIRETTO DAL DETTAGLIO
+            if (Number(selectedCard.price) < 5.00) {
+                showNotification('L\'ordine minimo deve essere di almeno € 5.00.', 'error');
+                return;
+            }
             
             const priceEl = document.getElementById('checkout-modal-price');
             if (priceEl) {
@@ -1604,7 +1610,7 @@
             openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat');
         }
 
-        // --- GESTIONE MESSAGGI CON NOME UTENTE REALE AL POSTO DELL'ID ---
+        // --- GESTIONE MESSAGGI CON NOME UTENTE REALE ---
         async function openMyMessagesModal() {
             if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
             try {
