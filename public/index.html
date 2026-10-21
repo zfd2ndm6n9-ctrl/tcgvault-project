@@ -122,18 +122,17 @@
         }
         .btn-delete-icon:hover { background: var(--heart-red); color: #fff; }
 
-        /* Badge utente con gestione testo lungo per dispositivi mobili */
         .user-badge {
             font-size: 0.85rem; color: var(--accent-neon); background: rgba(0, 255, 136, 0.08);
             padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(0, 255, 136, 0.2); 
-            cursor: pointer; font-weight: 600; max-width: 150px; white-space: nowrap; 
+            cursor: pointer; font-weight: 600; max-width: 180px; white-space: nowrap; 
             overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle;
         }
 
         .admin-badge {
             font-size: 0.85rem; color: var(--admin-gold); background: rgba(245, 158, 11, 0.1);
             padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(245, 158, 11, 0.3); 
-            cursor: pointer; font-weight: 700; max-width: 150px; white-space: nowrap; 
+            cursor: pointer; font-weight: 700; max-width: 180px; white-space: nowrap; 
             overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle;
         }
 
@@ -259,76 +258,25 @@
 
         #chatModal { display: none; position: fixed; bottom: 20px; right: 20px; width: 380px; height: 520px; background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 16px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); z-index: 1050; flex-direction: column; overflow: hidden; }
 
-        /* --- STILI RESPONSIVE DEDICATI ESCLUSIVAMENTE AL CELLULARE (LASCIANDO INALTERATO IL PC) --- */
+        /* --- STILI RESPONSIVE DEDICATI ESCLUSIVAMENTE AL CELLULARE --- */
         @media screen and (max-width: 768px) {
-            body {
-                padding: 12px;
-            }
-            header {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 12px;
-                padding-bottom: 15px;
-                margin-bottom: 20px;
-            }
-            h1 {
-                font-size: 1.5rem;
-                text-align: center;
-            }
-            .header-actions {
-                justify-content: center;
-                gap: 8px;
-            }
-            .btn-outline, .btn-sell, .user-badge, .admin-badge {
-                font-size: 0.8rem;
-                padding: 7px 12px;
-            }
-            .user-badge, .admin-badge {
-                max-width: 130px;
-            }
-            .card-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 10px;
-            }
-            .tcg-card {
-                border-radius: 12px;
-            }
-            .card-img {
-                height: 140px;
-                padding: 6px;
-            }
-            .card-body {
-                padding: 10px;
-            }
-            .card-title {
-                font-size: 0.9rem;
-            }
-            .price {
-                font-size: 1.1rem;
-            }
-            .modal-content {
-                width: 95% !important;
-                max-height: 92vh !important;
-                padding: 18px !important;
-                border-radius: 14px;
-            }
-            .detail-grid {
-                grid-template-columns: 1fr !important;
-                gap: 15px !important;
-            }
-            #chatModal {
-                width: 92vw !important;
-                height: 420px !important;
-                bottom: 10px !important;
-                right: 4vw !important;
-            }
-            .filter-bar {
-                padding: 14px;
-                gap: 12px;
-            }
-            .filter-row {
-                gap: 10px;
-            }
+            body { padding: 12px; }
+            header { flex-direction: column; align-items: stretch; gap: 12px; padding-bottom: 15px; margin-bottom: 20px; }
+            h1 { font-size: 1.5rem; text-align: center; }
+            .header-actions { justify-content: center; gap: 8px; }
+            .btn-outline, .btn-sell, .user-badge, .admin-badge { font-size: 0.8rem; padding: 7px 12px; }
+            .user-badge, .admin-badge { max-width: 130px; }
+            .card-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .tcg-card { border-radius: 12px; }
+            .card-img { height: 140px; padding: 6px; }
+            .card-body { padding: 10px; }
+            .card-title { font-size: 0.9rem; }
+            .price { font-size: 1.1rem; }
+            .modal-content { width: 95% !important; max-height: 92vh !important; padding: 18px !important; border-radius: 14px; }
+            .detail-grid { grid-template-columns: 1fr !important; gap: 15px !important; }
+            #chatModal { width: 92vw !important; height: 420px !important; bottom: 10px !important; right: 4vw !important; }
+            .filter-bar { padding: 14px; gap: 12px; }
+            .filter-row { gap: 10px; }
         }
     </style>
 </head>
@@ -376,6 +324,31 @@
                     <button type="button" class="btn-outline" onclick="nextWizardStep(2)">⬅️ Indietro</button>
                     <button type="button" class="btn-submit" onclick="finishWizardOnboarding()" style="flex: 1;">Salva e Inizia a Usare il Sito 🚀</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE PROFILO PUBBLICO VENDITORE -->
+    <div class="modal-overlay" id="seller-public-profile-modal">
+        <div class="modal-content modal-content-large">
+            <div class="modal-header">
+                <h2>Profilo Venditore & Reputazione</h2>
+                <button class="close-btn" onclick="closeSellerProfileModal()">&times;</button>
+            </div>
+            <div style="margin-bottom: 20px; background: var(--bg-color); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color);">
+                <div id="seller-profile-name" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-neon); margin-bottom: 5px;"></div>
+                <div id="seller-profile-type" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 5px;"></div>
+                <div id="seller-profile-location" style="font-size: 0.9rem; color: var(--text-muted);"></div>
+            </div>
+
+            <h3 style="font-size: 1rem; color: var(--text-main); margin-bottom: 10px;">⭐ Recensioni Ricevute</h3>
+            <div id="seller-profile-reviews" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; max-height: 180px; overflow-y: auto;">
+                <p style="color: var(--text-muted); font-size: 0.9rem;">Nessuna recensione.</p>
+            </div>
+
+            <h3 style="font-size: 1rem; color: var(--text-main); margin-bottom: 10px;">📦 Altri Annunci di questo Venditore</h3>
+            <div id="seller-profile-listings" class="card-grid" style="max-height: 250px; overflow-y: auto;">
+                <p style="color: var(--text-muted); font-size: 0.9rem;">Caricamento annunci...</p>
             </div>
         </div>
     </div>
@@ -642,7 +615,10 @@
                     <span id="detail-category" class="card-category"></span>
                     <h2 id="detail-name" style="margin: 6px 0 10px 0; color: var(--text-main); font-size: 1.5rem; font-weight: 800;"></h2>
                     <div id="detail-condition" style="font-size:0.88rem; color:var(--accent-neon); margin-bottom:6px; font-weight: 600;"></div>
-                    <div id="detail-location-view" style="font-size:0.88rem; color:var(--text-muted); margin-bottom:10px; font-weight: 500;">📍 Indirizzo: </div>
+                    <div id="detail-location-view" style="font-size:0.88rem; color:var(--text-muted); margin-bottom:6px; font-weight: 500;">📍 Indirizzo: </div>
+                    <div style="margin-bottom: 10px;">
+                        <button class="btn-outline" onclick="openSellerPublicProfile()" style="font-size: 0.82rem; padding: 6px 12px;">👤 Visualizza Profilo e Recensioni del Venditore</button>
+                    </div>
                     <div id="detail-status" class="status-badge status-available" style="margin-bottom: 10px;">DISPONIBILE</div>
                     <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
                     <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
@@ -682,7 +658,7 @@
         </div>
     </div>
 
-    <!-- MODALE MESSAGGI -->
+    <!-- MODALE MESSAGGI (SOLO I MIEI MESSAGGI CON NOME VENDITORE) -->
     <div class="modal-overlay" id="my-messages-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -1336,6 +1312,62 @@
             }).join('');
         }
 
+        // --- APRI PROFILO PUBBLICO DEL VENDITORE DAL DETTAGLIO ---
+        async function openSellerPublicProfile() {
+            if (!selectedCard || !selectedCard.user_id) {
+                showNotification('Informazioni sul venditore non disponibili.', 'error');
+                return;
+            }
+            
+            const sellerId = selectedCard.user_id;
+            document.getElementById('seller-profile-name').innerText = `👤 Venditore ID: ${sellerId.substring(0, 8)}...`;
+            document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
+            document.getElementById('seller-profile-location').innerText = `📍 Località: ${selectedCard.location || 'Non specificata'}`;
+
+            // Carica recensioni del venditore
+            try {
+                const res = await fetch(`${window.location.origin}/api/reviews/${sellerId}`);
+                const reviews = await res.json();
+                const revContainer = document.getElementById('seller-profile-reviews');
+                if (!reviews || reviews.length === 0) {
+                    revContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">Nessuna recensione ricevuta.</p>';
+                } else {
+                    revContainer.innerHTML = reviews.map(r => `
+                        <div style="background: var(--panel-solid); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+                            <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.85rem;">⭐ ${r.rating} / 5 stelle</div>
+                            <div style="font-size: 0.85rem; color: var(--text-main);">${r.comment}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error('Errore caricamento recensioni venditore:', err);
+            }
+
+            // Carica altri annunci dello stesso venditore
+            const sellerCardsContainer = document.getElementById('seller-profile-listings');
+            const sellerCards = allCards.filter(c => c.user_id === sellerId && c.id !== selectedCard.id && !c.is_sold);
+            
+            if (sellerCards.length === 0) {
+                sellerCardsContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; grid-column: 1/-1;">Nessun altro annuncio attivo da questo venditore.</p>';
+            } else {
+                sellerCardsContainer.innerHTML = sellerCards.map(card => `
+                    <div class="tcg-card" onclick="closeSellerProfileModal(); closeDetailModal(); openDetailModal('${card.id}')" style="cursor: pointer;">
+                        <img src="${card.image_url}" class="card-img" style="height: 120px;">
+                        <div class="card-body" style="padding: 10px;">
+                            <h4 class="card-title" style="font-size: 0.9rem; margin: 0 0 4px 0;">${card.title}</h4>
+                            <div class="price" style="font-size: 1rem;">€ ${Number(card.price).toFixed(2)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('seller-public-profile-modal').style.display = 'flex';
+        }
+
+        function closeSellerProfileModal() {
+            document.getElementById('seller-public-profile-modal').style.display = 'none';
+        }
+
         // --- GESTIONE CARRELLO & REGOLE CARDMARKET ---
         function addToCart(card) {
             if (!card) return;
@@ -1548,6 +1580,7 @@
             openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat');
         }
 
+        // --- GESTIONE MESSAGGI (SOLO I MIEI MESSAGGI CON NOME VENDITORE AL POSTO DELL'ORARIO) ---
         async function openMyMessagesModal() {
             if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
             try {
@@ -1558,12 +1591,17 @@
                 if (messages.length === 0) {
                     container.innerHTML = '<p style="color: var(--text-muted);">Nessuna conversazione o notifica Escrow attiva.</p>';
                 } else {
-                    container.innerHTML = messages.map(m => `
-                        <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${m.senderId === currentUser.id ? m.receiverId : m.senderId}', 'Conversazione')">
-                            <div style="font-size: 0.75rem; color: var(--accent-neon); margin-bottom: 4px;">${new Date(m.timestamp).toLocaleTimeString()}</div>
-                            <div style="font-size: 0.92rem; font-weight: ${m.isEscrowAlert ? 'bold' : 'normal'};">${m.text}</div>
-                        </div>
-                    `).join('');
+                    container.innerHTML = messages.map(m => {
+                        const otherUserId = m.senderId === currentUser.id ? m.receiverId : m.senderId;
+                        const partnerName = otherUserId === 'SYSTEM_ESCROW' ? '🛡️ Sistema Escrow TCG Vault' : `👤 Utente (${otherUserId.substring(0, 6)}...)`;
+                        
+                        return `
+                            <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '${partnerName}')">
+                                <div style="font-size: 0.8rem; color: var(--accent-neon); font-weight: bold; margin-bottom: 4px;">💬 ${partnerName}</div>
+                                <div style="font-size: 0.92rem; font-weight: ${m.isEscrowAlert ? 'bold' : 'normal'};">${m.text}</div>
+                            </div>
+                        `;
+                    }).join('');
                 }
                 document.getElementById('my-messages-modal').style.display = 'flex';
             } catch (err) {
