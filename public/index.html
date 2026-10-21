@@ -76,7 +76,7 @@
             flex-wrap: wrap;
         }
 
-        .container { max-width: 1200px; margin: 0 auto; }
+        .container { max-width: 1200px; margin: 0 auto; position: relative; z-index: 10; }
         
         #toast-container {
             position: fixed; top: 20px; right: 20px; z-index: 9999;
@@ -228,12 +228,12 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
             display: none; justify-content: center; align-items: center; z-index: 1000;
-            overflow-y: auto; padding: 15px; box-sizing: border-box;
+            overflow-y: auto; padding: 15px; box-sizing: border-box; pointer-events: auto;
         }
         .modal-content {
             background: var(--panel-solid); border: 1px solid var(--border-color);
             border-radius: 16px; padding: 25px; width: 100%; max-width: 520px; max-height: 85vh;
-            overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.5); margin: auto;
+            overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.5); margin: auto; position: relative; z-index: 1001;
         }
         .modal-content-large { max-width: 820px; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
@@ -639,7 +639,7 @@
         </div>
     </div>
 
-    <!-- MODALE DETTAGLIO PRODOTTO CON OPZIONI RIPRISTINATE -->
+    <!-- MODALE DETTAGLIO PRODOTTO -->
     <div class="modal-overlay" id="detail-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
@@ -662,7 +662,6 @@
                     <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
                     <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
                     
-                    <!-- BOTTONI E OPZIONI DI ACQUISTO PROTETTI -->
                     <div id="detail-action-buttons" style="display: flex; flex-direction: column; gap: 8px;">
                         <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
                             🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">0.00</span>)
@@ -1012,10 +1011,29 @@
                 } else {
                     allCards = data || [];
                 }
+
+                // CONTROLLO AUTOMATICO CARRELLO: Rimuove articoli se sono stati eliminati o venduti
+                validateAndCleanCart();
+
                 applyFilters();
             } catch (err) {
                 allCards = [];
                 applyFilters();
+            }
+        }
+
+        // FUNZIONE PER PULIRE AUTOMATICAMENTE IL CARRELLO DA OGGETTI ELIMINATI O VENDUTI
+        function validateAndCleanCart() {
+            if (!cart || cart.length === 0) return;
+            const validCart = cart.filter(cartItem => {
+                const foundCard = allCards.find(c => String(c.id) === String(cartItem.id));
+                return foundCard && !foundCard.is_sold;
+            });
+
+            if (validCart.length !== cart.length) {
+                cart = validCart;
+                localStorage.setItem('tcg_cart', JSON.stringify(cart));
+                updateCartCounter();
             }
         }
 
@@ -1087,6 +1105,7 @@
         async function deleteCard(cardId) {
             if (confirm("Vuoi eliminare questo annuncio?")) {
                 allCards = allCards.filter(c => String(c.id) !== String(cardId));
+                validateAndCleanCart();
                 applyFilters();
                 loadMyListings();
 
@@ -1443,7 +1462,6 @@
         }
 
         function removeFromCart(cardId) {
-            // FIX DEFINITIVO BUG CARRELLO: conversione pulita in stringa per confronto ID esatto
             cart = cart.filter(item => String(item.id) !== String(cardId));
             localStorage.setItem('tcg_cart', JSON.stringify(cart));
             updateCartCounter();
@@ -1456,6 +1474,7 @@
         }
 
         function openCartModal() {
+            validateAndCleanCart(); // Controllo freschezza prima di aprire
             renderCartModal();
             document.getElementById('cart-modal').style.display = 'flex';
         }
@@ -1522,7 +1541,6 @@
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
 
-            // FIX: Controllo rigoroso anche su smartphone per nascondere i tasti di acquisto sui propri annunci
             const isMyCard = currentUser && String(selectedCard.user_id) === String(currentUser.id);
             const actionButtonsContainer = document.getElementById('detail-action-buttons');
             
@@ -1829,6 +1847,7 @@
         function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
 
         window.onload = async () => {
+            // Sblocco blindato di qualsiasi overlay fantasma all'avvio
             document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
             await initAuth();
             await loadCardsFromSupabase();
