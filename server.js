@@ -10,10 +10,10 @@ app.use(express.json());
 // Gestione della cartella public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Chiave segreta Stripe principale della piattaforma letta in sicurezza dalle variabili d'ambiente
+// Chiave segreta Stripe principale
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-// Database in memoria temporaneo (strutturato per ordini, messaggi, recensioni e wallet)
+// Database in memoria temporaneo
 let messagesDB = [];
 let reviewsDB = [];
 let ordersDB = [];
@@ -58,7 +58,7 @@ app.post('/api/auth/login', (req, res) => {
     res.json({ success: true, user });
 });
 
-// --- CHECKOUT CENTRALIZZATO STRIPE (CONTO PRINCIPALE) & NOTIFICA AUTOMATICA VENDITORE ---
+// --- CHECKOUT CENTRALIZZATO STRIPE & NOTIFICA VENDITORE ---
 app.post('/api/create-payment-intent', async (req, res) => {
     const { amount, buyerId, sellerId, cardId, cardTitle } = req.body;
     try {
@@ -85,20 +85,19 @@ app.post('/api/create-payment-intent', async (req, res) => {
         };
         ordersDB.push(newOrder);
 
-        // Assicuriamoci che il venditore esista nel database dei wallet del server
         if (sellerId && sellerId !== 'unknown') {
             let seller = usersDB.find(u => u.id === sellerId);
             if (!seller) {
                 usersDB.push({ id: sellerId, email: 'venditore@tcgvault.it', wallet: 0.00, iban: '' });
             }
 
-            // 🔔 CREAZIONE AUTOMATICA MESSAGGIO/NOTIFICA DI SISTEMA AL VENDITORE
+            // 🔔 NOTIFICA AUTOMATICA AL VENDITORE
             const notificationMsg = {
                 id: 'msg-' + Date.now(),
                 senderId: 'SYSTEM_ESCROW',
                 receiverId: sellerId,
                 cardId: cardId || null,
-                text: `📦 VENDITA EFFETTUATA! Il tuo prodotto "${cardTitle || 'Articolo TCG'}" è stato acquistato per €${Number(amount).toFixed(2)}. I fondi sono al sicuro in Escrow. Clicca qui per visualizzare la guida alla spedizione, inserire il corriere e il codice di tracciamento.`,
+                text: `📦 VENDITA EFFETTUATA! Il tuo prodotto "${cardTitle || 'Articolo TCG'}" è stato acquistato per €${Number(amount).toFixed(2)}. I fondi sono al sicuro in Escrow. Clicca qui per inserire corriere e tracciamento.`,
                 isEscrowAlert: true,
                 orderId: newOrder.id,
                 timestamp: new Date().toISOString()
@@ -112,7 +111,14 @@ app.post('/api/create-payment-intent', async (req, res) => {
     }
 });
 
-// --- AGGIORNAMENTO SPEDIZIONE E TRACKING DA PARTE DEL VENDITORE ---
+// --- RECUPERO ORDINI UTENTE (AGGIUNTO) ---
+app.get('/api/orders/:userId', (req, res) => {
+    const userId = req.params.userId;
+    const userOrders = ordersDB.filter(o => o.buyerId === userId || o.sellerId === userId);
+    res.json(userOrders);
+});
+
+// --- AGGIORNAMENTO SPEDIZIONE E TRACKING ---
 app.post('/api/orders/:orderId/ship', (req, res) => {
     const { orderId } = req.params;
     const { carrier, trackingNumber } = req.body;
@@ -125,12 +131,12 @@ app.post('/api/orders/:orderId/ship', (req, res) => {
     order.carrier = carrier;
     order.trackingNumber = trackingNumber;
     order.trackingLink = generateTrackingLink(carrier, trackingNumber);
-    order.status = 'shipped'; // In transito verso l'acquirente
+    order.status = 'shipped';
 
     res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
 });
 
-// --- CONFERMA RICEZIONE E SBLOCCO FONDI NEL WALLET (DA PARTE DELL'ACQUIRENTE) ---
+// --- CONFERMA RICEZIONE E SBLOCCO FONDI NEL WALLET ---
 app.post('/api/orders/:orderId/complete', (req, res) => {
     const { orderId } = req.params;
     const order = ordersDB.find(o => o.id === orderId);
@@ -140,13 +146,12 @@ app.post('/api/orders/:orderId/complete', (req, res) => {
     }
 
     if (order.status === 'completed') {
-        return res.json({ success: true, message: 'Ordine già completato in precedenza.', order });
+        return res.json({ success: true, message: 'Ordine già completato.', order });
     }
 
     order.status = 'completed';
     order.completedAt = new Date().toISOString();
 
-    // Rilascia i fondi accreditandoli nel wallet interno del venditore
     let seller = usersDB.find(u => u.id === order.sellerId);
     if (!seller) {
         seller = { id: order.sellerId, wallet: 0 };
@@ -157,7 +162,7 @@ app.post('/api/orders/:orderId/complete', (req, res) => {
     res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
 });
 
-// --- GESTIONE SALDO WALLET E PRELIEVO REALE VIA IBAN/STRIPE ---
+// --- GESTIONE SALDO WALLET E PRELIEVO VIA IBAN ---
 app.post('/api/wallet/payout', async (req, res) => {
     const { userId, iban } = req.body;
     
@@ -176,7 +181,6 @@ app.post('/api/wallet/payout', async (req, res) => {
 
     try {
         const payoutAmount = Math.round((user.wallet || 0) * 100);
-        
         let payoutResult;
         try {
             payoutResult = await stripe.payouts.create({
@@ -186,7 +190,6 @@ app.post('/api/wallet/payout', async (req, res) => {
                 destination: iban.trim()
             });
         } catch (stripeErr) {
-            console.log("Nota Payout Stripe:", stripeErr.message);
             payoutResult = { id: 'po_simulated_' + Date.now() };
         }
 
@@ -196,7 +199,7 @@ app.post('/api/wallet/payout', async (req, res) => {
 
         res.json({ 
             success: true, 
-            message: `Prelievo di €${withdrawnAmount.toFixed(2)} elaborato con successo verso l'IBAN ${user.iban}!`,
+            message: `Prelievo di €${withdrawnAmount.toFixed(2)} elaborato con successo!`,
             newBalance: 0.00 
         });
     } catch (error) {
@@ -248,5 +251,5 @@ app.get('/api/reviews/:sellerId', (req, res) => {
 
 const PORT = process.env.PORT || 4242;
 app.listen(PORT, () => {
-    console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT} con Gestione Escrow e Notifiche Automatiche.`);
+    console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
 });
