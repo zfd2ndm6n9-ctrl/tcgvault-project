@@ -311,7 +311,6 @@
             .modal-content { width: 100% !important; max-height: 88vh !important; padding: 15px !important; border-radius: 12px; margin-top: 10px; }
             .detail-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
             
-            /* Chat bloccata a tutto schermo senza zoom e sfarfallii tastiera */
             #chatModal {
                 width: 100% !important;
                 height: 100% !important;
@@ -1290,7 +1289,7 @@
                             <div style="font-size: 0.9rem; margin-bottom: 2px;">Stato: <b>${o.status || 'Pagato / In Escrow'}</b></div>
                             <div style="font-size: 0.8rem; color: var(--text-muted);">Totale: € ${Number(o.amount || 0).toFixed(2)}</div>
                         </div>
-                        <button class="btn-outline" onclick="openChatModal('${o.sellerId}', 'Gestione Ordine Escrow', '', '${o.sellerId}')">💬 Apri Chat Venditore</button>
+                        <button class="btn-outline" onclick="openChatModal('${o.sellerId}', '', '${o.sellerId}')">💬 Apri Chat Venditore</button>
                     </div>
                 `).join('');
             } catch (err) {
@@ -1451,7 +1450,7 @@
         function getProfileDisplayName(userId) {
             if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
             
-            const userCard = allCards.find(c => c.user_id === userId && c.seller_name);
+            const userCard = allCards.find(c => String(c.user_id) === String(userId) && c.seller_name);
             if (userCard && userCard.seller_name) {
                 return userCard.seller_name;
             }
@@ -1461,11 +1460,11 @@
                 return savedProfile.name;
             }
 
-            if (currentUser && currentUser.id === userId) {
+            if (currentUser && String(currentUser.id) === String(userId)) {
                 return currentUser.name || currentUser.email.split('@')[0];
             }
 
-            return `Utente TCG Vault`;
+            return `Collezionista TCG (${userId.substring(0, 6)}...)`;
         }
 
         async function openSellerPublicProfile() {
@@ -1805,7 +1804,6 @@
 
         function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
 
-        // --- GESTIONE CHAT CORRETTA CON NOME PERSONA + CARTA E PROFILO ---
         function openChatModal(receiverId, cardTitle = '', sellerId = null) {
             if (!currentUser) { openAuthModal(); return; }
             activeChatReceiverId = receiverId;
