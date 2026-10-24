@@ -313,13 +313,14 @@
             
             #chatModal {
                 width: 100% !important;
-                height: 100% !important;
+                height: 100vh !important;
                 bottom: 0 !important;
                 right: 0 !important;
                 left: 0 !important;
                 top: 0 !important;
                 border-radius: 0 !important;
                 z-index: 9999 !important;
+                position: fixed !important;
             }
 
             .filter-bar { padding: 12px; gap: 10px; }
@@ -759,8 +760,8 @@
     <!-- MODALE CHAT -->
     <div id="chatModal">
         <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <strong style="color: var(--accent-neon); display: block;" id="chatTitle">Chat & Gestione Escrow</strong>
+            <div style="cursor: pointer; flex: 1; overflow: hidden;" onclick="openActiveSellerProfileFromChat()" title="Clicca per visualizzare il profilo">
+                <strong style="color: var(--accent-neon); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="chatTitle">Chat & Gestione Escrow</strong>
                 <span id="chatStatusIndicator" style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
             </div>
             <button onclick="closeChat()" style="background: var(--heart-red); color: #fff; border: none; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 0.85rem;">Chiudi ✕</button>
@@ -880,6 +881,7 @@
         let elements = null;
         let clientSecret = null;
         let activeChatReceiverId = null;
+        let activeChatSellerId = null;
         let chatInterval = null;
         let unreadCheckInterval = null;
         let pingInterval = null;
@@ -1753,7 +1755,7 @@
                 showNotification('Questo è il tuo annuncio.', 'error');
                 return;
             }
-            openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat');
+            openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat', selectedCard ? selectedCard.title : '', selectedCard ? selectedCard.user_id : null);
         }
 
         async function openMyMessagesModal() {
@@ -1784,7 +1786,7 @@
                         const partnerName = getProfileDisplayName(otherUserId);
                         
                         return `
-                            <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '${partnerName}')">
+                            <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '${partnerName}', '', '${otherUserId}')">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                                     <strong style="color: var(--accent-neon); font-size: 0.95rem;">💬 ${partnerName}</strong>
                                     <span style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
@@ -1802,11 +1804,16 @@
 
         function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
 
-        // --- GESTIONE CHAT AVANZATA (ONLINE, TYPING, ULTIMO ACCESSO) ---
-        function openChatModal(receiverId, titleText) {
+        // --- GESTIONE CHAT AVANZATA CON NOME PERSONA + CARTA E LINK AL PROFILO ---
+        function openChatModal(receiverId, titleText, cardTitle = '', sellerId = null) {
             if (!currentUser) { openAuthModal(); return; }
             activeChatReceiverId = receiverId;
-            document.getElementById('chatTitle').innerText = titleText || 'Chat';
+            activeChatSellerId = sellerId || receiverId;
+
+            const displayName = getProfileDisplayName(receiverId);
+            const fullTitle = cardTitle ? `${displayName} • <span style="font-weight: normal; font-size: 0.85rem; color: var(--text-muted);">${cardTitle}</span>` : displayName;
+
+            document.getElementById('chatTitle').innerHTML = fullTitle;
             document.getElementById('chatModal').style.display = 'flex';
             closeMyMessagesModal();
             closeProfileModal();
@@ -1819,6 +1826,53 @@
                     loadChatMessages(true);
                 }
             }, 3000);
+        }
+
+        async function openActiveSellerProfileFromChat() {
+            if (!activeChatSellerId || activeChatSellerId === 'SYSTEM_ESCROW') return;
+            
+            closeChat();
+            
+            document.getElementById('seller-profile-name').innerText = `👤 ${getProfileDisplayName(activeChatSellerId)}`;
+            document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
+            document.getElementById('seller-profile-location').innerText = `📍 Località: Verificata`;
+
+            try {
+                const res = await fetch(`${window.location.origin}/api/reviews/${activeChatSellerId}`);
+                const reviews = await res.json();
+                const revContainer = document.getElementById('seller-profile-reviews');
+                if (!reviews || reviews.length === 0) {
+                    revContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">Nessuna recensione ricevuta.</p>';
+                } else {
+                    revContainer.innerHTML = reviews.map(r => `
+                        <div style="background: var(--panel-solid); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+                            <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.85rem;">⭐ ${r.rating} / 5 stelle</div>
+                            <div style="font-size: 0.85rem; color: var(--text-main);">${r.comment}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error('Errore recensioni:', err);
+            }
+
+            const sellerCardsContainer = document.getElementById('seller-profile-listings');
+            const sellerCards = allCards.filter(c => c.user_id === activeChatSellerId && !c.is_sold);
+            
+            if (sellerCards.length === 0) {
+                sellerCardsContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; grid-column: 1/-1;">Nessun altro annuncio attivo da questo venditore.</p>';
+            } else {
+                sellerCardsContainer.innerHTML = sellerCards.map(card => `
+                    <div class="tcg-card" onclick="closeSellerProfileModal(); openDetailModal('${card.id}')" style="cursor: pointer;">
+                        <img src="${card.image_url}" class="card-img" style="height: 120px;">
+                        <div class="card-body" style="padding: 10px;">
+                            <h4 class="card-title" style="font-size: 0.9rem; margin: 0 0 4px 0;">${card.title}</h4>
+                            <div class="price" style="font-size: 1rem;">€ ${Number(card.price).toFixed(2)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('seller-public-profile-modal').style.display = 'flex';
         }
 
         function closeChat() {
@@ -1935,7 +1989,7 @@
             const text = input.value.trim();
             if (!text || !currentUser || !activeChatReceiverId) return;
 
-            sendPing(false); // Smette di digitare all'invio
+            sendPing(false);
 
             try {
                 await fetch(`${window.location.origin}/api/messages`, {
@@ -1950,7 +2004,6 @@
             }
         }
 
-        // POLLING MESSAGGI NON LETTI PER BOLLINO ROSSO E NOTIFICHE
         function startUnreadMessagesPolling() {
             if (unreadCheckInterval) clearInterval(unreadCheckInterval);
             let lastCheckedMsgCount = -1;
