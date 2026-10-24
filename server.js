@@ -7,18 +7,15 @@ const corsMiddleware = require('cors');
 app.use(corsMiddleware());
 app.use(express.json());
 
-// Gestione della cartella public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Chiave segreta Stripe principale
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-// Database in memoria temporaneo
 let messagesDB = [];
 let reviewsDB = [];
 let ordersDB = [];
 let usersDB = []; 
-let userPresenceDB = {}; // Gestione stato online / digitazione
+let userPresenceDB = {};
 
 function generateTrackingLink(carrier, trackingNumber) {
     if (!trackingNumber) return null;
@@ -39,7 +36,6 @@ function generateTrackingLink(carrier, trackingNumber) {
     }
 }
 
-// --- GESTIONE UTENTI E LOGIN SEMPLIFICATO ---
 app.post('/api/auth/login', (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ success: false, error: 'Email obbligatoria.' });
@@ -59,12 +55,11 @@ app.post('/api/auth/login', (req, res) => {
     res.json({ success: true, user });
 });
 
-// --- CHECKOUT CENTRALIZZATO STRIPE & NOTIFICA VENDITORE ---
 app.post('/api/create-payment-intent', async (req, res) => {
     const { amount, buyerId, sellerId, cardId, cardTitle } = req.body;
     try {
         const baseAmountCents = Math.round(amount * 100); 
-        const applicationFee = Math.round(baseAmountCents * 0.07); // 7% trattenuta piattaforma
+        const applicationFee = Math.round(baseAmountCents * 0.07);
         const estimatedStripeFee = Math.round(baseAmountCents * 0.015) + 25;
         const totalChargedToBuyer = baseAmountCents + applicationFee + estimatedStripeFee;
 
@@ -81,7 +76,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
             sellerId: sellerId || 'unknown',
             cardId: cardId || 'unknown',
             amount: amount,
-            status: 'paid', // In custodia Escrow - In attesa di spedizione
+            status: 'paid',
             createdAt: new Date().toISOString()
         };
         ordersDB.push(newOrder);
@@ -92,7 +87,6 @@ app.post('/api/create-payment-intent', async (req, res) => {
                 usersDB.push({ id: sellerId, email: 'venditore@tcgvault.it', wallet: 0.00, iban: '' });
             }
 
-            // 🔔 NOTIFICA AUTOMATICA AL VENDITORE
             const notificationMsg = {
                 id: 'msg-' + Date.now(),
                 senderId: 'SYSTEM_ESCROW',
@@ -112,14 +106,12 @@ app.post('/api/create-payment-intent', async (req, res) => {
     }
 });
 
-// --- RECUPERO ORDINI UTENTE ---
 app.get('/api/orders/:userId', (req, res) => {
     const userId = req.params.userId;
     const userOrders = ordersDB.filter(o => o.buyerId === userId || o.sellerId === userId);
     res.json(userOrders);
 });
 
-// --- AGGIORNAMENTO SPEDIZIONE E TRACKING ---
 app.post('/api/orders/:orderId/ship', (req, res) => {
     const { orderId } = req.params;
     const { carrier, trackingNumber } = req.body;
@@ -137,7 +129,6 @@ app.post('/api/orders/:orderId/ship', (req, res) => {
     res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
 });
 
-// --- CONFERMA RICEZIONE E SBLOCCO FONDI NEL WALLET ---
 app.post('/api/orders/:orderId/complete', (req, res) => {
     const { orderId } = req.params;
     const order = ordersDB.find(o => o.id === orderId);
@@ -163,7 +154,6 @@ app.post('/api/orders/:orderId/complete', (req, res) => {
     res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
 });
 
-// --- GESTIONE SALDO WALLET E PRELIEVO VIA IBAN ---
 app.post('/api/wallet/payout', async (req, res) => {
     const { userId, iban } = req.body;
     
@@ -208,7 +198,6 @@ app.post('/api/wallet/payout', async (req, res) => {
     }
 });
 
-// --- MESSAGGI, RECENSIONI E PRESENZA CHAT (ONLINE / TYPING) ---
 app.post('/api/messages', (req, res) => {
     const { senderId, receiverId, text, offerPrice, cardId } = req.body;
     const newMessage = {
@@ -230,7 +219,6 @@ app.get('/api/messages/:userId', (req, res) => {
     res.json(userMessages);
 });
 
-// Rilevamento presenza (Online / Sta scrivendo / Ultimo accesso)
 app.post('/api/presence/ping', (req, res) => {
     const { userId, isTyping } = req.body;
     if (!userId) return res.status(400).json({ success: false });
@@ -246,7 +234,6 @@ app.get('/api/presence/:userId', (req, res) => {
     const userId = req.params.userId;
     const presence = userPresenceDB[userId] || { lastSeen: 0, isTyping: false };
     
-    // Considerato online se ha fatto il ping negli ultimi 10 secondi
     const now = Date.now();
     const isOnline = (now - presence.lastSeen) < 10000;
 
