@@ -18,6 +18,7 @@ let messagesDB = [];
 let reviewsDB = [];
 let ordersDB = [];
 let usersDB = []; 
+let userPresenceDB = {}; // Gestione stato online / digitazione
 
 function generateTrackingLink(carrier, trackingNumber) {
     if (!trackingNumber) return null;
@@ -111,7 +112,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
     }
 });
 
-// --- RECUPERO ORDINI UTENTE (AGGIUNTO) ---
+// --- RECUPERO ORDINI UTENTE ---
 app.get('/api/orders/:userId', (req, res) => {
     const userId = req.params.userId;
     const userOrders = ordersDB.filter(o => o.buyerId === userId || o.sellerId === userId);
@@ -207,7 +208,7 @@ app.post('/api/wallet/payout', async (req, res) => {
     }
 });
 
-// --- MESSAGGI E RECENSIONI ---
+// --- MESSAGGI, RECENSIONI E PRESENZA CHAT (ONLINE / TYPING) ---
 app.post('/api/messages', (req, res) => {
     const { senderId, receiverId, text, offerPrice, cardId } = req.body;
     const newMessage = {
@@ -227,6 +228,33 @@ app.get('/api/messages/:userId', (req, res) => {
     const userId = req.params.userId;
     const userMessages = messagesDB.filter(m => m.senderId === userId || m.receiverId === userId);
     res.json(userMessages);
+});
+
+// Rilevamento presenza (Online / Sta scrivendo / Ultimo accesso)
+app.post('/api/presence/ping', (req, res) => {
+    const { userId, isTyping } = req.body;
+    if (!userId) return res.status(400).json({ success: false });
+
+    userPresenceDB[userId] = {
+        lastSeen: Date.now(),
+        isTyping: isTyping || false
+    };
+    res.json({ success: true });
+});
+
+app.get('/api/presence/:userId', (req, res) => {
+    const userId = req.params.userId;
+    const presence = userPresenceDB[userId] || { lastSeen: 0, isTyping: false };
+    
+    // Considerato online se ha fatto il ping negli ultimi 10 secondi
+    const now = Date.now();
+    const isOnline = (now - presence.lastSeen) < 10000;
+
+    res.json({
+        isOnline,
+        isTyping: presence.isTyping,
+        lastSeen: presence.lastSeen
+    });
 });
 
 app.post('/api/reviews', (req, res) => {
