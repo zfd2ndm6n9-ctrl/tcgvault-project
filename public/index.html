@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -185,7 +185,7 @@
         
         .filter-input, .filter-select {
             background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 10px;
-            padding: 11px 14px; color: var(--text-main); font-size: 0.9rem; outline: none; font-weight: 500;
+            padding: 11px 14px; color: var(--text-main); font-size: 16px; outline: none; font-weight: 500;
             transition: border-color 0.2s;
         }
         .filter-input:focus, .filter-select:focus { border-color: var(--accent-neon); }
@@ -197,7 +197,7 @@
         .price-box-clean span { color: var(--accent-neon); font-weight: 700; }
         .price-clean-input {
             width: 100%; background: transparent; border: none; color: var(--text-main);
-            font-size: 1rem; font-weight: 700; outline: none; padding: 7px 0;
+            font-size: 16px; font-weight: 700; outline: none; padding: 7px 0;
         }
 
         .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px; }
@@ -268,7 +268,7 @@
 
         .form-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
         .form-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
-        .form-group input, .form-group select, .form-group textarea { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 11px; color: var(--text-main); outline: none; font-family: inherit; font-size: 0.95rem; }
+        .form-group input, .form-group select, .form-group textarea { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 11px; color: var(--text-main); outline: none; font-family: inherit; font-size: 16px; }
         .form-group textarea { resize: vertical; min-height: 80px; }
         .btn-submit { background: var(--accent-neon); color: #000; border: none; width: 100%; padding: 13px; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
         .btn-submit:hover { opacity: 0.9; }
@@ -311,9 +311,10 @@
             .modal-content { width: 100% !important; max-height: 88vh !important; padding: 15px !important; border-radius: 12px; margin-top: 10px; }
             .detail-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
             
+            /* Chat bloccata a tutto schermo senza zoom e sfarfallii tastiera */
             #chatModal {
                 width: 100% !important;
-                height: 100vh !important;
+                height: 100% !important;
                 bottom: 0 !important;
                 right: 0 !important;
                 left: 0 !important;
@@ -759,18 +760,18 @@
 
     <!-- MODALE CHAT -->
     <div id="chatModal">
-        <div style="padding: 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+        <div style="padding: 12px 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
             <div style="cursor: pointer; flex: 1; overflow: hidden;" onclick="openActiveSellerProfileFromChat()" title="Clicca per visualizzare il profilo">
-                <strong style="color: var(--accent-neon); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="chatTitle">Chat & Gestione Escrow</strong>
+                <strong style="color: var(--accent-neon); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.95rem;" id="chatTitle">Chat Venditore</strong>
                 <span id="chatStatusIndicator" style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
             </div>
-            <button onclick="closeChat()" style="background: var(--heart-red); color: #fff; border: none; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 0.85rem;">Chiudi ✕</button>
+            <button onclick="closeChat()" style="background: var(--heart-red); color: #fff; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 0.8rem;">Chiudi ✕</button>
         </div>
-        <div id="chatMessages" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
-        <div style="padding: 6px 12px; font-size: 0.8rem; color: var(--accent-neon); min-height: 22px; display: flex; align-items: center;" id="typingIndicator"></div>
-        <div style="padding: 12px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color);">
-            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 11px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main);" onkeypress="if(event.key==='Enter') sendChatMessage()">
-            <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 11px 18px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
+        <div id="chatMessages" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; -webkit-overflow-scrolling: touch;"></div>
+        <div style="padding: 4px 12px; font-size: 0.75rem; color: var(--accent-neon); min-height: 18px; display: flex; align-items: center; flex-shrink: 0;" id="typingIndicator"></div>
+        <div style="padding: 10px 12px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color); flex-shrink: 0;">
+            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); font-size: 16px; outline: none;" onkeypress="if(event.key==='Enter') sendChatMessage()">
+            <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.9rem;">Invia</button>
         </div>
     </div>
 
@@ -1289,7 +1290,7 @@
                             <div style="font-size: 0.9rem; margin-bottom: 2px;">Stato: <b>${o.status || 'Pagato / In Escrow'}</b></div>
                             <div style="font-size: 0.8rem; color: var(--text-muted);">Totale: € ${Number(o.amount || 0).toFixed(2)}</div>
                         </div>
-                        <button class="btn-outline" onclick="openChatModal('${o.sellerId}', 'Gestione Ordine Escrow')">💬 Apri Chat Venditore</button>
+                        <button class="btn-outline" onclick="openChatModal('${o.sellerId}', 'Gestione Ordine Escrow', '', '${o.sellerId}')">💬 Apri Chat Venditore</button>
                     </div>
                 `).join('');
             } catch (err) {
@@ -1755,7 +1756,7 @@
                 showNotification('Questo è il tuo annuncio.', 'error');
                 return;
             }
-            openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : 'Chat', selectedCard ? selectedCard.title : '', selectedCard ? selectedCard.user_id : null);
+            openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : '', selectedCard ? selectedCard.user_id : null);
         }
 
         async function openMyMessagesModal() {
@@ -1786,7 +1787,7 @@
                         const partnerName = getProfileDisplayName(otherUserId);
                         
                         return `
-                            <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '${partnerName}', '', '${otherUserId}')">
+                            <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '', '${otherUserId}')">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                                     <strong style="color: var(--accent-neon); font-size: 0.95rem;">💬 ${partnerName}</strong>
                                     <span style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
@@ -1804,14 +1805,14 @@
 
         function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
 
-        // --- GESTIONE CHAT AVANZATA CON NOME PERSONA + CARTA E LINK AL PROFILO ---
-        function openChatModal(receiverId, titleText, cardTitle = '', sellerId = null) {
+        // --- GESTIONE CHAT CORRETTA CON NOME PERSONA + CARTA E PROFILO ---
+        function openChatModal(receiverId, cardTitle = '', sellerId = null) {
             if (!currentUser) { openAuthModal(); return; }
             activeChatReceiverId = receiverId;
             activeChatSellerId = sellerId || receiverId;
 
             const displayName = getProfileDisplayName(receiverId);
-            const fullTitle = cardTitle ? `${displayName} • <span style="font-weight: normal; font-size: 0.85rem; color: var(--text-muted);">${cardTitle}</span>` : displayName;
+            const fullTitle = cardTitle ? `${displayName} <span style="font-weight: normal; font-size: 0.8rem; color: var(--text-muted);">• ${cardTitle}</span>` : displayName;
 
             document.getElementById('chatTitle').innerHTML = fullTitle;
             document.getElementById('chatModal').style.display = 'flex';
