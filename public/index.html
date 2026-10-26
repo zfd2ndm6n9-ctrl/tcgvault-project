@@ -72,9 +72,98 @@
         .header-actions {
             display: flex;
             align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
+            gap: 10px;
+            flex-wrap: nowrap;
         }
+
+        header {
+            flex-wrap: nowrap;
+            gap: 12px;
+            padding-bottom: 16px;
+            margin-bottom: 18px;
+        }
+
+        .nav-search {
+            flex: 1;
+            min-width: 0;
+        }
+        .nav-search input {
+            width: 100%;
+            box-sizing: border-box;
+            background: var(--panel-solid);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: var(--text-main);
+            font-size: 16px;
+            outline: none;
+        }
+        .nav-search input:focus { border-color: var(--accent-neon); }
+
+        .gear-btn {
+            background: linear-gradient(180deg, rgba(0,255,136,0.18), rgba(0,255,136,0.06));
+            border: 1px solid var(--accent-neon);
+            color: var(--text-main);
+            width: 46px; height: 46px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+            box-shadow: 0 0 18px rgba(0,255,136,0.18);
+        }
+        .gear-btn:hover { transform: rotate(22deg); }
+
+        .drawer-overlay {
+            position: fixed; inset: 0; z-index: 1400;
+            background: rgba(0,0,0,0.55);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 12px;
+        }
+        .gear-drawer {
+            width: min(420px, 100%);
+            max-height: 92vh;
+            background: var(--panel-solid);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 22px 20px 28px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+        }
+        .gear-drawer .filter-input, .gear-drawer .filter-select { width: 100%; box-sizing: border-box; }
+        .drawer-section { margin-bottom: 22px; }
+        .drawer-nav { display: flex; flex-direction: column; gap: 8px; }
+        .drawer-nav button, .drawer-nav .user-badge, .drawer-nav .admin-badge {
+            width: 100%; text-align: left; box-sizing: border-box;
+            max-width: none;
+        }
+
+        .categories-grid { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+        .category-card { flex: 0 0 auto; min-width: 108px; padding: 10px 14px; }
+
+        .vaultbot-fab {
+            position: fixed; right: 18px; bottom: 18px; z-index: 1100;
+            background: var(--accent-neon); color: #000; border: none;
+            border-radius: 999px; padding: 12px 16px; font-weight: 800;
+            cursor: pointer; box-shadow: 0 10px 24px rgba(0,255,136,0.28);
+        }
+
+        .accordion { display: flex; flex-direction: column; gap: 10px; }
+        .acc-item { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+        .acc-item summary {
+            list-style: none; cursor: pointer; padding: 14px 16px;
+            font-weight: 700; color: var(--accent-neon); display: flex;
+            justify-content: space-between; gap: 12px; align-items: center;
+        }
+        .acc-item summary::-webkit-details-marker { display: none; }
+        .acc-item summary::after { content: '▾'; color: var(--text-muted); }
+        .acc-item[open] summary::after { content: '▴'; }
+        .acc-item .faq-text, .acc-item .tos-body { padding: 0 16px 14px; margin: 0; }
+
+        .tos-check { display: flex; align-items: flex-start; gap: 10px; font-size: 0.88rem; color: var(--text-muted); line-height: 1.45; margin: 12px 0 16px; }
+        .tos-check a { color: var(--accent-neon); }
 
         .container { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
         
@@ -302,9 +391,12 @@
 
         @media screen and (max-width: 768px) {
             body { padding: 10px; }
-            header { flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 12px; margin-bottom: 20px; }
-            h1 { font-size: 1.4rem; text-align: center; }
-            .header-actions { justify-content: center; gap: 6px; }
+            header { flex-direction: row; align-items: center; gap: 8px; padding-bottom: 12px; margin-bottom: 16px; }
+            h1 { font-size: 1.05rem; text-align: left; }
+            .header-actions { justify-content: flex-end; gap: 6px; }
+            .gear-btn { width: 42px; height: 42px; }
+            .vaultbot-fab { right: 12px; bottom: 12px; }
+            .gear-drawer { width: 100%; max-height: 96vh; border-radius: 14px; }
             .btn-outline, .btn-sell, .user-badge, .admin-badge { font-size: 0.78rem; padding: 6px 10px; }
             .user-badge, .admin-badge { max-width: 120px; }
             .card-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -336,6 +428,34 @@
 </head>
 <body>
     <div id="toast-container"></div>
+    <button class="vaultbot-fab" onclick="openVaultBot()" title="VaultBot">🤖 VaultBot</button>
+
+    <div class="modal-overlay" id="vaultbot-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🤖 VaultBot</h2>
+                <button class="close-btn" onclick="closeVaultBot()">&times;</button>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0;">Assistente ufficiale TCG Vault. Chiedi regole, ordini, spedizioni o pagamenti.</p>
+            <div class="bot-chat-box" id="botChatContainer">
+                <div class="bot-msg">Ciao, sono VaultBot. Posso spiegarti carrello, annunci, località, chat, pagamenti Escrow e spedizioni. Cosa ti serve?</div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <input type="text" id="botInput" placeholder="Scrivi a VaultBot..." style="flex: 1; padding: 10px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendBotMessage()">
+                <button onclick="sendBotMessage()" style="background: var(--accent-neon); border: none; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="legal-modal">
+        <div class="modal-content modal-content-large">
+            <div class="modal-header">
+                <h2>ToS & FAQ</h2>
+                <button class="close-btn" onclick="closeLegalModal()">&times;</button>
+            </div>
+            <div id="legal-accordion-modal"></div>
+        </div>
+    </div>
 
     <!-- MODALE ONBOARDING OBBLIGATORIO -->
     <div class="modal-overlay" id="onboarding-wizard-modal" style="display: none; z-index: 2500;">
@@ -446,23 +566,17 @@
     <div class="container">
         <header>
             <h1>TCG VAULT</h1>
+            <div class="nav-search">
+                <input type="text" id="search-input" placeholder="Cerca Charizard, Mazzo, Box..." oninput="applyFilters()" aria-label="Cerca prodotto">
+            </div>
             <div class="header-actions">
-                <button class="icon-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Cambia Tema">🌙</button>
-                <button class="icon-btn" onclick="openNotificationsModal()" title="Notifiche">
-                    🔔 <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
-                </button>
-                <button class="btn-outline" onclick="openCartModal()">🛒 Carrello (<span id="cart-count">0</span>)</button>
-                <button class="btn-outline" onclick="openSavedModal()">❤️ Salvati (<span id="saved-count">0</span>)</button>
-                <div id="auth-actions">
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
-                </div>
-                <button class="btn-sell" onclick="checkAuthAndOpenSellModal()">+ Metti in Vendita</button>
+                <button class="icon-btn" onclick="openCartModal()" title="Carrello">🛒 <span id="cart-count">0</span></button>
+                <button class="gear-btn" onclick="openGearDrawer()" title="Menu e filtri">⚙️</button>
             </div>
         </header>
 
-        <!-- SEZIONE CATEGORIE -->
         <div class="categories-section">
-            <div class="section-title">Scegli la Categoria TCG</div>
+            <div class="section-title">Categorie</div>
             <div class="categories-grid">
                 <div class="category-card active" onclick="selectCategory('', this)">Tutte</div>
                 <div class="category-card" onclick="selectCategory('Pokemon', this)">⚡ Pokémon</div>
@@ -473,20 +587,36 @@
             </div>
         </div>
 
-        <!-- BARRA FILTRI -->
-        <div class="filter-bar">
-            <div class="filter-row">
-                <div class="filter-group" style="flex: 2;">
-                    <label>Cerca Prodotto</label>
-                    <input type="text" id="search-input" class="filter-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFilters()">
+        <div class="section-title" style="font-size: 0.9rem; margin-bottom: 15px;">Prodotti Disponibili</div>
+        <div id="product-list" class="card-grid"></div>
+    </div>
+
+    <div class="drawer-overlay" id="gear-drawer-overlay" onclick="closeGearDrawer()">
+        <aside class="gear-drawer" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>⚙️ Menu</h2>
+                <button class="close-btn" onclick="closeGearDrawer()">&times;</button>
+            </div>
+            <div class="drawer-section drawer-nav">
+                <div id="auth-actions">
+                    <button class="btn-outline" onclick="closeGearDrawer(); openAuthModal()">Accedi / Registrati</button>
                 </div>
-                
-                <div class="filter-group">
-                    <label>📍 Località (Città o Indirizzo)</label>
+                <button class="btn-sell" onclick="closeGearDrawer(); checkAuthAndOpenSellModal()">+ Metti in Vendita</button>
+                <button class="btn-outline" onclick="closeGearDrawer(); openSavedModal()">❤️ Salvati (<span id="saved-count">0</span>)</button>
+                <button class="icon-btn" onclick="closeGearDrawer(); openNotificationsModal()" title="Notifiche" style="width:100%; text-align:left;">
+                    🔔 Notifiche <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
+                </button>
+                <button class="icon-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Cambia Tema" style="width:100%; text-align:left;">🌙 Tema</button>
+                <button class="btn-outline" onclick="openTosFaqFromMenu()">📜 ToS & FAQ</button>
+                <button class="btn-outline" onclick="closeGearDrawer(); openVaultBot()">🤖 VaultBot</button>
+            </div>
+            <div class="drawer-section">
+                <div class="section-title">Filtri avanzati</div>
+                <div class="filter-group" style="margin-bottom:12px;">
+                    <label>📍 Località</label>
                     <input type="text" id="location-input" class="filter-input" placeholder="Es. Milano, Roma..." oninput="applyFilters()">
                 </div>
-
-                <div class="filter-group">
+                <div class="filter-group" style="margin-bottom:12px;">
                     <label>Tipo Articolo</label>
                     <select id="type-filter" class="filter-select" onchange="applyFilters()">
                         <option value="">Tutti i Tipi</option>
@@ -497,18 +627,14 @@
                         <option value="Accessori">Accessori</option>
                     </select>
                 </div>
-            </div>
-
-            <div class="filter-row">
-                <div class="filter-group" style="max-width: 240px;">
-                    <label>Prezzo</label>
+                <div class="filter-group" style="margin-bottom:12px;">
+                    <label>Prezzo massimo</label>
                     <div class="price-box-clean">
                         <span>€</span>
                         <input type="number" id="price-clean-input" class="price-clean-input" min="0" value="" oninput="applyFilters()" placeholder="...">
                     </div>
                 </div>
-
-                <div class="filter-group">
+                <div class="filter-group" style="margin-bottom:12px;">
                     <label>Stato Annuncio</label>
                     <select id="status-filter" class="filter-select" onchange="applyFilters()">
                         <option value="">Tutti</option>
@@ -516,7 +642,6 @@
                         <option value="sold">Solo Venduti</option>
                     </select>
                 </div>
-
                 <div class="filter-group">
                     <label>Ordina per</label>
                     <select id="sort-filter" class="filter-select" onchange="applyFilters()">
@@ -526,14 +651,7 @@
                     </select>
                 </div>
             </div>
-        </div>
-
-        <div class="rules-banner">
-            <strong>Compratori:</strong> ordine minimo €20,00 e articoli di un solo venditore.
-            <br><strong>Venditori:</strong> sotto €50,00 di catalogo (non venduti) gli annunci restano in attesa e si pubblicano tutti insieme al raggiungimento della soglia.
-        </div>
-        <div class="section-title" style="font-size: 0.9rem; margin-bottom: 15px;">Prodotti Disponibili</div>
-        <div id="product-list" class="card-grid"></div>
+        </aside>
     </div>
 
     <!-- MODALE CARRELLO -->
@@ -597,7 +715,7 @@
                 <button class="profile-tab" onclick="switchProfileTab('my-orders', this)">📦 I Miei Ordini</button>
                 <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio & Prelievo</button>
                 <button class="profile-tab" onclick="switchProfileTab('reviews-tab', this)">Recensioni</button>
-                <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">Bot H24</button>
+                <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">VaultBot</button>
                 <button class="profile-tab" onclick="switchProfileTab('tos-faq', this)">ToS & FAQ</button>
             </div>
 
@@ -660,37 +778,12 @@
             </div>
 
             <div id="tab-bot-support" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale TCG Vault (Copertura 99% H24).</p>
-                <div class="bot-chat-box" id="botChatContainer">
-                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di TCG Vault. Come posso aiutarti oggi?</div>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <input type="text" id="botInput" placeholder="Chiedi qualcosa al bot..." style="flex: 1; padding: 10px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendBotMessage()">
-                    <button onclick="sendBotMessage()" style="background: var(--accent-neon); border: none; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
-                </div>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">VaultBot è l'assistente ufficiale H24 di TCG Vault.</p>
+                <button type="button" class="btn-submit" onclick="openVaultBot()">Apri VaultBot</button>
             </div>
 
             <div id="tab-tos-faq" class="tab-content" style="display: none;">
-                <div class="faq-item">
-                    <div class="faq-title">🛡️ 1. Protezione Escrow e Sicurezza dei Pagamenti Stripe</div>
-                    <div class="faq-text">Ogni transazione effettuata su TCG Vault è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto centrale della piattaforma e rilasciati automaticamente sul wallet del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
-                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente per preservare la qualità della community.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">📍 3. Indirizzi Verificati e Scambi Locali</div>
-                    <div class="faq-text">Ogni utente e negoziante indica la propria via e città per facilitare gli scambi a mano o le spedizioni tracciate all'interno della community.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">⚖️ 4. Condizioni delle Carte e Trasparenza</div>
-                    <div class="faq-text">I venditori sono tenuti a classificare accuratamente lo stato delle carte (Nuovo Sigillato, Quasi Nuovo, Eccellente, Buono, Usato). In caso di contestazioni documentate, l'Escrow blocca il payout e il supporto interviene per tutelare l'acquirente.</div>
-                </div>
-                <div class="faq-item">
-                    <div class="faq-title">📦 5. Corrieri Autorizzati e Regole di Spedizione</div>
-                    <div class="faq-text">I corrieri autorizzati su TCG Vault sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
-                </div>
+                <div id="legal-accordion-profile"></div>
             </div>
         </div>
     </div>
@@ -746,7 +839,19 @@
                 I tuoi fondi saranno custoditi in modo sicuro in Escrow fino alla conferma della transazione.
             </p>
             <form id="payment-form" style="margin-bottom: 15px;">
+                <div class="form-group">
+                    <label>Nome completo *</label>
+                    <input type="text" id="checkout-full-name" required autocomplete="name" placeholder="Nome e cognome">
+                </div>
+                <div class="form-group">
+                    <label>Indirizzo di fatturazione *</label>
+                    <input type="text" id="checkout-billing-address" required autocomplete="street-address" placeholder="Via, civico, città">
+                </div>
                 <div id="payment-element" style="margin-bottom: 15px; background: var(--bg-color); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color);"></div>
+                <label class="tos-check">
+                    <input type="checkbox" id="checkout-tos-accept" required>
+                    <span>Accetto i <a href="#tos" onclick="openTosFaqFromMenu(); return false;">Termini e le Condizioni</a> *</span>
+                </label>
                 <button type="submit" class="btn-submit" id="submit-payment-btn">
                     Conferma e Paga € <span id="checkout-modal-price">0.00</span>
                 </button>
@@ -911,10 +1016,10 @@
             const savedTheme = localStorage.getItem('tcg_vault_theme') || 'dark';
             if (savedTheme === 'light') {
                 document.body.classList.add('light-theme');
-                document.getElementById('theme-toggle-btn').innerText = '☀️';
+                document.getElementById('theme-toggle-btn').innerText = '☀️ Tema';
             } else {
                 document.body.classList.remove('light-theme');
-                document.getElementById('theme-toggle-btn').innerText = '🌙';
+                document.getElementById('theme-toggle-btn').innerText = '🌙 Tema';
             }
         }
 
@@ -922,10 +1027,10 @@
             const isLight = document.body.classList.toggle('light-theme');
             const btn = document.getElementById('theme-toggle-btn');
             if (isLight) {
-                btn.innerText = '☀️';
+                btn.innerText = '☀️ Tema';
                 localStorage.setItem('tcg_vault_theme', 'light');
             } else {
-                btn.innerText = '🌙';
+                btn.innerText = '🌙 Tema';
                 localStorage.setItem('tcg_vault_theme', 'dark');
             }
         }
@@ -1179,21 +1284,46 @@
             loadCardsFromSupabase();
         }
 
+        function openGearDrawer() {
+            document.getElementById('gear-drawer-overlay').style.display = 'flex';
+        }
+        function closeGearDrawer() {
+            document.getElementById('gear-drawer-overlay').style.display = 'none';
+        }
+        function openVaultBot() {
+            document.getElementById('vaultbot-modal').style.display = 'flex';
+        }
+        function closeVaultBot() {
+            document.getElementById('vaultbot-modal').style.display = 'none';
+        }
+        function closeLegalModal() {
+            document.getElementById('legal-modal').style.display = 'none';
+        }
+        function openTosFaqFromMenu() {
+            closeGearDrawer();
+            renderLegalContent('legal-accordion-modal');
+            document.getElementById('legal-modal').style.display = 'flex';
+            setTimeout(() => {
+                const tos = document.querySelector('#legal-accordion-modal #tos');
+                if (tos) tos.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 50);
+        }
+
         function updateHeaderUI() {
             const authContainer = document.getElementById('auth-actions');
             if (currentUser) {
                 const badgeClass = isAdmin() ? 'admin-badge' : 'user-badge';
                 const badgeText = isAdmin() ? '🛡️ Admin Supremo' : `👤 ${currentUser.name || currentUser.email}`;
                 authContainer.innerHTML = `
-                    <button class="btn-outline" id="messages-btn-nav" onclick="openMyMessagesModal()">
+                    <button class="btn-outline" id="messages-btn-nav" onclick="closeGearDrawer(); openMyMessagesModal()">
                         💬 Messaggi ${unreadMessagesCount > 0 ? `<span class="bell-badge">${unreadMessagesCount}</span>` : ''}
                     </button>
-                    <span class="${badgeClass}" onclick="openProfileModal()" title="${currentUser.email}">${badgeText}</span>
-                    <button class="btn-outline" onclick="logoutSupabase()">Esci</button>
+                    <span class="${badgeClass}" onclick="closeGearDrawer(); openProfileModal()" title="${currentUser.email}">${badgeText}</span>
+                    <button class="btn-outline" onclick="closeGearDrawer(); logoutSupabase()">Esci</button>
                 `;
             } else {
                 authContainer.innerHTML = `
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
+                    <button class="btn-outline" onclick="closeGearDrawer(); openAuthModal()">Accedi / Registrati</button>
                 `;
             }
         }
@@ -1466,6 +1596,8 @@
             if (tabName === 'my-listings') loadMyListings();
             if (tabName === 'my-orders') loadMyOrders();
             if (tabName === 'reviews-tab') loadUserReviews();
+            if (tabName === 'tos-faq') renderLegalContent('legal-accordion-profile');
+            if (tabName === 'bot-support') openVaultBot();
         }
 
         async function loadMyOrders() {
@@ -1555,27 +1687,73 @@
             }
         }
 
-        function sendBotMessage() {
-            const input = document.getElementById('botInput');
-            const q = input.value.trim().toLowerCase();
-            if(!q) return;
-            const container = document.getElementById('botChatContainer');
-            container.innerHTML += `<div class="user-msg">${input.value}</div>`;
-            input.value = '';
-            
-            let reply = "Per questa specifica richiesta contatta support@tcgvault.com.";
-            if (q.includes('ciao') || q.includes('salve')) {
-                reply = "🤖 Ciao! Sono l'assistente H24 di TCG Vault. Come posso aiutarti?";
-            } else if (q.includes('spediz') || q.includes('corriere')) {
-                reply = "📦 Spedizioni: I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
-            } else if (q.includes('escrow') || q.includes('pagament')) {
-                reply = "💳 Pagamenti & Escrow: Fondi custoditi in sicurezza da Stripe fino alla consegna.";
-            }
+        function escapeHtml(text) {
+            return String(text || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
 
-            setTimeout(() => {
-                container.innerHTML += `<div class="bot-msg">🤖 ${reply}</div>`;
-                container.scrollTop = container.scrollHeight;
-            }, 600);
+        function legalAccordionHtml() {
+            return `
+                <h3 style="margin: 0 0 10px; color: var(--text-main);">FAQ</h3>
+                <div class="accordion">
+                    <details class="acc-item"><summary>Come funziona il carrello?</summary><p class="faq-text">Ordine minimo €20,00 e solo articoli dello stesso venditore. Non puoi mischiare venditori diversi nello stesso ordine.</p></details>
+                    <details class="acc-item"><summary>Perché un annuncio è in attesa?</summary><p class="faq-text">Sotto €50,00 di catalogo non venduto gli annunci restano in attesa. Quando il totale cumulativo raggiunge €50,00 si pubblicano tutti insieme in vetrina.</p></details>
+                    <details class="acc-item"><summary>Come viene mostrata la località?</summary><p class="faq-text">La città del venditore arriva dal campo address del profilo su Supabase. Compare in chat e nelle schede prodotto.</p></details>
+                    <details class="acc-item"><summary>Le notifiche chat funzionano dal primo messaggio?</summary><p class="faq-text">Sì. Il primo messaggio ricevuto attiva correttamente la notifica: il sistema memorizza gli ID già visti e segnala ogni nuovo arrivo.</p></details>
+                    <details class="acc-item"><summary>Come sono protetti i pagamenti?</summary><p class="faq-text">Ogni transazione è protetta da Escrow Stripe. I fondi restano in custodia fino a conferma di consegna o scambio a mano, poi vanno nel wallet del venditore.</p></details>
+                    <details class="acc-item"><summary>Quali corrieri sono autorizzati?</summary><p class="faq-text">Poste Italiane / SDA, InPost, BRT, GLS, DHL e UPS. I metodi non tracciati fanno decadere la protezione Escrow.</p></details>
+                </div>
+                <h3 id="tos" style="margin: 24px 0 10px; color: var(--text-main);">Termini e Condizioni</h3>
+                <div class="accordion">
+                    <details class="acc-item" open><summary>1. Marketplace e account</summary><p class="tos-body faq-text">TCG Vault è un marketplace per carte e prodotti TCG. L'account è personale. I dati di profilo (nome, email, address) servono a scambi, spedizioni e località visibile.</p></details>
+                    <details class="acc-item"><summary>2. Vendite e soglia catalogo</summary><p class="tos-body faq-text">Gli annunci sotto €50,00 cumulativi di catalogo non venduto restano in stato in attesa e non compaiono in vetrina. Al raggiungimento della soglia vengono pubblicati insieme.</p></details>
+                    <details class="acc-item"><summary>3. Acquisti e carrello</summary><p class="tos-body faq-text">Il checkout richiede ordine minimo €20,00 da un singolo venditore, Nome completo, indirizzo di fatturazione e accettazione dei presenti Termini.</p></details>
+                    <details class="acc-item"><summary>4. Escrow, spedizioni e contestazioni</summary><p class="tos-body faq-text">I pagamenti passano da Stripe Escrow. Spedizioni solo con corrieri tracciati autorizzati. In caso di contestazione documentata il payout viene sospeso e interviene il supporto.</p></details>
+                    <details class="acc-item"><summary>5. Moderazione</summary><p class="tos-body faq-text">Annunci non inerenti al TCG o spam vengono bloccati. L'uso della piattaforma implica accettazione di queste regole.</p></details>
+                </div>
+            `;
+        }
+
+        function renderLegalContent(containerId) {
+            const el = document.getElementById(containerId);
+            if (el) el.innerHTML = legalAccordionHtml();
+        }
+
+        async function sendBotMessage() {
+            const input = document.getElementById('botInput');
+            const text = input.value.trim();
+            if (!text) return;
+            const container = document.getElementById('botChatContainer');
+            container.innerHTML += `<div class="user-msg">${escapeHtml(text)}</div>`;
+            input.value = '';
+            container.scrollTop = container.scrollHeight;
+            let reply = '';
+            try {
+                const res = await fetch('/api/vaultbot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await res.json();
+                reply = data.reply || '';
+            } catch (e) {
+                reply = '';
+            }
+            if (!reply) reply = fallbackVaultBotReply(text);
+            container.innerHTML += `<div class="bot-msg">${escapeHtml(reply)}</div>`;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function fallbackVaultBotReply(message) {
+            const q = String(message || '').toLowerCase();
+            if (/(ciao|salve|hey|buongiorno|buonasera)/.test(q)) return 'Ciao, sono VaultBot. Posso spiegarti carrello (€20 stesso venditore), annunci in attesa sotto €50, località da address, chat, pagamenti Escrow e spedizioni.';
+            if (/(carrello|ordine minimo|20)/.test(q)) return 'Regola carrello: minimo €20,00 e solo articoli di un singolo venditore. Non puoi mischiare venditori nello stesso ordine.';
+            if (/(annuncio|in attesa|50|catalogo|soglia)/.test(q)) return 'Regola annunci: sotto €50,00 totali di catalogo non venduto restano in attesa. Quando raggiungi €50,00 cumulativi si pubblicano tutti insieme.';
+            if (/(localit|citt|address|indirizzo|dove)/.test(q)) return 'Regola località: la città visibile è collegata al campo address del profilo su Supabase, non a un testo fisso.';
+            if (/(chat|notif|messagg)/.test(q)) return 'Regola chat: il primo messaggio attiva correttamente la notifica. Il sistema tiene traccia degli ID già visti e avvisa su ogni nuovo arrivo.';
+            if (/(escrow|pagament|stripe|checkout)/.test(q)) return 'I pagamenti passano da Stripe. I fondi restano in Escrow fino a consegna o scambio a mano, poi vanno nel wallet del venditore. In checkout servono nome, indirizzo di fatturazione e accettazione ToS.';
+            if (/(spediz|corriere|pacco)/.test(q)) return 'Spedizioni autorizzate: Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS. Senza tracciamento decade la protezione Escrow.';
+            if (/(ordine|wallet|prelievo|iban)/.test(q)) return 'Dopo il pagamento l\'ordine è in Escrow. Il venditore vede i fondi nel wallet e può richiedere il prelievo via IBAN a consegna confermata.';
+            return 'Sono VaultBot. Copro regole di carrello (€20, stesso venditore), soglia annunci €50, località da address, notifiche chat, Escrow Stripe, spedizioni e account. Dimmi cosa ti serve in modo più specifico.';
         }
 
         function loadMyListings() {
@@ -1853,9 +2031,9 @@
                 return;
             }
 
-            selectedCard = cart[0]; 
+            selectedCard = cart[0];
             closeCartModal();
-            openStripeCheckoutModal();
+            window.location.href = 'checkout.html';
         }
 
         async function openDetailModal(cardId) {
@@ -1912,6 +2090,12 @@
             }
             
             closeDetailModal();
+            const nameEl = document.getElementById('checkout-full-name');
+            const addrEl = document.getElementById('checkout-billing-address');
+            const tosEl = document.getElementById('checkout-tos-accept');
+            if (nameEl) nameEl.value = currentUser.name || '';
+            if (addrEl) addrEl.value = currentUser.address || '';
+            if (tosEl) tosEl.checked = false;
             document.getElementById('stripe-checkout-modal').style.display = 'flex';
 
             try {
@@ -1954,6 +2138,20 @@
 
         document.getElementById('payment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const fullName = (document.getElementById('checkout-full-name') || {}).value?.trim();
+            const billing = (document.getElementById('checkout-billing-address') || {}).value?.trim();
+            const tosOk = document.getElementById('checkout-tos-accept')?.checked;
+            const payMsg = document.getElementById('payment-message');
+            if (!fullName || !billing) {
+                if (payMsg) payMsg.innerText = 'Compila Nome completo e Indirizzo di fatturazione.';
+                showNotification('Nome e indirizzo di fatturazione sono obbligatori.', 'error');
+                return;
+            }
+            if (!tosOk) {
+                if (payMsg) payMsg.innerText = 'Devi accettare i Termini e le Condizioni.';
+                showNotification('Accetta i Termini e le Condizioni per ordinare.', 'error');
+                return;
+            }
             if (!stripe || !elements) return;
 
             const submitBtn = document.getElementById('submit-payment-btn');

@@ -10,7 +10,9 @@ app.use(express.json());
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = process.env.STRIPE_SECRET_KEY
+    ? require('stripe')(process.env.STRIPE_SECRET_KEY)
+    : null;
 
 let messagesDB = [];
 let reviewsDB = [];
@@ -238,6 +240,9 @@ app.get('/api/profiles/:userId', async (req, res) => {
 app.post('/api/create-payment-intent', async (req, res) => {
     const { amount, buyerId, sellerId, cardId, cardTitle } = req.body;
     try {
+        if (!stripe) {
+            return res.status(500).json({ error: { message: 'STRIPE_SECRET_KEY non configurata.' } });
+        }
         const baseAmountCents = Math.round(amount * 100); 
         const applicationFee = Math.round(baseAmountCents * 0.07);
         const estimatedStripeFee = Math.round(baseAmountCents * 0.015) + 25;
@@ -448,6 +453,49 @@ app.get('/api/reviews/:sellerId', (req, res) => {
     const sellerId = req.params.sellerId;
     const sellerReviews = reviewsDB.filter(r => r.sellerId === sellerId);
     res.json(sellerReviews);
+});
+
+function answerVaultBot(message) {
+    const q = String(message || '').toLowerCase().trim();
+    if (!q) {
+        return 'Ciao, sono VaultBot. Chiedimi carrello, annunci, località, chat, pagamenti, spedizioni o come funziona TCG Vault.';
+    }
+    if (/(ciao|salve|hey|buongiorno|buonasera|aiuto|help)/.test(q)) {
+        return 'Ciao, sono VaultBot, l\'assistente ufficiale di TCG Vault. Posso spiegarti in modo chiaro: ordine minimo €20 dallo stesso venditore; soglia catalogo €50 con annunci in attesa; località dal campo address; notifiche chat dal primo messaggio; Escrow Stripe, spedizioni e wallet.';
+    }
+    if (/(carrello|minimo|20\s*€|20 euro|stesso venditore|venditori diversi)/.test(q)) {
+        return 'Regola Carrello: l\'ordine minimo è €20,00 e gli articoli devono appartenere a un singolo venditore. Non è possibile mischiare venditori nello stesso carrello. Sotto i €20 il checkout resta bloccato.';
+    }
+    if (/(annuncio|in attesa|pending|50\s*€|50 euro|catalogo|soglia|pubblic)/.test(q)) {
+        return 'Regola Annunci: se il valore totale dei prodotti non venduti di un venditore è sotto €50,00, gli annunci restano in stato «in attesa» e non compaiono in vetrina. Quando il cumulativo raggiunge €50,00 si pubblicano tutti insieme.';
+    }
+    if (/(localit|citt|address|indirizzo|dove si trova|posizione)/.test(q)) {
+        return 'Regola Località: la città mostrata in marketplace e in chat è collegata al campo address del profilo su Supabase. Non usiamo un testo fisso tipo «Verificata»: se address manca, la città non viene trovata.';
+    }
+    if (/(chat|notif|messagg|primo messaggio|campanello)/.test(q)) {
+        return 'Regola Chat: il primo messaggio attiva correttamente la notifica. Il controllo periodico memorizza gli ID già visti e segnala ogni nuovo arrivo, senza saltare il primo.';
+    }
+    if (/(escrow|pagament|stripe|carta|checkout|tos|termini)/.test(q)) {
+        return 'Pagamenti: il checkout usa Stripe. I fondi restano in Escrow fino a conferma di consegna o scambio a mano, poi passano nel wallet del venditore. Per completare l\'ordine servono Nome completo, indirizzo di fatturazione e la spunta obbligatoria «Accetto i Termini e le Condizioni».';
+    }
+    if (/(spediz|corriere|pacco|poste|inpost|gls|dhl|ups|brt)/.test(q)) {
+        return 'Spedizioni: i corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS. I metodi non tracciati fanno decadere la protezione Escrow. Lo scambio a mano è consentito usando la città del profilo.';
+    }
+    if (/(ordine|wallet|prelievo|iban|vendita|acquisto)/.test(q)) {
+        return 'Gestione ordini: dopo il pagamento l\'ordine è protetto. L\'acquirente riceve il prodotto con spedizione tracciata o scambio a mano; il venditore vede i fondi nel wallet e può richiedere il prelievo via IBAN a consegna confermata.';
+    }
+    if (/(ospite|guest|login|registr|account|profilo)/.test(q)) {
+        return 'Puoi sfogliare il catalogo da ospite. Per vendere, chattare, salvare, offrire o comprare serve l\'accesso. Il profilo salva nome, email e address su Supabase.';
+    }
+    if (/(faq|come funziona|regole|marketplace)/.test(q)) {
+        return 'TCG Vault è un marketplace TCG. In evidenza restano ricerca e categorie. I filtri avanzati stanno nell\'ingranaggio ⚙️. Regole chiave: carrello €20 stesso venditore; annunci in attesa sotto €50 cumulativi; località da address; chat con notifica dal primo messaggio; pagamenti Escrow Stripe.';
+    }
+    return 'Ho letto la tua domanda. In sintesi TCG Vault protegge compravendite TCG con Escrow, carrello minimo €20 dallo stesso venditore, pubblicazione annunci al raggiungimento di €50 di catalogo, località da address e chat con notifica già dal primo messaggio. Riformula il dettaglio (carrello, annuncio, chat, pagamento o spedizione) e ti rispondo in modo puntuale. Per casi account puoi scrivere a support@tcgvault.com.';
+}
+
+app.post('/api/vaultbot', (req, res) => {
+    const reply = answerVaultBot(req.body && req.body.message);
+    res.json({ success: true, reply });
 });
 
 const PORT = process.env.PORT || 4242;
