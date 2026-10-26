@@ -416,6 +416,7 @@
             transform: none;
             opacity: 1;
         }
+        #legal-modal { z-index: 1800; }
         .tab-content { animation: fadeSection 0.22s ease; }
         @keyframes fadeSection { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) {
@@ -535,7 +536,7 @@
     <div class="modal-overlay" id="legal-modal">
         <div class="modal-content modal-content-large">
             <div class="modal-header">
-                <h2>ToS & FAQ</h2>
+                <h2>Termini e Condizioni</h2>
                 <button class="close-btn" onclick="closeLegalModal()">&times;</button>
             </div>
             <div id="legal-accordion-modal"></div>
@@ -652,6 +653,10 @@
         <header>
             <h1>TCG VAULT</h1>
             <div class="header-actions">
+                <button class="icon-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Cambia Tema">🌙</button>
+                <button class="icon-btn" onclick="openInboxFromHeader()" title="Notifiche">
+                    🔔 <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
+                </button>
                 <button class="btn-outline" onclick="openCartModal()">🛒 <span id="cart-count">0</span></button>
                 <button class="btn-sell" onclick="checkAuthAndOpenSellModal()">+ Vendi</button>
                 <button class="hamburger-btn" onclick="openSideMenu()" title="Menu" aria-label="Apri menu">
@@ -715,17 +720,13 @@
                     <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('my-listings')">📋 I Miei Annunci</button>
                     <button class="btn-outline side-link" onclick="closeSideMenu(); logoutSupabase()">Esci</button>
                 </div>
-                <button class="icon-btn side-link" onclick="closeSideMenu(); openNotificationsModal()">
-                    🔔 Notifiche <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
-                </button>
-                <button class="icon-btn side-link" id="theme-toggle-btn" onclick="toggleTheme()">🌙 Tema</button>
             </div>
 
             <div class="side-section">
                 <h3>Supporto / FAQ</h3>
                 <p class="side-sub">Assistenza e regole della piattaforma</p>
                 <button class="btn-outline side-link" onclick="closeSideMenu(); openVaultBot()">🤖 VaultBot</button>
-                <button class="btn-outline side-link" onclick="closeSideMenu(); openTosFaqFromMenu()">📜 ToS & FAQ</button>
+                <button class="btn-outline side-link" onclick="openTosFaqFromMenu()">📜 Termini e Condizioni</button>
             </div>
 
             <div class="side-section" id="side-admin-section" style="display:none;">
@@ -846,7 +847,7 @@
                 <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio & Prelievo</button>
                 <button class="profile-tab" onclick="switchProfileTab('reviews-tab', this)">Recensioni</button>
                 <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">VaultBot</button>
-                <button class="profile-tab" onclick="switchProfileTab('tos-faq', this)">ToS & FAQ</button>
+                <button class="profile-tab" onclick="switchProfileTab('tos-faq', this)">Termini</button>
             </div>
 
             <div id="tab-info" class="tab-content">
@@ -1147,10 +1148,10 @@
             const savedTheme = localStorage.getItem('tcg_vault_theme') || 'dark';
             if (savedTheme === 'light') {
                 document.body.classList.add('light-theme');
-                document.getElementById('theme-toggle-btn').innerText = '☀️ Tema';
+                document.getElementById('theme-toggle-btn').innerText = '☀️';
             } else {
                 document.body.classList.remove('light-theme');
-                document.getElementById('theme-toggle-btn').innerText = '🌙 Tema';
+                document.getElementById('theme-toggle-btn').innerText = '🌙';
             }
         }
 
@@ -1158,10 +1159,10 @@
             const isLight = document.body.classList.toggle('light-theme');
             const btn = document.getElementById('theme-toggle-btn');
             if (isLight) {
-                btn.innerText = '☀️ Tema';
+                btn.innerText = '☀️';
                 localStorage.setItem('tcg_vault_theme', 'light');
             } else {
-                btn.innerText = '🌙 Tema';
+                btn.innerText = '🌙';
                 localStorage.setItem('tcg_vault_theme', 'dark');
             }
         }
@@ -1287,6 +1288,15 @@
                     menuBadge.style.display = 'inline-block';
                 } else {
                     menuBadge.style.display = 'none';
+                }
+            }
+            const bell = document.getElementById('notification-badge');
+            if (bell) {
+                if (unreadMessagesCount > 0) {
+                    bell.innerText = unreadMessagesCount;
+                    bell.style.display = 'inline-block';
+                } else {
+                    bell.style.display = 'none';
                 }
             }
         }
@@ -1440,12 +1450,16 @@
         function closeVaultBot() { hideOverlay('vaultbot-modal'); }
         function closeLegalModal() { hideOverlay('legal-modal'); }
         function openTosFaqFromMenu() {
+            closeSideMenu();
+            hideOverlay('profile-modal');
+            hideOverlay('filters-overlay');
+            hideOverlay('vaultbot-modal');
             renderLegalContent('legal-accordion-modal');
             showOverlay('legal-modal');
-            setTimeout(() => {
-                const tos = document.querySelector('#legal-accordion-modal #tos');
-                if (tos) tos.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 50);
+        }
+        function openInboxFromHeader() {
+            if (!currentUser) { openAuthModal(); return; }
+            openMyMessagesModal();
         }
         function openProfileTabFromMenu(tabName) {
             if (!currentUser) { openAuthModal(); return; }
@@ -1457,7 +1471,7 @@
                 'wallet-escrow': 'Portafoglio',
                 'reviews-tab': 'Recensioni',
                 'bot-support': 'VaultBot',
-                'tos-faq': 'ToS'
+                'tos-faq': 'Termini'
             };
             const btn = Array.from(document.querySelectorAll('.profile-tab')).find(t => t.textContent.includes(labels[tabName] || tabName));
             if (btn) switchProfileTab(tabName, btn);
@@ -1845,22 +1859,13 @@
 
         function legalAccordionHtml() {
             return `
-                <h3 style="margin: 0 0 10px; color: var(--text-main);">FAQ</h3>
-                <div class="accordion">
-                    <details class="acc-item"><summary>Come funziona il carrello?</summary><p class="faq-text">Ordine minimo €20,00 e solo articoli dello stesso venditore. Non puoi mischiare venditori diversi nello stesso ordine.</p></details>
-                    <details class="acc-item"><summary>Perché un annuncio è in attesa?</summary><p class="faq-text">Sotto €50,00 di catalogo non venduto gli annunci restano in attesa. Quando il totale cumulativo raggiunge €50,00 si pubblicano tutti insieme in vetrina.</p></details>
-                    <details class="acc-item"><summary>Come viene mostrata la località?</summary><p class="faq-text">La città del venditore arriva dal campo address del profilo su Supabase. Compare in chat e nelle schede prodotto.</p></details>
-                    <details class="acc-item"><summary>Le notifiche chat funzionano dal primo messaggio?</summary><p class="faq-text">Sì. Il primo messaggio ricevuto attiva correttamente la notifica: il sistema memorizza gli ID già visti e segnala ogni nuovo arrivo.</p></details>
-                    <details class="acc-item"><summary>Come sono protetti i pagamenti?</summary><p class="faq-text">Ogni transazione è protetta da Escrow Stripe. I fondi restano in custodia fino a conferma di consegna o scambio a mano, poi vanno nel wallet del venditore.</p></details>
-                    <details class="acc-item"><summary>Quali corrieri sono autorizzati?</summary><p class="faq-text">Poste Italiane / SDA, InPost, BRT, GLS, DHL e UPS. I metodi non tracciati fanno decadere la protezione Escrow.</p></details>
-                </div>
-                <h3 id="tos" style="margin: 24px 0 10px; color: var(--text-main);">Termini e Condizioni</h3>
-                <div class="accordion">
-                    <details class="acc-item" open><summary>1. Marketplace e account</summary><p class="tos-body faq-text">TCG Vault è un marketplace per carte e prodotti TCG. L'account è personale. I dati di profilo (nome, email, address) servono a scambi, spedizioni e località visibile.</p></details>
-                    <details class="acc-item"><summary>2. Vendite e soglia catalogo</summary><p class="tos-body faq-text">Gli annunci sotto €50,00 cumulativi di catalogo non venduto restano in stato in attesa e non compaiono in vetrina. Al raggiungimento della soglia vengono pubblicati insieme.</p></details>
-                    <details class="acc-item"><summary>3. Acquisti e carrello</summary><p class="tos-body faq-text">Il checkout richiede ordine minimo €20,00 da un singolo venditore, Nome completo, indirizzo di fatturazione e accettazione dei presenti Termini.</p></details>
-                    <details class="acc-item"><summary>4. Escrow, spedizioni e contestazioni</summary><p class="tos-body faq-text">I pagamenti passano da Stripe Escrow. Spedizioni solo con corrieri tracciati autorizzati. In caso di contestazione documentata il payout viene sospeso e interviene il supporto.</p></details>
-                    <details class="acc-item"><summary>5. Moderazione</summary><p class="tos-body faq-text">Annunci non inerenti al TCG o spam vengono bloccati. L'uso della piattaforma implica accettazione di queste regole.</p></details>
+                <div class="accordion" id="tos">
+                    <details class="acc-item"><summary>1. Natura della Piattaforma e Accettazione</summary><p class="tos-body faq-text">TCG Vault è un marketplace digitale focalizzato sulla compravendita e sullo scambio di carte collezionabili (TCG) e prodotti correlati. L'utilizzo della Piattaforma, la creazione di un account o l'esecuzione di transazioni implicano l'accettazione integrale dei presenti Termini e Condizioni di Servizio.</p></details>
+                    <details class="acc-item"><summary>2. Account utente e Sicurezza</summary><p class="tos-body faq-text"><strong>Registrazione:</strong> l'utente è tenuto a inserire dati identificativi accurati e aggiornati (inclusi nome, cognome e indirizzo) necessari per la corretta gestione delle transazioni e delle spedizioni.<br><br><strong>Responsabilità:</strong> l'utente è l'unico responsabile della custodia delle proprie credenziali di accesso e di ogni attività condotta tramite il proprio account.</p></details>
+                    <details class="acc-item"><summary>3. Regole per gli Acquirenti</summary><p class="tos-body faq-text"><strong>Ordine Minimo:</strong> ciascun ordine inoltrato a un singolo venditore deve raggiungere un importo minimo di 20,00€ (al netto delle spese di spedizione). Non è consentito il cumulo di carrelli appartenenti a venditori differenti in un'unica transazione.<br><br><strong>Transazioni e Deposito (Escrow):</strong> i pagamenti sono gestiti tramite i gateway autorizzati integrati nella Piattaforma. I fondi versati vengono trattenuti in modalità Escrow (deposito a garanzia) e svincolati a favore del venditore in conformità con lo stato della spedizione e le regole di conferma della transazione.</p></details>
+                    <details class="acc-item"><summary>4. Regole per i Venditori e Gestione Annunci</summary><p class="tos-body faq-text"><strong>Soglia di Pubblicazione:</strong> gli annunci inseriti da un venditore il cui valore di catalogo complessivo (articoli non ancora venduti) risulti inferiore a 50,00€ vengono mantenuti in stato di attesa e pubblicati contestualmente sul marketplace al raggiungimento o superamento della predetta soglia.<br><br><strong>Conformità degli Articoli:</strong> il venditore garantisce che i prodotti offerti corrispondano in modo veritiero alle descrizioni, alle specifiche e alle condizioni dichiarate nell'annuncio.</p></details>
+                    <details class="acc-item"><summary>5. Limitazione di Responsabilità</summary><p class="tos-body faq-text">TCG Vault opera esclusivamente in qualità di fornitore dell'infrastruttura tecnologica e di intermediario di marketplace. La Piattaforma non assume la proprietà dei beni oggetto di scambio tra gli utenti e non è direttamente responsabile della qualità o della spedizione autonoma dei prodotti, pur mettendo a disposizione strumenti di supporto, tracciamento e gestione delle controversie.</p></details>
+                    <details class="acc-item"><summary>6. Aggiornamenti dei Termini</summary><p class="tos-body faq-text">TCG Vault si riserva il diritto di aggiornare o modificare i presenti Termini e Condizioni. Le variazioni assumono efficacia immediata a partire dalla loro pubblicazione sulla Piattaforma. L'uso continuato dei servizi costituisce accettazione tacita delle nuove condizioni.</p></details>
                 </div>
             `;
         }
@@ -2655,7 +2660,6 @@
                         unreadMessagesCount += fresh.length;
                         localStorage.setItem('tcg_unread_msg_count', unreadMessagesCount);
                         updateUnreadMessagesBadge();
-                        showNotification(fresh[0].text || 'Nuovo messaggio ricevuto');
                     }
                     incoming.forEach(m => knownIds.add(String(m.id)));
                 } catch (e) {
