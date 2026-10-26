@@ -1,0 +1,2179 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --bg-color: #090d16;
+            --panel-bg: rgba(18, 24, 38, 0.75);
+            --panel-solid: #131b2e;
+            --accent-neon: #00ff88;
+            --card-blue: #635bff;
+            --heart-red: #ff4757;
+            --admin-gold: #f59e0b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --font-main: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body.light-theme {
+            --bg-color: #e2e8f0;
+            --panel-bg: rgba(255, 255, 255, 0.92);
+            --panel-solid: #ffffff;
+            --accent-neon: #059669;
+            --card-blue: #4f46e5;
+            --heart-red: #e11d48;
+            --admin-gold: #d97706;
+            --text-main: #0f172a;
+            --text-muted: #475569;
+            --border-color: #cbd5e1;
+        }
+
+        html {
+            height: 100%;
+            overflow-x: hidden;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-main);
+            margin: 0;
+            padding: 25px;
+            min-height: 100%;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 22px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        h1 {
+            color: var(--accent-neon);
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
+        
+        #toast-container {
+            position: fixed; top: 20px; right: 20px; z-index: 9999;
+            display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+        }
+        .toast {
+            background: var(--panel-solid); border: 1px solid var(--border-color);
+            color: var(--text-main); padding: 12px 20px; border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4); font-size: 0.9rem;
+            display: flex; align-items: center; gap: 10px; font-weight: 500;
+            animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+            pointer-events: auto;
+        }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+
+        .btn-sell {
+            background-color: var(--accent-neon); color: #000; border: none;
+            padding: 11px 20px; border-radius: 10px; font-weight: 700; cursor: pointer;
+            font-size: 0.95rem; transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(0, 255, 136, 0.2);
+        }
+        .btn-sell:hover { opacity: 0.9; transform: translateY(-1px); }
+        
+        .btn-card-pay {
+            background-color: var(--card-blue); color: #fff; border: none;
+            padding: 12px; border-radius: 8px; font-weight: 700; font-size: 1rem;
+            cursor: pointer; width: 100%; display: flex; align-items: center;
+            justify-content: center; gap: 8px; margin-bottom: 8px;
+        }
+        .btn-card-pay:hover { opacity: 0.9; }
+
+        .btn-offer {
+            background-color: transparent; border: 1px solid var(--accent-neon);
+            color: var(--accent-neon); padding: 10px; border-radius: 8px; font-weight: 700;
+            cursor: pointer; width: 100%; margin-bottom: 8px; transition: background 0.2s;
+        }
+        .btn-offer:hover { background: rgba(0, 255, 136, 0.08); }
+        
+        .btn-outline {
+            background: var(--panel-solid); border: 1px solid var(--border-color); color: var(--text-main);
+            padding: 9px 16px; border-radius: 10px; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+            transition: all 0.2s ease; position: relative;
+        }
+        .btn-outline:hover { border-color: var(--accent-neon); color: var(--accent-neon); }
+
+        .btn-edit-icon {
+            background: rgba(99, 91, 255, 0.15); border: 1px solid var(--card-blue); color: #fff;
+            padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+            margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; width: 100%; justify-content: center; box-sizing: border-box;
+        }
+        .btn-edit-icon:hover { background: var(--card-blue); }
+
+        .btn-delete-icon {
+            background: transparent; border: 1px solid var(--heart-red); color: var(--heart-red);
+            padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+            margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; width: 100%; justify-content: center; box-sizing: border-box;
+        }
+        .btn-delete-icon:hover { background: var(--heart-red); color: #fff; }
+
+        .user-badge {
+            font-size: 0.85rem; color: var(--accent-neon); background: rgba(0, 255, 136, 0.08);
+            padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(0, 255, 136, 0.2); 
+            cursor: pointer; font-weight: 600; max-width: 180px; white-space: nowrap; 
+            overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle;
+        }
+
+        .admin-badge {
+            font-size: 0.85rem; color: var(--admin-gold); background: rgba(245, 158, 11, 0.1);
+            padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(245, 158, 11, 0.3); 
+            cursor: pointer; font-weight: 700; max-width: 180px; white-space: nowrap; 
+            overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle;
+        }
+
+        .icon-btn {
+            background: var(--panel-solid); border: 1px solid var(--border-color); color: var(--text-main);
+            padding: 9px 12px; border-radius: 10px; cursor: pointer; font-size: 1rem; position: relative;
+            transition: border-color 0.2s;
+        }
+        .icon-btn:hover { border-color: var(--accent-neon); }
+        
+        .bell-badge {
+            position: absolute; top: -5px; right: -5px; background: var(--heart-red);
+            color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 50%; font-weight: 700;
+        }
+
+        .categories-section { margin-bottom: 30px; }
+        .section-title { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 12px; }
+        
+        .categories-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+        .category-card {
+            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 12px;
+            padding: 14px 10px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 0.9rem; font-weight: 700;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+        .category-card:hover, .category-card.active { border-color: var(--accent-neon); background: rgba(0, 255, 136, 0.06); color: var(--accent-neon); transform: translateY(-2px); }
+
+        .filter-bar {
+            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 16px;
+            padding: 24px; margin-bottom: 35px; display: flex; flex-direction: column; gap: 20px; backdrop-filter: blur(12px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.05);
+        }
+        .filter-row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; }
+        .filter-group { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 190px; }
+        .filter-group label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
+        
+        .filter-input, .filter-select {
+            background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 10px;
+            padding: 11px 14px; color: var(--text-main); font-size: 16px; outline: none; font-weight: 500;
+            transition: border-color 0.2s;
+        }
+        .filter-input:focus, .filter-select:focus { border-color: var(--accent-neon); }
+
+        .price-box-clean {
+            display: flex; align-items: center; gap: 8px; background: var(--panel-solid);
+            border: 1px solid var(--border-color); border-radius: 10px; padding: 4px 12px;
+        }
+        .price-box-clean span { color: var(--accent-neon); font-weight: 700; }
+        .price-clean-input {
+            width: 100%; background: transparent; border: none; color: var(--text-main);
+            font-size: 16px; font-weight: 700; outline: none; padding: 7px 0;
+        }
+
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px; }
+        .tcg-card {
+            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 16px;
+            overflow: hidden; backdrop-filter: blur(10px); transition: all 0.25s ease;
+            display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; position: relative;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.04);
+        }
+        .tcg-card:hover { transform: translateY(-5px); border-color: var(--accent-neon); box-shadow: 0 15px 35px rgba(0,255,136,0.08); }
+        .card-img { width: 100%; height: 210px; object-fit: contain; background: rgba(0, 0, 0, 0.03); padding: 12px; box-sizing: border-box; }
+        
+        .card-body { padding: 18px; }
+        .card-category { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+        .card-title { margin: 6px 0 10px 0; font-size: 1.15rem; color: var(--text-main); font-weight: 700; line-height: 1.3; }
+        .price { color: var(--accent-neon); font-size: 1.35rem; font-weight: 800; margin-bottom: 6px; }
+        .card-location { font-size: 0.82rem; color: var(--text-muted); font-weight: 500; margin-bottom: 8px; }
+
+        .heart-btn {
+            position: absolute; top: 14px; right: 14px; background: var(--panel-solid);
+            border: 1px solid var(--border-color); border-radius: 50%; width: 38px; height: 38px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.1rem; z-index: 10;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1); transition: transform 0.2s;
+        }
+        .heart-btn:hover { transform: scale(1.1); }
+        .heart-btn.saved { color: var(--heart-red); }
+
+        .status-badge {
+            display: inline-block; font-size: 0.7rem; padding: 4px 10px; border-radius: 20px;
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;
+        }
+        .status-available { background: rgba(0, 255, 136, 0.1); color: var(--accent-neon); border: 1px solid rgba(0, 255, 136, 0.3); }
+        .status-sold { background: rgba(255, 71, 87, 0.1); color: var(--heart-red); border: 1px solid rgba(255, 71, 87, 0.3); }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
+            display: none; justify-content: center; align-items: center; z-index: 1000;
+            overflow-y: auto; padding: 15px; box-sizing: border-box;
+        }
+        .modal-content {
+            background: var(--panel-solid); border: 1px solid var(--border-color);
+            border-radius: 16px; padding: 25px; width: 100%; max-width: 520px; max-height: 85vh;
+            overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.5); margin: auto;
+        }
+        .modal-content-large { max-width: 820px; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+        .modal-header h2 { font-size: 1.4rem; font-weight: 800; color: var(--text-main); margin: 0; }
+        .close-btn { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; transition: color 0.2s; }
+        .close-btn:hover { color: var(--text-main); }
+
+        .profile-nav { display: flex; gap: 6px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 22px; flex-wrap: wrap; }
+        .profile-tab { background: transparent; border: none; color: var(--text-muted); padding: 8px 12px; cursor: pointer; font-weight: 700; border-radius: 8px; font-size: 0.85rem; }
+        .profile-tab.active { color: var(--accent-neon); background: rgba(0, 255, 136, 0.08); }
+
+        .bot-chat-box { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; height: 260px; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+        .bot-msg { background: rgba(0, 255, 136, 0.08); border: 1px solid rgba(0, 255, 136, 0.2); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; font-size: 0.9rem; font-weight: 500; }
+        .user-msg { background: var(--panel-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 9px 14px; border-radius: 10px; max-width: 85%; align-self: flex-end; font-size: 0.9rem; font-weight: 500; }
+
+        .escrow-alert-msg {
+            background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3);
+            color: var(--text-main); padding: 12px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 8px;
+        }
+
+        .faq-item { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+        .faq-title { font-weight: 700; color: var(--accent-neon); margin-bottom: 8px; font-size: 1.02rem; }
+        .faq-text { font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; }
+
+        .form-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
+        .form-group input, .form-group select, .form-group textarea { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 11px; color: var(--text-main); outline: none; font-family: inherit; font-size: 16px; }
+        .form-group textarea { resize: vertical; min-height: 80px; }
+        .btn-submit { background: var(--accent-neon); color: #000; border: none; width: 100%; padding: 13px; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
+        .btn-submit:hover { opacity: 0.9; }
+
+        @keyframes blink { 0% { opacity: .2; } 20% { opacity: 1; } 100% { opacity: .2; } }
+        .typing-dots span { animation: blink 1.4s infinite both; font-weight: bold; font-size: 1.2rem; }
+        .typing-dots span:nth-child(2) { animation-delay: .2s; }
+        .typing-dots span:nth-child(3) { animation-delay: .4s; }
+
+        #chatModal { 
+            display: none; 
+            position: fixed; 
+            bottom: 20px; 
+            right: 20px; 
+            width: 380px; 
+            height: 520px; 
+            background: var(--panel-solid); 
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5); 
+            z-index: 1050; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+
+        @media screen and (max-width: 768px) {
+            body { padding: 10px; }
+            header { flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 12px; margin-bottom: 20px; }
+            h1 { font-size: 1.4rem; text-align: center; }
+            .header-actions { justify-content: center; gap: 6px; }
+            .btn-outline, .btn-sell, .user-badge, .admin-badge { font-size: 0.78rem; padding: 6px 10px; }
+            .user-badge, .admin-badge { max-width: 120px; }
+            .card-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .tcg-card { border-radius: 12px; }
+            .card-img { height: 130px; padding: 4px; }
+            .card-body { padding: 10px; }
+            .card-title { font-size: 0.85rem; }
+            .price { font-size: 1rem; }
+            .modal-overlay { padding: 10px; align-items: flex-start; }
+            .modal-content { width: 100% !important; max-height: 88vh !important; padding: 15px !important; border-radius: 12px; margin-top: 10px; }
+            .detail-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+            
+            #chatModal {
+                width: 100% !important;
+                height: 100% !important;
+                bottom: 0 !important;
+                right: 0 !important;
+                left: 0 !important;
+                top: 0 !important;
+                border-radius: 0 !important;
+                z-index: 9999 !important;
+                position: fixed !important;
+            }
+
+            .filter-bar { padding: 12px; gap: 10px; }
+            .filter-row { gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="toast-container"></div>
+
+    <!-- MODALE ONBOARDING OBBLIGATORIO -->
+    <div class="modal-overlay" id="onboarding-wizard-modal" style="display: none; z-index: 2500;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>👋 Completa il tuo Profilo TCG Vault</h2>
+            </div>
+            
+            <div id="wizard-step-1" class="wizard-step">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Come ti chiami o qual è il nome del tuo negozio?</p>
+                <div class="form-group">
+                    <label>Nome e Cognome / Nickname *</label>
+                    <input type="text" id="wizard-name" placeholder="Es. Marco Rossi o TCG Store Milano">
+                </div>
+                <button type="button" class="btn-submit" onclick="nextWizardStep(2)">Continua ➡️</button>
+            </div>
+
+            <div id="wizard-step-2" class="wizard-step" style="display: none;">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Seleziona la tua tipologia di utente:</p>
+                <div class="form-group">
+                    <label>Tipologia Utente *</label>
+                    <select id="wizard-usertype">
+                        <option value="Privato">Privato / Hobbista</option>
+                        <option value="Negozio / Azienda">Negozio / Attività Commerciale</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-outline" onclick="nextWizardStep(1)">⬅️ Indietro</button>
+                    <button type="button" class="btn-submit" onclick="nextWizardStep(3)" style="flex: 1;">Continua ➡️</button>
+                </div>
+            </div>
+
+            <div id="wizard-step-3" class="wizard-step" style="display: none;">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Inserisci il tuo indirizzo (via e città) per gli scambi e le spedizioni:</p>
+                <div class="form-group">
+                    <label>Indirizzo Completo *</label>
+                    <input type="text" id="wizard-address" placeholder="Es. Via Dante 15, Milano">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-outline" onclick="nextWizardStep(2)">⬅️ Indietro</button>
+                    <button type="button" class="btn-submit" onclick="finishWizardOnboarding()" style="flex: 1;">Salva e Inizia a Usare il Sito 🚀</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE MODIFICA ANNUNCIO -->
+    <div class="modal-overlay" id="edit-listing-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✏️ Modifica Annuncio</h2>
+                <button class="close-btn" onclick="closeEditListingModal()">&times;</button>
+            </div>
+            <form id="edit-listing-form" onsubmit="handleEditListingSubmit(event)">
+                <input type="hidden" id="edit-card-id">
+                <div class="form-group">
+                    <label>Titolo del Prodotto *</label>
+                    <input type="text" id="edit-title" required>
+                </div>
+                <div class="form-group">
+                    <label>Prezzo (€) *</label>
+                    <input type="number" step="0.01" id="edit-price" required>
+                </div>
+                <div class="form-group">
+                    <label>Condizione *</label>
+                    <select id="edit-condition" required>
+                        <option value="Nuovo Sigillato">Nuovo Sigillato</option>
+                        <option value="Quasi Nuovo">Quasi Nuovo</option>
+                        <option value="Eccellente">Eccellente</option>
+                        <option value="Buono">Buono</option>
+                        <option value="Usato">Usato</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Descrizione</label>
+                    <textarea id="edit-description"></textarea>
+                </div>
+                <button type="submit" class="btn-submit">Salva Modifiche 💾</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODALE PROFILO VENDITORE -->
+    <div class="modal-overlay" id="seller-public-profile-modal">
+        <div class="modal-content modal-content-large">
+            <div class="modal-header">
+                <h2>Profilo Venditore & Reputazione</h2>
+                <button class="close-btn" onclick="closeSellerProfileModal()">&times;</button>
+            </div>
+            <div style="margin-bottom: 20px; background: var(--bg-color); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color);">
+                <div id="seller-profile-name" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-neon); margin-bottom: 5px;"></div>
+                <div id="seller-profile-type" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 5px;"></div>
+                <div id="seller-profile-location" style="font-size: 0.9rem; color: var(--text-muted);"></div>
+            </div>
+
+            <h3 style="font-size: 1rem; color: var(--text-main); margin-bottom: 10px;">⭐ Recensioni Ricevute</h3>
+            <div id="seller-profile-reviews" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; max-height: 180px; overflow-y: auto;">
+                <p style="color: var(--text-muted); font-size: 0.9rem;">Nessuna recensione.</p>
+            </div>
+
+            <h3 style="font-size: 1rem; color: var(--text-main); margin-bottom: 10px;">📦 Altri Annunci di questo Venditore</h3>
+            <div id="seller-profile-listings" class="card-grid" style="max-height: 250px; overflow-y: auto;">
+                <p style="color: var(--text-muted); font-size: 0.9rem;">Caricamento annunci...</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>TCG VAULT</h1>
+            <div class="header-actions">
+                <button class="icon-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Cambia Tema">🌙</button>
+                <button class="icon-btn" onclick="openNotificationsModal()" title="Notifiche">
+                    🔔 <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
+                </button>
+                <button class="btn-outline" onclick="openCartModal()">🛒 Carrello (<span id="cart-count">0</span>)</button>
+                <button class="btn-outline" onclick="openSavedModal()">❤️ Salvati (<span id="saved-count">0</span>)</button>
+                <div id="auth-actions">
+                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
+                </div>
+                <button class="btn-sell" onclick="checkAuthAndOpenSellModal()">+ Metti in Vendita</button>
+            </div>
+        </header>
+
+        <!-- SEZIONE CATEGORIE -->
+        <div class="categories-section">
+            <div class="section-title">Scegli la Categoria TCG</div>
+            <div class="categories-grid">
+                <div class="category-card active" onclick="selectCategory('', this)">Tutte</div>
+                <div class="category-card" onclick="selectCategory('Pokemon', this)">⚡ Pokémon</div>
+                <div class="category-card" onclick="selectCategory('Yugioh', this)">🃏 Yu-Gi-Oh!</div>
+                <div class="category-card" onclick="selectCategory('Magic', this)">🪄 Magic</div>
+                <div class="category-card" onclick="selectCategory('OnePiece', this)">🏴‍☠️ One Piece</div>
+                <div class="category-card" onclick="selectCategory('Lorcana', this)">✨ Lorcana</div>
+            </div>
+        </div>
+
+        <!-- BARRA FILTRI -->
+        <div class="filter-bar">
+            <div class="filter-row">
+                <div class="filter-group" style="flex: 2;">
+                    <label>Cerca Prodotto</label>
+                    <input type="text" id="search-input" class="filter-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFilters()">
+                </div>
+                
+                <div class="filter-group">
+                    <label>📍 Località (Città o Indirizzo)</label>
+                    <input type="text" id="location-input" class="filter-input" placeholder="Es. Milano, Roma..." oninput="applyFilters()">
+                </div>
+
+                <div class="filter-group">
+                    <label>Tipo Articolo</label>
+                    <select id="type-filter" class="filter-select" onchange="applyFilters()">
+                        <option value="">Tutti i Tipi</option>
+                        <option value="Carta Singola">Carta Singola</option>
+                        <option value="Mazzo Completo">Mazzo Completo</option>
+                        <option value="Box / Bustina">Box / Bustina</option>
+                        <option value="Lotto / Stock">Lotto / Stock</option>
+                        <option value="Accessori">Accessori</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="filter-row">
+                <div class="filter-group" style="max-width: 240px;">
+                    <label>Prezzo</label>
+                    <div class="price-box-clean">
+                        <span>€</span>
+                        <input type="number" id="price-clean-input" class="price-clean-input" min="0" value="" oninput="applyFilters()" placeholder="...">
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <label>Stato Annuncio</label>
+                    <select id="status-filter" class="filter-select" onchange="applyFilters()">
+                        <option value="">Tutti</option>
+                        <option value="available">Solo Disponibili</option>
+                        <option value="sold">Solo Venduti</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Ordina per</label>
+                    <select id="sort-filter" class="filter-select" onchange="applyFilters()">
+                        <option value="newest">Più recenti</option>
+                        <option value="price-asc">Prezzo: dal più basso</option>
+                        <option value="price-desc">Prezzo: dal più alto</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="section-title" style="font-size: 0.9rem; margin-bottom: 15px;">Prodotti Disponibili</div>
+        <div id="product-list" class="card-grid"></div>
+    </div>
+
+    <!-- MODALE CARRELLO -->
+    <div class="modal-overlay" id="cart-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🛒 Carrello TCG Vault</h2>
+                <button class="close-btn" onclick="closeCartModal()">&times;</button>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
+                Regola TCG Vault: Ordine minimo €5.00 da un singolo venditore. Non è possibile mischiare prodotti di venditori diversi.
+            </p>
+            <div id="cart-items-container" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                <p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>
+            </div>
+            <div style="border-top: 1px solid var(--border-color); padding-top: 15px; margin-bottom: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 1.1rem;">
+                <span>Totale:</span>
+                <span style="color: var(--accent-neon);">€ <span id="cart-total-price">0.00</span></span>
+            </div>
+            <button class="btn-submit" onclick="proceedCartCheckout()">Procedi al Pagamento Sicuro</button>
+        </div>
+    </div>
+
+    <!-- MODALE NOTIFICHE -->
+    <div class="modal-overlay" id="notifications-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🔔 Notifiche Recenti</h2>
+                <button class="close-btn" onclick="closeNotificationsModal()">&times;</button>
+            </div>
+            <div id="notifications-list" style="display: flex; flex-direction: column; gap: 10px;">
+                <p style="color: var(--text-muted);">Nessuna nuova notifica.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE SALVATI -->
+    <div class="modal-overlay" id="saved-modal">
+        <div class="modal-content modal-content-large">
+            <div class="modal-header">
+                <h2>❤️ Prodotti Salvati col Cuore</h2>
+                <button class="close-btn" onclick="closeSavedModal()">&times;</button>
+            </div>
+            <div id="saved-products-container" class="card-grid">
+                <p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto salvato nei preferiti.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE PROFILO -->
+    <div class="modal-overlay" id="profile-modal">
+        <div class="modal-content modal-content-large">
+            <div class="modal-header">
+                <h2>👤 Il Mio Profilo & Portafoglio TCG Vault</h2>
+                <button class="close-btn" onclick="closeProfileModal()">&times;</button>
+            </div>
+            
+            <div class="profile-nav">
+                <button class="profile-tab active" onclick="switchProfileTab('info', this)">Profilo</button>
+                <button class="profile-tab" onclick="switchProfileTab('my-listings', this)">Annunci</button>
+                <button class="profile-tab" onclick="switchProfileTab('my-orders', this)">📦 I Miei Ordini</button>
+                <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio & Prelievo</button>
+                <button class="profile-tab" onclick="switchProfileTab('reviews-tab', this)">Recensioni</button>
+                <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">Bot H24</button>
+                <button class="profile-tab" onclick="switchProfileTab('tos-faq', this)">ToS & FAQ</button>
+            </div>
+
+            <div id="tab-info" class="tab-content">
+                <form onsubmit="saveProfileDetails(event)">
+                    <div class="form-group">
+                        <label>Nome / Nickname</label>
+                        <input type="text" id="profile-name" placeholder="Es. Marco TCG Collector">
+                    </div>
+                    <div class="form-group">
+                        <label>Indirizzo</label>
+                        <input type="text" id="profile-address" placeholder="Es. Via Roma 10, Milano">
+                    </div>
+                    <div class="form-group">
+                        <label>Numero di Cellulare (Facoltativo)</label>
+                        <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567">
+                    </div>
+                    <div class="form-group">
+                        <label>Email (Autenticata)</label>
+                        <input type="email" id="profile-email" disabled style="opacity: 0.6;">
+                    </div>
+                    <button type="submit" class="btn-submit">Salva Modifiche Profilo</button>
+                </form>
+            </div>
+
+            <div id="tab-my-listings" class="tab-content" style="display: none;">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci, modificali o eliminali con un click.</p>
+                <div id="my-listings-container" class="card-grid">
+                    <p style="color: var(--text-muted);">Caricamento annunci...</p>
+                </div>
+            </div>
+
+            <div id="tab-my-orders" class="tab-content" style="display: none;">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Storico dei tuoi ordini d'acquisto protetti da Escrow.</p>
+                <div id="my-orders-container" style="display: flex; flex-direction: column; gap: 12px;">
+                    <p style="color: var(--text-muted);">Nessun ordine effettuato.</p>
+                </div>
+            </div>
+
+            <div id="tab-wallet-escrow" class="tab-content" style="display: none;">
+                <div style="margin-bottom: 25px;">
+                    <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">Fondi derivanti dalle vendite protette pronti per il prelievo:</p>
+                    <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 15px;">€ <span id="wallet-balance">0.00</span></div>
+                    
+                    <div class="form-group">
+                        <label>Codice IBAN per il bonifico *</label>
+                        <input type="text" id="payout-iban" placeholder="IT05X0303203203000001234567">
+                    </div>
+                    <button class="btn-submit" onclick="requestWalletPayout()">Preleva Ora (Bonifico IBAN)</button>
+                </div>
+            </div>
+
+            <div id="tab-reviews-tab" class="tab-content" style="display: none;">
+                <h3 style="margin-top:0; color: var(--accent-neon);">⭐ La tua Reputazione sul Marketplace</h3>
+                <div id="my-reviews-container" style="display: flex; flex-direction: column; gap: 12px;">
+                    <p style="color: var(--text-muted);">Nessuna recensione ricevuta al momento.</p>
+                </div>
+            </div>
+
+            <div id="tab-bot-support" class="tab-content" style="display: none;">
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Assistente Virtuale TCG Vault (Copertura 99% H24).</p>
+                <div class="bot-chat-box" id="botChatContainer">
+                    <div class="bot-msg">🤖 Ciao! Sono l'assistente ufficiale di TCG Vault. Come posso aiutarti oggi?</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="botInput" placeholder="Chiedi qualcosa al bot..." style="flex: 1; padding: 10px; border-radius: 8px;" onkeypress="if(event.key==='Enter') sendBotMessage()">
+                    <button onclick="sendBotMessage()" style="background: var(--accent-neon); border: none; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">Invia</button>
+                </div>
+            </div>
+
+            <div id="tab-tos-faq" class="tab-content" style="display: none;">
+                <div class="faq-item">
+                    <div class="faq-title">🛡️ 1. Protezione Escrow e Sicurezza dei Pagamenti Stripe</div>
+                    <div class="faq-text">Ogni transazione effettuata su TCG Vault è protetta dal sistema Escrow integrato con Stripe Payments. I fondi dell'acquirente vengono trattenuti in custodia blindata sul conto centrale della piattaforma e rilasciati automaticamente sul wallet del venditore solo dopo la conferma di consegna o la verifica dello scambio a mano.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">🤖 2. Sistema di Moderazione Automatica Anti-Spam e Articoli Estranei</div>
+                    <div class="faq-text">Il nostro algoritmo proprietario analizza in tempo reale ogni inserzione inserita. Qualsiasi tentativo di pubblicare oggetti non inerenti al mondo TCG o annunci di spam viene bloccato preventivamente per preservare la qualità della community.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">📍 3. Indirizzi Verificati e Scambi Locali</div>
+                    <div class="faq-text">Ogni utente e negoziante indica la propria via e città per facilitare gli scambi a mano o le spedizioni tracciate all'interno della community.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">⚖️ 4. Condizioni delle Carte e Trasparenza</div>
+                    <div class="faq-text">I venditori sono tenuti a classificare accuratamente lo stato delle carte (Nuovo Sigillato, Quasi Nuovo, Eccellente, Buono, Usato). In caso di contestazioni documentate, l'Escrow blocca il payout e il supporto interviene per tutelare l'acquirente.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-title">📦 5. Corrieri Autorizzati e Regole di Spedizione</div>
+                    <div class="faq-text">I corrieri autorizzati su TCG Vault sono: <b>Poste Italiane / SDA, InPost e corrieri espressi nazionali (BRT, GLS, DHL, UPS)</b>. L'utilizzo di metodi non tracciati è vietato e fa decadere la protezione dell'Escrow.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE DETTAGLIO PRODOTTO -->
+    <div class="modal-overlay" id="detail-modal">
+        <div class="modal-content modal-content-large">
+            <div class="modal-header">
+                <h2 id="detail-title">Dettaglio Prodotto</h2>
+                <button class="close-btn" onclick="closeDetailModal()">&times;</button>
+            </div>
+            <div class="detail-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                <div>
+                    <img id="detail-img" src="" alt="Foto Prodotto" style="width:100%; max-height:350px; object-fit:contain; background:rgba(0,0,0,0.03); border-radius:12px;">
+                </div>
+                <div>
+                    <span id="detail-category" class="card-category"></span>
+                    <h2 id="detail-name" style="margin: 6px 0 10px 0; color: var(--text-main); font-size: 1.5rem; font-weight: 800;"></h2>
+                    <div id="detail-condition" style="font-size:0.88rem; color:var(--accent-neon); margin-bottom:6px; font-weight: 600;"></div>
+                    <div id="detail-location-view" style="font-size:0.88rem; color:var(--text-muted); margin-bottom:6px; font-weight: 500;">📍 Indirizzo: </div>
+                    <div style="margin-bottom: 10px;">
+                        <button class="btn-outline" onclick="openSellerPublicProfile()" style="font-size: 0.82rem; padding: 6px 12px;">👤 Visualizza Profilo e Recensioni del Venditore</button>
+                    </div>
+                    <div id="detail-status" class="status-badge status-available" style="margin-bottom: 10px;">DISPONIBILE</div>
+                    <div id="detail-price" class="price" style="font-size: 1.6rem; margin: 10px 0;"></div>
+                    <div id="detail-desc" style="font-size: 0.92rem; color: var(--text-muted); background: var(--bg-color); padding: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid var(--border-color); line-height: 1.4;"></div>
+                    
+                    <div id="detail-action-buttons" style="display: flex; flex-direction: column; gap: 8px;">
+                        <button class="btn-card-pay" id="detail-add-cart-btn" onclick="addToCart(selectedCard)">
+                            🛒 Aggiungi al Carrello (€ <span id="detail-btn-price">0.00</span>)
+                        </button>
+                        <button class="btn-card-pay" id="detail-buy-now-btn" style="background-color: var(--admin-gold);" onclick="openStripeCheckoutModal()">
+                            💳 Paga Subito con Carta (Stripe Escrow)
+                        </button>
+                        <button class="btn-offer" id="detail-offer-btn" onclick="makeOffer()">
+                            🤝 Fai un'Offerta al Venditore
+                        </button>
+                        <button class="btn-outline" id="detail-contact-btn" onclick="openChatWithSeller()" style="width: 100%;">💬 Contatta il Venditore</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE CHECKOUT STRIPE -->
+    <div class="modal-overlay" id="stripe-checkout-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>💳 Checkout Sicuro Stripe</h2>
+                <button class="close-btn" onclick="closeStripeCheckoutModal()">&times;</button>
+            </div>
+            <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 20px;">
+                I tuoi fondi saranno custoditi in modo sicuro in Escrow fino alla conferma della transazione.
+            </p>
+            <form id="payment-form" style="margin-bottom: 15px;">
+                <div id="payment-element" style="margin-bottom: 15px; background: var(--bg-color); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color);"></div>
+                <button type="submit" class="btn-submit" id="submit-payment-btn">
+                    Conferma e Paga € <span id="checkout-modal-price">0.00</span>
+                </button>
+                <div id="payment-message" style="color: var(--heart-red); font-size: 0.85rem; margin-top: 10px; text-align: center;"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODALE MESSAGGI -->
+    <div class="modal-overlay" id="my-messages-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>💬 I Miei Messaggi & Notifiche Escrow</h2>
+                <button class="close-btn" onclick="closeMyMessagesModal()">&times;</button>
+            </div>
+            <div id="conversations-list" style="display: flex; flex-direction: column; gap: 10px;">
+                <p style="color: var(--text-muted);">Nessuna conversazione attiva.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE CHAT -->
+    <div id="chatModal">
+        <div style="padding: 12px 14px; background: var(--panel-solid); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+            <div style="cursor: pointer; flex: 1; overflow: hidden;" onclick="openActiveSellerProfileFromChat()" title="Clicca per visualizzare il profilo">
+                <strong style="color: var(--accent-neon); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.95rem;" id="chatTitle">Chat Venditore</strong>
+                <span id="chatStatusIndicator" style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
+            </div>
+            <button onclick="closeChat()" style="background: var(--heart-red); color: #fff; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 0.8rem;">Chiudi ✕</button>
+        </div>
+        <div id="chatMessages" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; -webkit-overflow-scrolling: touch;"></div>
+        <div style="padding: 4px 12px; font-size: 0.75rem; color: var(--accent-neon); min-height: 18px; display: flex; align-items: center; flex-shrink: 0;" id="typingIndicator"></div>
+        <div style="padding: 10px 12px; display: flex; gap: 8px; background: var(--panel-solid); border-top: 1px solid var(--border-color); flex-shrink: 0;">
+            <input type="text" id="chatInput" placeholder="Scrivi un messaggio..." style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); font-size: 16px; outline: none;" onkeypress="if(event.key==='Enter') sendChatMessage()">
+            <button onclick="sendChatMessage()" style="background: var(--accent-neon); border: none; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.9rem;">Invia</button>
+        </div>
+    </div>
+
+    <!-- MODALE AUTH SUPABASE -->
+    <div class="modal-overlay" id="auth-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="auth-modal-title">Accedi o Registrati (TCG Vault)</h2>
+                <button class="close-btn" onclick="closeAuthModal()">&times;</button>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
+                Inserisci la tua email e la tua password per autenticarti.
+            </p>
+            <form id="auth-form" onsubmit="handleSupabaseAuth(event)">
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="auth-email" placeholder="la-tua-email@esempio.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Password *</label>
+                    <input type="password" id="auth-password" placeholder="••••••••" required minlength="6">
+                </div>
+                <button type="submit" class="btn-submit" id="auth-submit-btn">Accedi / Registrati</button>
+                <div id="auth-message" style="font-size: 0.85rem; margin-top: 10px; text-align: center; color: var(--accent-neon);"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODALE VENDITA -->
+    <div class="modal-overlay" id="sell-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Crea Annuncio di Vendita</h2>
+                <button class="close-btn" onclick="closeSellModal()">&times;</button>
+            </div>
+            <form id="sell-form" onsubmit="handleSellSubmit(event)">
+                <div class="form-group">
+                    <label>Categoria TCG *</label>
+                    <select id="sell-category" required>
+                        <option value="Pokemon">Pokémon</option>
+                        <option value="Yugioh">Yu-Gi-Oh!</option>
+                        <option value="Magic">Magic</option>
+                        <option value="OnePiece">One Piece</option>
+                        <option value="Lorcana">Lorcana</option>
+                        <option value="Altro">Altro TCG</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tipo di Prodotto *</label>
+                    <select id="sell-type" required>
+                        <option value="Carta Singola">Carta Singola</option>
+                        <option value="Mazzo Completo">Mazzo Completo</option>
+                        <option value="Box / Bustina">Box / Bustina Sigillata</option>
+                        <option value="Lotto / Stock">Lotto / Stock</option>
+                        <option value="Accessori">Accessori</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Titolo del Prodotto *</label>
+                    <input type="text" id="sell-title" required>
+                </div>
+                <div class="form-group">
+                    <label>Prezzo (€) *</label>
+                    <input type="number" step="0.01" id="sell-price" required>
+                </div>
+                <div class="form-group">
+                    <label>📍 Indirizzo / Località dell'Oggetto *</label>
+                    <input type="text" id="sell-location" placeholder="Es. Via Roma 10, Milano" required>
+                </div>
+                <div class="form-group">
+                    <label>Condizione *</label>
+                    <select id="sell-condition" required>
+                        <option value="Nuovo Sigillato">Nuovo Sigillato</option>
+                        <option value="Quasi Nuovo">Quasi Nuovo</option>
+                        <option value="Eccellente">Eccellente</option>
+                        <option value="Buono">Buono</option>
+                        <option value="Usato">Usato</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>📷 Foto della Carta *</label>
+                    <input type="file" id="sell-image-file" accept="image/*" required style="padding: 8px;">
+                </div>
+                <div class="form-group">
+                    <label>Descrizione</label>
+                    <textarea id="sell-description" placeholder="Dettagli sulle condizioni, spedizione o disponibilità per scambio a mano..."></textarea>
+                </div>
+                <button type="submit" class="btn-submit" id="submit-btn">Pubblica Annuncio</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const stripe = Stripe('pk_live_51URVxbB5CcM9bCL44GCB7XIP7NX3ofDkHfnTf0pXzL0T0w0ggdve6GQI9bGvsRgW08uheTInau2mFFBZG4CTkLXl00CqE2fp40');
+
+        const SUPABASE_URL = 'https://ahpkmppjtespemkzmkol.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let allCards = [];
+        let savedProductIds = JSON.parse(localStorage.getItem('tcg_saved_products') || '[]');
+        let notifications = JSON.parse(localStorage.getItem('tcg_notifications') || '[]');
+        let cart = JSON.parse(localStorage.getItem('tcg_cart') || '[]');
+        let unreadMessagesCount = parseInt(localStorage.getItem('tcg_unread_msg_count') || '0');
+        let selectedCategory = '';
+        let currentUser = null;
+        let selectedCard = null;
+        let elements = null;
+        let clientSecret = null;
+        let activeChatReceiverId = null;
+        let activeChatSellerId = null;
+        let chatInterval = null;
+        let unreadCheckInterval = null;
+        let pingInterval = null;
+        let typingTimeout = null;
+
+        function isAdmin() {
+            return currentUser && currentUser.email.toLowerCase() === 'francesco_delduca@icloud.com';
+        }
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem('tcg_vault_theme') || 'dark';
+            if (savedTheme === 'light') {
+                document.body.classList.add('light-theme');
+                document.getElementById('theme-toggle-btn').innerText = '☀️';
+            } else {
+                document.body.classList.remove('light-theme');
+                document.getElementById('theme-toggle-btn').innerText = '🌙';
+            }
+        }
+
+        function toggleTheme() {
+            const isLight = document.body.classList.toggle('light-theme');
+            const btn = document.getElementById('theme-toggle-btn');
+            if (isLight) {
+                btn.innerText = '☀️';
+                localStorage.setItem('tcg_vault_theme', 'light');
+            } else {
+                btn.innerText = '🌙';
+                localStorage.setItem('tcg_vault_theme', 'dark');
+            }
+        }
+
+        function showNotification(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `<span>${type === 'success' ? '✅' : '⚠️'}</span> <span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 3000);
+        }
+
+        function updateUnreadMessagesBadge() {
+            const msgBtn = document.getElementById('messages-btn-nav');
+            if (msgBtn) {
+                let badge = msgBtn.querySelector('.bell-badge');
+                if (unreadMessagesCount > 0) {
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'bell-badge';
+                        msgBtn.appendChild(badge);
+                    }
+                    badge.innerText = unreadMessagesCount;
+                    badge.style.display = 'inline-block';
+                } else if (badge) {
+                    badge.style.display = 'none';
+                }
+            }
+        }
+
+        function openNotificationsModal() {
+            const container = document.getElementById('notifications-list');
+            if (notifications.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted);">Nessuna nuova notifica.</p>';
+            } else {
+                container.innerHTML = notifications.map(n => `
+                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; font-size: 0.9rem;">
+                        <div style="color: var(--accent-neon); font-size: 0.75rem; margin-bottom: 4px;">${n.time}</div>
+                        <div>${n.text}</div>
+                    </div>
+                `).join('');
+            }
+            document.getElementById('notifications-modal').style.display = 'flex';
+        }
+
+        function closeNotificationsModal() { 
+            document.getElementById('notifications-modal').style.display = 'none';
+        }
+
+        async function initAuth() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session && session.user) {
+                let profileName = '';
+                let profileAddress = '';
+
+                try {
+                    const { data, error } = await supabaseClient
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', String(session.user.id))
+                        .maybeSingle();
+
+                    if (data) {
+                        profileName = data.name || '';
+                        profileAddress = data.address || '';
+                    }
+                } catch (e) {
+                    console.error('Errore lettura profilo supabase:', e);
+                }
+
+                if (!profileName) {
+                    const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${session.user.id}`) || '{}');
+                    profileName = savedProfile.name || '';
+                    profileAddress = savedProfile.address || '';
+                }
+                
+                currentUser = {
+                    id: session.user.id,
+                    email: session.user.email,
+                    name: profileName,
+                    address: profileAddress,
+                    phone: session.user.user_metadata?.phone || '',
+                    wallet: 0.00,
+                    iban: ''
+                };
+
+                if (!currentUser.name || !currentUser.address) {
+                    document.getElementById('onboarding-wizard-modal').style.display = 'flex';
+                } else {
+                    document.getElementById('onboarding-wizard-modal').style.display = 'none';
+                }
+            } else {
+                currentUser = null;
+                document.getElementById('onboarding-wizard-modal').style.display = 'none';
+            }
+            updateHeaderUI();
+            updateSavedCounter();
+            updateCartCounter();
+            updateUnreadMessagesBadge();
+            initTheme();
+            
+            if (currentUser) {
+                startUnreadMessagesPolling();
+            }
+        }
+
+        let currentWizardStepNumber = 1;
+        function nextWizardStep(step) {
+            if (step === 2) {
+                const nameVal = document.getElementById('wizard-name').value.trim();
+                if (!nameVal) {
+                    showNotification('Inserisci il tuo nome o il nome del negozio.', 'error');
+                    return;
+                }
+            }
+            document.querySelectorAll('.wizard-step').forEach(el => el.style.display = 'none');
+            document.getElementById(`wizard-step-${step}`).style.display = 'block';
+            currentWizardStepNumber = step;
+        }
+
+        async function finishWizardOnboarding() {
+            const name = document.getElementById('wizard-name').value.trim();
+            const userType = document.getElementById('wizard-usertype').value;
+            const address = document.getElementById('wizard-address').value.trim();
+
+            if (!name || !address) {
+                showNotification('Compila tutti i campi obbligatori.', 'error');
+                return;
+            }
+
+            if (currentUser) {
+                currentUser.name = name;
+                currentUser.address = address;
+                currentUser.userType = userType;
+
+                const profilePayload = {
+                    id: String(currentUser.id),
+                    name: String(name),
+                    email: String(currentUser.email || ''),
+                    address: String(address)
+                };
+
+                const { data, error } = await supabaseClient
+                    .from('profiles')
+                    .upsert([profilePayload], { onConflict: 'id' });
+
+                if (error) {
+                    console.error('ERRORE SUPABASE PROFILES:', error.message, error.details);
+                    showNotification('Errore salvataggio Supabase: ' + error.message, 'error');
+                    return;
+                } else {
+                    console.log('SUCCESSO SALVATAGGIO PROFILES:', data);
+                }
+
+                localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({ name, address, userType }));
+            }
+
+            document.getElementById('onboarding-wizard-modal').style.display = 'none';
+            showNotification('🎉 Profilo completato e salvato su Supabase!');
+            updateHeaderUI();
+            loadCardsFromSupabase();
+        }
+
+        function updateHeaderUI() {
+            const authContainer = document.getElementById('auth-actions');
+            if (currentUser) {
+                const badgeClass = isAdmin() ? 'admin-badge' : 'user-badge';
+                const badgeText = isAdmin() ? '🛡️ Admin Supremo' : `👤 ${currentUser.name || currentUser.email}`;
+                authContainer.innerHTML = `
+                    <button class="btn-outline" id="messages-btn-nav" onclick="openMyMessagesModal()">
+                        💬 Messaggi ${unreadMessagesCount > 0 ? `<span class="bell-badge">${unreadMessagesCount}</span>` : ''}
+                    </button>
+                    <span class="${badgeClass}" onclick="openProfileModal()" title="${currentUser.email}">${badgeText}</span>
+                    <button class="btn-outline" onclick="logoutSupabase()">Esci</button>
+                `;
+            } else {
+                authContainer.innerHTML = `
+                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
+                `;
+            }
+        }
+
+        async function handleSupabaseAuth(e) {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value;
+            const msgEl = document.getElementById('auth-message');
+            msgEl.innerText = "Autenticazione in corso...";
+
+            let { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+            if (error) {
+                let signUpRes = await supabaseClient.auth.signUp({ email, password });
+                if (signUpRes.error) {
+                    msgEl.style.color = 'var(--heart-red)';
+                    msgEl.innerText = signUpRes.error.message;
+                } else {
+                    msgEl.style.color = 'var(--accent-neon)';
+                    msgEl.innerText = "✉️ Registrazione avvenuta! Controlla la tua email per confermare l'account.";
+                }
+            } else {
+                msgEl.style.color = 'var(--accent-neon)';
+                msgEl.innerText = "Accesso effettuato!";
+                setTimeout(() => {
+                    closeAuthModal();
+                    initAuth();
+                    loadCardsFromSupabase();
+                    showNotification('Accesso eseguito con successo!');
+                }, 800);
+            }
+        }
+
+        async function logoutSupabase() {
+            await supabaseClient.auth.signOut();
+            currentUser = null;
+            closeChat();
+            if (unreadCheckInterval) clearInterval(unreadCheckInterval);
+            updateHeaderUI();
+            showNotification('Logout effettuato.');
+        }
+
+        async function loadCardsFromSupabase() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('cards')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    allCards = [];
+                } else {
+                    allCards = data || [];
+                }
+
+                validateAndCleanCart();
+                applyFilters();
+            } catch (err) {
+                allCards = [];
+                applyFilters();
+            }
+        }
+
+        function validateAndCleanCart() {
+            if (!cart || cart.length === 0) return;
+            cart = cart.filter(cartItem => {
+                const foundCard = allCards.find(c => String(c.id) === String(cartItem.id));
+                return foundCard && !foundCard.is_sold;
+            });
+            localStorage.setItem('tcg_cart', JSON.stringify(cart));
+            updateCartCounter();
+        }
+
+        async function handleSellSubmit(event) {
+            event.preventDefault();
+            if (!currentUser) { 
+                showNotification('Devi effettuare il login per pubblicare.', 'error'); 
+                closeSellModal(); 
+                openAuthModal(); 
+                return; 
+            }
+            
+            const fileInput = document.getElementById('sell-image-file');
+            if (!fileInput.files || !fileInput.files[0]) {
+                showNotification('Seleziona un\'immagine per la carta.', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            showNotification('Caricamento immagine in corso...');
+            const { data: uploadData, error: uploadError } = await supabaseClient.storage
+                .from('card-images')
+                .upload(filePath, file);
+
+            if (uploadError) {
+                showNotification('Errore caricamento immagine: ' + uploadError.message, 'error');
+                return;
+            }
+
+            const { data: publicUrlData } = supabaseClient.storage
+                .from('card-images')
+                .getPublicUrl(filePath);
+
+            const imageUrl = publicUrlData.publicUrl;
+            const sellerRealName = currentUser.name || currentUser.email.split('@')[0];
+
+            const newCard = {
+                user_id: currentUser.id,
+                seller_name: sellerRealName,
+                category: document.getElementById('sell-category').value,
+                type: document.getElementById('sell-type').value,
+                title: document.getElementById('sell-title').value,
+                price: parseFloat(document.getElementById('sell-price').value),
+                location: document.getElementById('sell-location').value,
+                condition: document.getElementById('sell-condition').value,
+                image_url: imageUrl,
+                description: document.getElementById('sell-description').value,
+                is_sold: false
+            };
+
+            const { error } = await supabaseClient
+                .from('cards')
+                .insert([newCard]);
+
+            if (error) {
+                showNotification('Errore Supabase: ' + error.message, 'error');
+            } else {
+                document.getElementById('sell-form').reset();
+                closeSellModal();
+                showNotification('✅ Annuncio pubblicato e sincronizzato!');
+                loadCardsFromSupabase();
+            }
+        }
+
+        function openEditListingModal(cardId) {
+            const card = allCards.find(c => String(c.id) === String(cardId));
+            if (!card) return;
+            document.getElementById('edit-card-id').value = card.id;
+            document.getElementById('edit-title').value = card.title || '';
+            document.getElementById('edit-price').value = card.price || '';
+            document.getElementById('edit-condition').value = card.condition || 'Nuovo Sigillato';
+            document.getElementById('edit-description').value = card.description || '';
+            document.getElementById('profile-modal').style.display = 'none';
+            document.getElementById('edit-listing-modal').style.display = 'flex';
+        }
+
+        function closeEditListingModal() {
+            document.getElementById('edit-listing-modal').style.display = 'none';
+        }
+
+        async function handleEditListingSubmit(e) {
+            e.preventDefault();
+            const cardId = document.getElementById('edit-card-id').value;
+            const title = document.getElementById('edit-title').value;
+            const price = parseFloat(document.getElementById('edit-price').value);
+            const condition = document.getElementById('edit-condition').value;
+            const description = document.getElementById('edit-description').value;
+
+            const { error } = await supabaseClient
+                .from('cards')
+                .update({ title, price, condition, description })
+                .eq('id', cardId);
+
+            if (error) {
+                showNotification('Errore modifica: ' + error.message, 'error');
+            } else {
+                showNotification('✅ Annuncio modificato con successo!');
+                closeEditListingModal();
+                loadCardsFromSupabase();
+                openProfileModal();
+                switchProfileTab('my-listings', document.querySelectorAll('.profile-tab')[1]);
+            }
+        }
+
+        async function deleteCard(cardId) {
+            if (confirm("Vuoi eliminare questo annuncio?")) {
+                allCards = allCards.filter(c => String(c.id) !== String(cardId));
+                validateAndCleanCart();
+                applyFilters();
+                loadMyListings();
+
+                const { error } = await supabaseClient
+                    .from('cards')
+                    .delete()
+                    .eq('id', cardId);
+
+                if (error) {
+                    showNotification('Errore eliminazione: ' + error.message, 'error');
+                    loadCardsFromSupabase();
+                } else {
+                    showNotification('Annuncio eliminato definitivamente.');
+                }
+            }
+        }
+
+        function toggleSaveProduct(e, cardId) {
+            e.stopPropagation();
+            const index = savedProductIds.indexOf(cardId);
+            if (index > -1) {
+                savedProductIds.splice(index, 1);
+                showNotification('Prodotto rimosso dai preferiti.');
+            } else {
+                savedProductIds.push(cardId);
+                showNotification('Prodotto aggiunto ai preferiti! ❤️');
+            }
+            localStorage.setItem('tcg_saved_products', JSON.stringify(savedProductIds));
+            updateSavedCounter();
+            applyFilters();
+        }
+
+        function updateSavedCounter() { document.getElementById('saved-count').innerText = savedProductIds.length; }
+
+        function openSavedModal() {
+            const container = document.getElementById('saved-products-container');
+            const savedCards = allCards.filter(c => savedProductIds.includes(c.id));
+            if (savedCards.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto salvato nei preferiti.</p>';
+            } else {
+                renderCardsToContainer(savedCards, container);
+            }
+            document.getElementById('saved-modal').style.display = 'flex';
+        }
+
+        function closeSavedModal() { document.getElementById('saved-modal').style.display = 'none'; }
+
+        function openProfileModal() {
+            if (!currentUser) { openAuthModal(); return; }
+            document.getElementById('profile-email').value = currentUser.email;
+            document.getElementById('profile-name').value = currentUser.name || '';
+            document.getElementById('profile-address').value = currentUser.address || '';
+            document.getElementById('profile-phone').value = currentUser.phone || '';
+            document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
+            document.getElementById('payout-iban').value = currentUser.iban || '';
+            loadUserReviews();
+            loadMyOrders();
+            document.getElementById('profile-modal').style.display = 'flex';
+        }
+
+        function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
+
+        function switchProfileTab(tabName, btn) {
+            document.querySelectorAll('.profile-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+            btn.classList.add('active');
+            document.getElementById('tab-' + tabName).style.display = 'block';
+            if (tabName === 'my-listings') loadMyListings();
+            if (tabName === 'my-orders') loadMyOrders();
+            if (tabName === 'reviews-tab') loadUserReviews();
+        }
+
+        async function loadMyOrders() {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`${window.location.origin}/api/orders/${currentUser.id}`);
+                const orders = await res.json();
+                const container = document.getElementById('my-orders-container');
+                if (!orders || orders.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-muted);">Nessun ordine effettuato.</p>';
+                    return;
+                }
+                container.innerHTML = orders.map(o => `
+                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: gap; gap: 10px;">
+                        <div>
+                            <div style="font-weight: bold; color: var(--accent-neon); margin-bottom: 4px;">Ordine #${o.id || 'N/D'}</div>
+                            <div style="font-size: 0.9rem; margin-bottom: 2px;">Stato: <b>${o.status || 'Pagato / In Escrow'}</b></div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">Totale: € ${Number(o.amount || 0).toFixed(2)}</div>
+                        </div>
+                        <button class="btn-outline" onclick="openChatModal('${o.sellerId}', 'Gestione Ordine Escrow', '${o.sellerId}')">💬 Apri Chat Venditore</button>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Errore ordini:', err);
+            }
+        }
+
+        async function requestWalletPayout() {
+            const iban = document.getElementById('payout-iban').value;
+            try {
+                const res = await fetch(`${window.location.origin}/api/wallet/payout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, iban })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    currentUser.wallet = data.newBalance;
+                    currentUser.iban = iban;
+                    document.getElementById('wallet-balance').innerText = currentUser.wallet.toFixed(2);
+                    showNotification(data.message);
+                } else {
+                    showNotification(data.error || 'Errore prelievo.', 'error');
+                }
+            } catch (err) {
+                showNotification('Errore di comunicazione.', 'error');
+            }
+        }
+
+        async function saveProfileDetails(e) {
+            e.preventDefault();
+            currentUser.name = document.getElementById('profile-name').value;
+            currentUser.address = document.getElementById('profile-address').value;
+            currentUser.phone = document.getElementById('profile-phone').value;
+            
+            await supabaseClient
+                .from('profiles')
+                .upsert([
+                    { id: String(currentUser.id), email: String(currentUser.email), name: String(currentUser.name), address: String(currentUser.address) }
+                ], { onConflict: 'id' });
+
+            const profileData = { name: currentUser.name, address: currentUser.address, email: currentUser.email };
+            localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify(profileData));
+
+            showNotification('Profilo aggiornato!');
+            updateHeaderUI();
+        }
+
+        async function loadUserReviews() {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`${window.location.origin}/api/reviews/${currentUser.id}`);
+                const reviews = await res.json();
+                const container = document.getElementById('my-reviews-container');
+                if (reviews.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-muted);">Nessuna recensione ricevuta al momento.</p>';
+                    return;
+                }
+                container.innerHTML = reviews.map(r => `
+                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; border-radius: 10px;">
+                        <div style="color: var(--accent-neon); font-weight: bold; margin-bottom: 4px;">⭐ ${r.rating} / 5 stelle</div>
+                        <div style="font-size: 0.95rem;">${r.comment}</div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Errore recensioni:', err);
+            }
+        }
+
+        function sendBotMessage() {
+            const input = document.getElementById('botInput');
+            const q = input.value.trim().toLowerCase();
+            if(!q) return;
+            const container = document.getElementById('botChatContainer');
+            container.innerHTML += `<div class="user-msg">${input.value}</div>`;
+            input.value = '';
+            
+            let reply = "Per questa specifica richiesta contatta support@tcgvault.com.";
+            if (q.includes('ciao') || q.includes('salve')) {
+                reply = "🤖 Ciao! Sono l'assistente H24 di TCG Vault. Come posso aiutarti?";
+            } else if (q.includes('spediz') || q.includes('corriere')) {
+                reply = "📦 Spedizioni: I corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS.";
+            } else if (q.includes('escrow') || q.includes('pagament')) {
+                reply = "💳 Pagamenti & Escrow: Fondi custoditi in sicurezza da Stripe fino alla consegna.";
+            }
+
+            setTimeout(() => {
+                container.innerHTML += `<div class="bot-msg">🤖 ${reply}</div>`;
+                container.scrollTop = container.scrollHeight;
+            }, 600);
+        }
+
+        function loadMyListings() {
+            const container = document.getElementById('my-listings-container');
+            const myCards = isAdmin() ? allCards : allCards.filter(c => c.user_id === (currentUser ? currentUser.id : ''));
+            if (myCards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto in gestione.</p>'; return; }
+            container.innerHTML = myCards.map(card => `
+                <div class="tcg-card">
+                    <img src="${card.image_url}" class="card-img">
+                    <div class="card-body">
+                        <span class="card-category">${card.category} • ${card.type}</span>
+                        <h3 class="card-title">${card.title}</h3>
+                        <div class="price">€ ${Number(card.price).toFixed(2)}</div>
+                        <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
+                        <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
+                        <button class="btn-edit-icon" onclick="openEditListingModal('${card.id}')">✏️ Modifica</button>
+                        <button class="btn-delete-icon" onclick="deleteCard('${card.id}')">🗑️ Elimina</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function applyFilters() {
+            const searchQuery = document.getElementById('search-input').value.toLowerCase();
+            const locationQuery = document.getElementById('location-input').value.toLowerCase();
+            const selectedType = document.getElementById('type-filter').value;
+            const statusFilter = document.getElementById('status-filter').value;
+            const maxPriceInput = document.getElementById('price-clean-input').value;
+            const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
+            const sortBy = document.getElementById('sort-filter').value;
+
+            let filtered = allCards.filter(card => {
+                const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
+                const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
+                const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
+                const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
+                const matchesPrice = (Number(card.price) || 0) <= maxPrice;
+                
+                let matchesStatus = true;
+                if (statusFilter === 'available') matchesStatus = !card.is_sold;
+                if (statusFilter === 'sold') matchesStatus = card.is_sold;
+
+                return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
+            });
+
+            if (sortBy === 'price-asc') filtered.sort((a, b) => Number(a.price) - Number(b.price));
+            else if (sortBy === 'price-desc') filtered.sort((a, b) => Number(b.price) - Number(a.price));
+            else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+            renderCardsToContainer(filtered, document.getElementById('product-list'));
+        }
+
+        function renderCardsToContainer(cards, container) {
+            if (!container) return;
+            if (cards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto trovato.</p>'; return; }
+            container.innerHTML = cards.map(card => {
+                const isSaved = savedProductIds.includes(card.id);
+                return `
+                    <div class="tcg-card" onclick="openDetailModal('${card.id}')">
+                        <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${card.id}')">${isSaved ? '❤️' : '🤍'}</div>
+                        <img src="${card.image_url}" class="card-img">
+                        <div class="card-body">
+                            <span class="card-category">${card.category} • ${card.type}</span>
+                            <h3 class="card-title">${card.title}</h3>
+                            <div class="price">€ ${Number(card.price).toFixed(2)}</div>
+                            <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
+                            <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function getProfileDisplayName(userId) {
+            if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('profiles')
+                    .select('name')
+                    .eq('id', String(userId))
+                    .maybeSingle();
+
+                if (data && data.name) {
+                    return data.name;
+                }
+            } catch (e) {
+                console.error('Errore getProfileDisplayName:', e);
+            }
+
+            const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${userId}`) || '{}');
+            if (savedProfile && savedProfile.name) {
+                return savedProfile.name;
+            }
+
+            if (currentUser && String(currentUser.id) === String(userId)) {
+                return currentUser.name || currentUser.email.split('@')[0];
+            }
+
+            const userCard = allCards.find(c => String(c.user_id) === String(userId) && c.seller_name);
+            if (userCard && userCard.seller_name) {
+                return userCard.seller_name;
+            }
+
+            return `Utente TCG Vault`;
+        }
+
+        async function openSellerPublicProfile() {
+            if (!selectedCard || !selectedCard.user_id) {
+                showNotification('Informazioni sul venditore non disponibili.', 'error');
+                return;
+            }
+            
+            const sellerId = selectedCard.user_id;
+            const sellerName = selectedCard.seller_name || await getProfileDisplayName(sellerId);
+            
+            closeDetailModal();
+
+            document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
+            document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
+            document.getElementById('seller-profile-location').innerText = `📍 Località: ${selectedCard.location || 'Non specificata'}`;
+
+            try {
+                const res = await fetch(`${window.location.origin}/api/reviews/${sellerId}`);
+                const reviews = await res.json();
+                const revContainer = document.getElementById('seller-profile-reviews');
+                if (!reviews || reviews.length === 0) {
+                    revContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">Nessuna recensione ricevuta.</p>';
+                } else {
+                    revContainer.innerHTML = reviews.map(r => `
+                        <div style="background: var(--panel-solid); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+                            <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.85rem;">⭐ ${r.rating} / 5 stelle</div>
+                            <div style="font-size: 0.85rem; color: var(--text-main);">${r.comment}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error('Errore recensioni:', err);
+            }
+
+            const sellerCardsContainer = document.getElementById('seller-profile-listings');
+            const sellerCards = allCards.filter(c => c.user_id === sellerId && selectedCard && c.id !== selectedCard.id && !c.is_sold);
+            
+            if (sellerCards.length === 0) {
+                sellerCardsContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; grid-column: 1/-1;">Nessun altro annuncio attivo da questo venditore.</p>';
+            } else {
+                sellerCardsContainer.innerHTML = sellerCards.map(card => `
+                    <div class="tcg-card" onclick="closeSellerProfileModal(); openDetailModal('${card.id}')" style="cursor: pointer;">
+                        <img src="${card.image_url}" class="card-img" style="height: 120px;">
+                        <div class="card-body" style="padding: 10px;">
+                            <h4 class="card-title" style="font-size: 0.9rem; margin: 0 0 4px 0;">${card.title}</h4>
+                            <div class="price" style="font-size: 1rem;">€ ${Number(card.price).toFixed(2)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('seller-public-profile-modal').style.display = 'flex';
+        }
+
+        function closeSellerProfileModal() {
+            document.getElementById('seller-public-profile-modal').style.display = 'none';
+        }
+
+        function addToCart(card) {
+            if (!card) return;
+            if (card.is_sold) {
+                showNotification('Questo prodotto è già stato venduto!', 'error');
+                return;
+            }
+
+            if (currentUser && card.user_id === currentUser.id) {
+                showNotification('Non puoi aggiungere al carrello un tuo stesso annuncio!', 'error');
+                return;
+            }
+
+            if (cart.length > 0) {
+                const currentSellerId = cart[0].user_id;
+                if (currentSellerId !== card.user_id) {
+                    showNotification('Non puoi aggiungere articoli di venditori diversi nello stesso carrello!', 'error');
+                    return;
+                }
+            }
+
+            if (cart.some(item => String(item.id) === String(card.id))) {
+                showNotification('Il prodotto è già nel carrello.');
+                return;
+            }
+
+            cart.push(card);
+            localStorage.setItem('tcg_cart', JSON.stringify(cart));
+            updateCartCounter();
+            showNotification('Prodotto aggiunto al carrello! 🛒');
+            closeDetailModal();
+        }
+
+        function removeFromCart(cardId) {
+            cart = cart.filter(item => String(item.id) !== String(cardId));
+            localStorage.setItem('tcg_cart', JSON.stringify(cart));
+            updateCartCounter();
+            renderCartModal();
+            showNotification('Prodotto rimosso dal carrello.');
+        }
+
+        function updateCartCounter() {
+            document.getElementById('cart-count').innerText = cart.length;
+        }
+
+        function openCartModal() {
+            validateAndCleanCart();
+            renderCartModal();
+            document.getElementById('cart-modal').style.display = 'flex';
+        }
+
+        function closeCartModal() {
+            document.getElementById('cart-modal').style.display = 'none';
+        }
+
+        function renderCartModal() {
+            const container = document.getElementById('cart-items-container');
+            const totalPriceEl = document.getElementById('cart-total-price');
+
+            if (cart.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>';
+                totalPriceEl.innerText = '0.00';
+                return;
+            }
+
+            let total = 0;
+            container.innerHTML = cart.map(item => {
+                total += Number(item.price);
+                return `
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; gap: 12px;">
+                        <img src="${item.image_url}" style="width: 50px; height: 50px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; font-size: 0.95rem;">${item.title}</div>
+                            <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.9rem;">€ ${Number(item.price).toFixed(2)}</div>
+                        </div>
+                        <button class="btn-delete-icon" onclick="removeFromCart('${item.id}')" style="margin: 0; padding: 4px 8px; font-size: 0.8rem;">✕</button>
+                    </div>
+                `;
+            }).join('');
+
+            totalPriceEl.innerText = total.toFixed(2);
+        }
+
+        function proceedCartCheckout() {
+            if (cart.length === 0) {
+                showNotification('Il carrello è vuoto.', 'error');
+                return;
+            }
+
+            let total = cart.reduce((acc, item) => acc + Number(item.price), 0);
+
+            if (total < 5.00) {
+                showNotification('L\'ordine minimo deve essere di almeno € 5.00.', 'error');
+                return;
+            }
+
+            selectedCard = cart[0]; 
+            closeCartModal();
+            openStripeCheckoutModal();
+        }
+
+        async function openDetailModal(cardId) {
+            selectedCard = allCards.find(c => String(c.id) === String(cardId));
+            if (!selectedCard) return;
+
+            if (currentUser && String(selectedCard.user_id) === String(currentUser.id)) {
+                openProfileModal();
+                switchProfileTab('my-listings', document.querySelectorAll('.profile-tab')[1]);
+                showNotification('Gestisci i tuoi annunci direttamente qui.');
+                return;
+            }
+
+            document.getElementById('detail-img').src = selectedCard.image_url;
+            document.getElementById('detail-name').innerText = selectedCard.title;
+            document.getElementById('detail-category').innerText = (selectedCard.category || 'TCG') + ' • ' + (selectedCard.type || 'Articolo');
+            document.getElementById('detail-condition').innerText = 'Condizione: ' + (selectedCard.condition || 'N/D');
+            document.getElementById('detail-location-view').innerText = '📍 Indirizzo: ' + (selectedCard.location || 'Non specificato');
+            document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
+            document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
+            document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
+
+            document.getElementById('detail-modal').style.display = 'flex';
+        }
+
+        function closeDetailModal() { 
+            document.getElementById('detail-modal').style.display = 'none'; 
+        }
+
+        async function openStripeCheckoutModal() {
+            if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
+            if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
+            if (selectedCard.user_id === currentUser.id) { showNotification('Non puoi comprare un tuo annuncio!', 'error'); return; }
+            
+            if (Number(selectedCard.price) < 5.00) {
+                showNotification('L\'ordine minimo deve essere di almeno € 5.00.', 'error');
+                return;
+            }
+            
+            const priceEl = document.getElementById('checkout-modal-price');
+            if (priceEl) {
+                priceEl.innerText = Number(selectedCard.price).toFixed(2);
+            }
+            
+            closeDetailModal();
+            document.getElementById('stripe-checkout-modal').style.display = 'flex';
+
+            try {
+                const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount: selectedCard.price, buyerId: currentUser.id, sellerId: selectedCard.user_id, cardId: selectedCard.id, cardTitle: selectedCard.title })
+                });
+                const data = await response.json();
+                
+                if (data.clientSecret) {
+                    clientSecret = data.clientSecret;
+                    
+                    const appearance = { 
+                        theme: 'night',
+                        variables: {
+                            colorPrimary: '#00ff88',
+                            colorBackground: '#131b2e',
+                            colorText: '#f8fafc',
+                            borderRadius: '10px',
+                        }
+                    };
+
+                    elements = stripe.elements({ appearance, clientSecret });
+                    
+                    const paymentElement = elements.create('payment', {
+                        layout: 'auto'
+                    });
+
+                    paymentElement.mount('#payment-element');
+                } else {
+                    showNotification('Errore Stripe: ' + (data.error?.message || 'Impossibile avviare il pagamento'), 'error');
+                }
+            } catch (error) {
+                showNotification('Errore di connessione al server di pagamento.', 'error');
+            }
+        }
+
+        function closeStripeCheckoutModal() { document.getElementById('stripe-checkout-modal').style.display = 'none'; }
+
+        document.getElementById('payment-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!stripe || !elements) return;
+
+            const submitBtn = document.getElementById('submit-payment-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Elaborazione...';
+
+            const { error } = await stripe.confirmPayment({
+                elements,
+                confirmParams: { return_url: window.location.href.split('?')[0] + '?payment_success=true' },
+                redirect: 'if_required'
+            });
+
+            if (error) {
+                document.getElementById('payment-message').innerText = error.message;
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
+            } else {
+                selectedCard.is_sold = true;
+                
+                await supabaseClient
+                    .from('cards')
+                    .update({ is_sold: true })
+                    .eq('id', selectedCard.id);
+
+                closeStripeCheckoutModal();
+                showNotification(`💳 Pagamento completato! Fondi custoditi in Escrow.`);
+                loadCardsFromSupabase();
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
+            }
+        });
+
+        function makeOffer() {
+            if (!currentUser) { showNotification('Accedi prima di fare un\'offerta.', 'error'); openAuthModal(); return; }
+            const offer = prompt("Inserisci la tua offerta in euro (€):");
+            if (offer && !isNaN(offer)) {
+                showNotification(`Offerta di €${parseFloat(offer).toFixed(2)} inviata al venditore!`);
+            }
+        }
+
+        function openChatWithSeller() {
+            if (!currentUser) { showNotification('Accedi per chattare.', 'error'); openAuthModal(); return; }
+            if (selectedCard && selectedCard.user_id === currentUser.id) {
+                showNotification('Questo è il tuo annuncio.', 'error');
+                return;
+            }
+            openChatModal(selectedCard ? selectedCard.user_id : null, selectedCard ? selectedCard.title : '', selectedCard ? selectedCard.user_id : null);
+        }
+
+        async function openMyMessagesModal() {
+            if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
+            
+            unreadMessagesCount = 0;
+            localStorage.setItem('tcg_unread_msg_count', '0');
+            updateUnreadMessagesBadge();
+
+            try {
+                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
+                const messages = await res.json();
+                const container = document.getElementById('conversations-list');
+                
+                if (!messages || messages.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-muted);">Nessuna conversazione o notifica Escrow attiva.</p>';
+                } else {
+                    const conversationsMap = {};
+                    messages.forEach(m => {
+                        const otherUserId = m.senderId === currentUser.id ? m.receiverId : m.senderId;
+                        if (!conversationsMap[otherUserId] || new Date(m.timestamp) > new Date(conversationsMap[otherUserId].timestamp)) {
+                            conversationsMap[otherUserId] = m;
+                        }
+                    });
+
+                    const renderedConversations = await Promise.all(Object.keys(conversationsMap).map(async otherUserId => {
+                        const m = conversationsMap[otherUserId];
+                        const partnerName = await getProfileDisplayName(otherUserId);
+                        
+                        return `
+                            <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '', '${otherUserId}')">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <strong style="color: var(--accent-neon); font-size: 0.95rem;">💬 ${partnerName}</strong>
+                                    <span style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
+                                </div>
+                                <div style="font-size: 0.9rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${m.text}</div>
+                            </div>
+                        `;
+                    }));
+
+                    container.innerHTML = renderedConversations.join('');
+                }
+                document.getElementById('my-messages-modal').style.display = 'flex';
+            } catch (err) {
+                showNotification('Errore caricamento messaggi.', 'error');
+            }
+        }
+
+        function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
+
+        async function openChatModal(receiverId, cardTitle = '', sellerId = null) {
+            if (!currentUser) { openAuthModal(); return; }
+            activeChatReceiverId = receiverId;
+            activeChatSellerId = sellerId || receiverId;
+
+            unreadMessagesCount = 0;
+            localStorage.setItem('tcg_unread_msg_count', '0');
+            updateUnreadMessagesBadge();
+
+            const displayName = await getProfileDisplayName(receiverId);
+            const fullTitle = cardTitle ? `${displayName} <span style="font-weight: normal; font-size: 0.8rem; color: var(--text-muted);">• ${cardTitle}</span>` : displayName;
+
+            document.getElementById('chatTitle').innerHTML = fullTitle;
+            document.getElementById('chatModal').style.display = 'flex';
+            closeMyMessagesModal();
+            closeProfileModal();
+            loadChatMessages();
+            startChatPresence(receiverId);
+
+            if (chatInterval) clearInterval(chatInterval);
+            chatInterval = setInterval(() => {
+                if (document.getElementById('chatModal').style.display === 'flex' && activeChatReceiverId) {
+                    loadChatMessages(true);
+                }
+            }, 3000);
+        }
+
+        async function openActiveSellerProfileFromChat() {
+            if (!activeChatSellerId || activeChatSellerId === 'SYSTEM_ESCROW') return;
+            
+            closeChat();
+            
+            const sellerName = await getProfileDisplayName(activeChatSellerId);
+            document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
+            document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
+            document.getElementById('seller-profile-location').innerText = `📍 Località: Verificata`;
+
+            try {
+                const res = await fetch(`${window.location.origin}/api/reviews/${activeChatSellerId}`);
+                const reviews = await res.json();
+                const revContainer = document.getElementById('seller-profile-reviews');
+                if (!reviews || reviews.length === 0) {
+                    revContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">Nessuna recensione ricevuta.</p>';
+                } else {
+                    revContainer.innerHTML = reviews.map(r => `
+                        <div style="background: var(--panel-solid); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+                            <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.85rem;">⭐ ${r.rating} / 5 stelle</div>
+                            <div style="font-size: 0.85rem; color: var(--text-main);">${r.comment}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error('Errore recensioni:', err);
+            }
+
+            const sellerCardsContainer = document.getElementById('seller-profile-listings');
+            const sellerCards = allCards.filter(c => c.user_id === activeChatSellerId && !c.is_sold);
+            
+            if (sellerCards.length === 0) {
+                sellerCardsContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; grid-column: 1/-1;">Nessun altro annuncio attivo da questo venditore.</p>';
+            } else {
+                sellerCardsContainer.innerHTML = sellerCards.map(card => `
+                    <div class="tcg-card" onclick="closeSellerProfileModal(); openDetailModal('${card.id}')" style="cursor: pointer;">
+                        <img src="${card.image_url}" class="card-img" style="height: 120px;">
+                        <div class="card-body" style="padding: 10px;">
+                            <h4 class="card-title" style="font-size: 0.9rem; margin: 0 0 4px 0;">${card.title}</h4>
+                            <div class="price" style="font-size: 1rem;">€ ${Number(card.price).toFixed(2)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('seller-public-profile-modal').style.display = 'flex';
+        }
+
+        function closeChat() {
+            document.getElementById('chatModal').style.display = 'none';
+            if (chatInterval) clearInterval(chatInterval);
+            if (pingInterval) clearInterval(pingInterval);
+            sendPing(false);
+        }
+
+        function startChatPresence(receiverId) {
+            if (pingInterval) clearInterval(pingInterval);
+            sendPing(false);
+            pingInterval = setInterval(() => {
+                sendPing(false);
+                checkReceiverStatus(receiverId);
+            }, 4000);
+        }
+
+        async function sendPing(isTyping) {
+            if (!currentUser) return;
+            try {
+                await fetch(`${window.location.origin}/api/presence/ping`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, isTyping })
+                });
+            } catch (e) {
+                console.error('Errore ping presenza', e);
+            }
+        }
+
+        const chatInputEl = document.getElementById('chatInput');
+        if (chatInputEl) {
+            chatInputEl.addEventListener('input', () => {
+                sendPing(true);
+                if (typingTimeout) clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    sendPing(false);
+                }, 2000);
+            });
+        }
+
+        async function checkReceiverStatus(receiverId) {
+            if (!receiverId) return;
+            try {
+                const res = await fetch(`${window.location.origin}/api/presence/${receiverId}`);
+                const data = await res.json();
+                
+                const statusIndicator = document.getElementById('chatStatusIndicator');
+                if (!statusIndicator) return;
+
+                if (data.isTyping) {
+                    statusIndicator.innerHTML = '<span style="color: var(--accent-neon);">✍️ Sta scrivendo...</span>';
+                } else if (data.isOnline) {
+                    statusIndicator.innerHTML = '<span style="color: var(--accent-neon);">● Online</span>';
+                } else {
+                    if (data.lastSeen > 0) {
+                        const date = new Date(data.lastSeen);
+                        const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        statusIndicator.innerHTML = `<span style="color: var(--text-muted);">Ultimo accesso oggi alle ${timeString}</span>`;
+                    } else {
+                        statusIndicator.innerHTML = '<span style="color: var(--text-muted);">Offline</span>';
+                    }
+                }
+            } catch (e) {
+                console.error('Errore stato receiver', e);
+            }
+        }
+
+        async function loadChatMessages(isBackground = false) {
+            if (!currentUser || !activeChatReceiverId) return;
+            try {
+                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
+                const messages = await res.json();
+                const container = document.getElementById('chatMessages');
+                
+                const relevant = messages.filter(m => 
+                    (String(m.senderId) === String(currentUser.id) && String(m.receiverId) === String(activeChatReceiverId)) ||
+                    (String(m.senderId) === String(activeChatReceiverId) && String(m.receiverId) === String(currentUser.id)) ||
+                    (String(m.receiverId) === String(currentUser.id) && m.senderId === 'SYSTEM_ESCROW')
+                );
+
+                if (relevant.length === 0) {
+                    if (!isBackground) container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem; text-align: center;">Inizia la conversazione o visualizza qui gli avvisi Escrow.</p>';
+                    return;
+                }
+
+                const newHtml = relevant.map(m => {
+                    if (m.senderId === 'SYSTEM_ESCROW') {
+                        return `
+                            <div class="escrow-alert-msg">
+                                <div>${m.text}</div>
+                                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+                                    <button onclick="openEscrowGuideModal('${m.orderId}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">📦 Guida Spedizione & Tracking</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    const isMe = String(m.senderId) === String(currentUser.id);
+                    return `<div class="${isMe ? 'user-msg' : 'bot-msg'}">${m.text}</div>`;
+                }).join('');
+
+                if (container.innerHTML !== newHtml) {
+                    container.innerHTML = newHtml;
+                    container.scrollTop = container.scrollHeight;
+                }
+            } catch (err) {
+                console.error('Errore chat:', err);
+            }
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chatInput');
+            const text = input.value.trim();
+            if (!text || !currentUser || !activeChatReceiverId) return;
+
+            sendPing(false);
+
+            try {
+                await fetch(`${window.location.origin}/api/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        senderId: currentUser.id, 
+                        receiverId: activeChatReceiverId, 
+                        text,
+                        senderName: currentUser.name || currentUser.email.split('@')[0]
+                    })
+                });
+                input.value = '';
+                loadChatMessages();
+            } catch (err) {
+                showNotification('Errore invio messaggio.', 'error');
+            }
+        }
+
+        function startUnreadMessagesPolling() {
+            if (unreadCheckInterval) clearInterval(unreadCheckInterval);
+            let lastCheckedMsgCount = -1;
+
+            unreadCheckInterval = setInterval(async () => {
+                if (!currentUser) return;
+                try {
+                    const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
+                    const messages = await res.json();
+                    if (messages && messages.length > 0) {
+                        const incoming = messages.filter(m => m.receiverId === currentUser.id && m.senderId !== currentUser.id);
+                        if (lastCheckedMsgCount !== -1 && incoming.length > lastCheckedMsgCount) {
+                            unreadMessagesCount++;
+                            localStorage.setItem('tcg_unread_msg_count', unreadMessagesCount);
+                            updateUnreadMessagesBadge();
+                        }
+                        lastCheckedMsgCount = incoming.length;
+                    }
+                } catch (e) {
+                    console.error('Errore controllo messaggi:', e);
+                }
+            }, 4000);
+        }
+
+        function openEscrowGuideModal(orderId) {
+            const carrier = prompt("Inserisci il corriere utilizzato (es. Poste Italiane, InPost, BRT, GLS):", "Poste Italiane");
+            if (!carrier) return;
+            const tracking = prompt("Inserisci il numero di tracciamento (Tracking Number):");
+            if (!tracking) return;
+
+            fetch(`${window.location.origin}/api/orders/${orderId}/ship`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ carrier, trackingNumber: tracking })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('Spedizione registrata! L\'acquirente potrà confermare la ricezione.');
+                    closeChat();
+                } else {
+                    showNotification(data.error || 'Errore.', 'error');
+                }
+            })
+            .catch(() => showNotification('Errore di comunicazione.', 'error'));
+        }
+
+        function checkAuthAndOpenSellModal() { 
+            if(!currentUser){ openAuthModal(); return; } 
+            
+            if (currentUser.address) {
+                document.getElementById('sell-location').value = currentUser.address;
+            }
+
+            document.getElementById('sell-modal').style.display='flex'; 
+        }
+
+        function closeSellModal() { document.getElementById('sell-modal').style.display='none'; }
+        function openAuthModal() { document.getElementById('auth-modal').style.display='flex'; }
+        function closeAuthModal() { document.getElementById('auth-modal').style.display='none'; }
+        function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
+
+        window.onload = async () => {
+            document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+            await initAuth();
+            await loadCardsFromSupabase();
+        };
+    </script>
+</body>
+</html>
