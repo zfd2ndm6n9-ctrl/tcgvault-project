@@ -82,6 +82,8 @@
         let shopName = 'Negozio TCG';
         let scanner = null;
         let scanning = false;
+        let lastCheckinToken = '';
+        let lastCheckinAt = 0;
 
         async function init() {
             const { data: { session } } = await supabaseClient.auth.getSession();
@@ -139,11 +141,16 @@
         async function checkIn(token) {
             const msg = document.getElementById('checkin-msg');
             const id = document.getElementById('checkin-tournament').value;
-            if (!id || !token) { msg.className = 'err'; msg.innerText = 'Seleziona un torneo e un QR.'; return; }
+            const clean = String(token || '').trim();
+            const now = Date.now();
+            if (clean && clean === lastCheckinToken && now - lastCheckinAt < 2000) return;
+            lastCheckinToken = clean;
+            lastCheckinAt = now;
+            if (!id || !clean) { msg.className = 'err'; msg.innerText = 'Seleziona un torneo e un QR.'; return; }
             const data = await fetch('/api/tournaments/' + encodeURIComponent(id) + '/checkin', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ shopId: currentUser.id, qrToken: token.trim() })
+                body: JSON.stringify({ shopId: currentUser.id, qrToken: clean })
             }).then(r => r.json());
             msg.className = data.success ? 'ok' : 'err';
             if (data.success) {

@@ -688,7 +688,7 @@
         </div>
 
         <div class="search-row">
-            <input type="text" id="search-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFilters()" aria-label="Cerca prodotto">
+            <input type="text" id="search-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFiltersDebounced()" aria-label="Cerca prodotto">
             <button type="button" class="btn-filters" onclick="openFiltersPanel()">Filtri</button>
         </div>
 
@@ -765,7 +765,7 @@
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>📍 Località</label>
-                <input type="text" id="location-input" class="filter-input" placeholder="Es. Milano, Roma..." oninput="applyFilters()">
+                <input type="text" id="location-input" class="filter-input" placeholder="Es. Milano, Roma..." oninput="applyFiltersDebounced()">
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>Tipo Articolo</label>
@@ -782,7 +782,7 @@
                 <label>Prezzo massimo</label>
                 <div class="price-box-clean">
                     <span>€</span>
-                    <input type="number" id="price-clean-input" class="price-clean-input" min="0" value="" oninput="applyFilters()" placeholder="...">
+                    <input type="number" id="price-clean-input" class="price-clean-input" min="0" value="" oninput="applyFiltersDebounced()" placeholder="...">
                 </div>
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
@@ -1195,15 +1195,18 @@
 
         async function loadAccountMeta(ids) {
             const unique = [...new Set((ids || []).filter(Boolean).map(id => String(id)))];
-            const missing = unique.filter(id => !accountMetaCache[id]);
+            const now = Date.now();
+            const missing = unique.filter(id => !accountMetaCache[id] || (now - (accountMetaCache[id]._loadedAt || 0) > 120000));
             if (!missing.length) return accountMetaCache;
             try {
                 const res = await fetch('/api/accounts/public?ids=' + encodeURIComponent(missing.join(',')));
                 const data = await res.json();
-                Object.assign(accountMetaCache, data.accounts || {});
+                Object.keys(data.accounts || {}).forEach(id => {
+                    accountMetaCache[id] = Object.assign({ _loadedAt: now }, data.accounts[id]);
+                });
             } catch (e) {
                 missing.forEach(id => {
-                    if (!accountMetaCache[id]) accountMetaCache[id] = { accountType: 'privato', partner: false };
+                    if (!accountMetaCache[id]) accountMetaCache[id] = { accountType: 'privato', partner: false, _loadedAt: now };
                 });
             }
             return accountMetaCache;
@@ -1243,9 +1246,22 @@
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = 'toast';
-            toast.innerHTML = `<span>${type === 'success' ? '✅' : '⚠️'}</span> <span>${message}</span>`;
+            toast.innerHTML = `<span>${type === 'success' ? '✅' : '⚠️'}</span> <span></span>`;
+            toast.lastElementChild.textContent = String(message || '');
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
+        }
+
+        let sellerCatalogCentsMap = {};
+        function rebuildSellerCatalogIndex() {
+            const map = Object.create(null);
+            for (let i = 0; i < allCards.length; i++) {
+                const c = allCards[i];
+                if (isCardSold(c)) continue;
+                const id = String(c.user_id);
+                map[id] = (map[id] || 0) + priceToCents(c.price);
+            }
+            sellerCatalogCentsMap = map;
         }
 
         function isCardSold(card) {
@@ -1267,9 +1283,7 @@
         }
 
         function getSellerCatalogCents(userId, extraPrice = 0) {
-            return allCards
-                .filter(c => String(c.user_id) === String(userId) && !isCardSold(c))
-                .reduce((sum, c) => sum + priceToCents(c.price), 0) + priceToCents(extraPrice);
+            return (sellerCatalogCentsMap[String(userId)] || 0) + priceToCents(extraPrice);
         }
 
         function isListingPending(card) {
@@ -1297,23 +1311,32 @@
             return parts.length ? parts[parts.length - 1] : text;
         }
 
+        const profileByIdCache = {};
         async function fetchProfileById(userId) {
             if (!userId || userId === 'SYSTEM_ESCROW') return null;
             const id = String(userId);
+            const cached = profileByIdCache[id];
+            if (cached && Date.now() - cached.t < 60000) return cached.data;
             try {
-                const { data, error } = await supabaseClient.from('profiles').select('*').eq('id', id).maybeSingle();
-                if (!error && data) return data;
+                const { data, error } = await supabaseClient.from('profiles').select('id,name,address,city,location').eq('id', id).maybeSingle();
+                if (!error && data) {
+                    profileByIdCache[id] = { t: Date.now(), data };
+                    return data;
+                }
             } catch (e) {
                 console.warn('Lettura profiles client:', e);
             }
             try {
                 const res = await fetch(`/api/profiles/${encodeURIComponent(id)}`, { cache: 'no-store' });
                 const json = await res.json();
-                if (json && json.found) return json;
+                if (json && json.found) {
+                    profileByIdCache[id] = { t: Date.now(), data: json };
+                    return json;
+                }
             } catch (e) {
                 console.warn('Lettura profiles API:', e);
             }
-            return null;
+            return cached ? cached.data : null;
         }
 
         async function setProfileLocationEl(userId) {
@@ -1645,11 +1668,12 @@
                     allCards = data || [];
                 }
 
+                rebuildSellerCatalogIndex();
                 validateAndCleanCart();
-                if (currentUser) await syncSellerListingStatuses(currentUser.id);
                 applyFilters();
             } catch (err) {
                 allCards = [];
+                rebuildSellerCatalogIndex();
                 applyFilters();
             }
         }
@@ -1732,6 +1756,7 @@
                 closeSellModal();
                 await loadCardsFromSupabase();
                 const sync = await syncSellerListingStatuses(currentUser.id);
+                rebuildSellerCatalogIndex();
                 applyFilters();
                 if (sync.pending) {
                     const remaining = (50 - sync.total).toFixed(2);
@@ -1789,6 +1814,7 @@
         async function deleteCard(cardId) {
             if (confirm("Vuoi eliminare questo annuncio?")) {
                 allCards = allCards.filter(c => String(c.id) !== String(cardId));
+                rebuildSellerCatalogIndex();
                 validateAndCleanCart();
                 applyFilters();
                 loadMyListings();
@@ -1827,7 +1853,7 @@
 
         function openSavedModal() {
             const container = document.getElementById('saved-products-container');
-            const savedCards = allCards.filter(c => savedProductIds.includes(c.id));
+            const savedCards = allCards.filter(c => savedProductIds.some(id => String(id) === String(c.id)));
             if (savedCards.length === 0) {
                 container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto salvato nei preferiti.</p>';
             } else {
@@ -2071,6 +2097,12 @@
             loadAccountMeta(myCards.map(c => c.user_id)).then(() => paintSellerBadges(container));
         }
 
+        let filterDebounceTimer = null;
+        function applyFiltersDebounced() {
+            clearTimeout(filterDebounceTimer);
+            filterDebounceTimer = setTimeout(applyFilters, 160);
+        }
+
         function applyFilters() {
             const searchQuery = document.getElementById('search-input').value.toLowerCase();
             const locationQuery = document.getElementById('location-input').value.toLowerCase();
@@ -2109,16 +2141,17 @@
             container.innerHTML = cards.map(card => {
                 const isSaved = savedProductIds.some(id => String(id) === String(card.id));
                 const status = listingStatusMeta(card);
+                const img = /^https?:\/\//i.test(String(card.image_url || '')) ? card.image_url : '';
                 return `
-                    <div class="tcg-card" onclick="openDetailModal('${card.id}')">
-                        <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${card.id}')">${isSaved ? '❤️' : '🤍'}</div>
-                        <img src="${card.image_url}" class="card-img">
+                    <div class="tcg-card" onclick="openDetailModal('${escapeHtml(String(card.id))}')">
+                        <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${escapeHtml(String(card.id))}')">${isSaved ? '❤️' : '🤍'}</div>
+                        <img src="${escapeHtml(img)}" class="card-img">
                         <div class="card-body">
-                            <span class="card-category">${card.category} • ${card.type}</span>
-                            <h3 class="card-title">${card.title}</h3>
+                            <span class="card-category">${escapeHtml(card.category)} • ${escapeHtml(card.type)}</span>
+                            <h3 class="card-title">${escapeHtml(card.title)}</h3>
                             <div class="price">€ ${Number(card.price).toFixed(2)}</div>
-                            <div class="account-badges" data-seller-id="${card.user_id}">${identityBadgesHtml(accountMetaCache[String(card.user_id)] || { accountType: 'privato', partner: false })}</div>
-                            <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
+                            <div class="account-badges" data-seller-id="${escapeHtml(String(card.user_id || ''))}">${identityBadgesHtml(accountMetaCache[String(card.user_id)] || { accountType: 'privato', partner: false })}</div>
+                            <div class="card-location">📍 ${escapeHtml(card.location || 'Indirizzo non specificato')}</div>
                             <div class="status-badge ${status.className}">${status.label}</div>
                         </div>
                     </div>
@@ -2127,18 +2160,17 @@
             loadAccountMeta(cards.map(c => c.user_id)).then(() => paintSellerBadges(container));
         }
 
+        const displayNameCache = {};
         async function getProfileDisplayName(userId) {
             if (userId === 'SYSTEM_ESCROW') return '🛡️ Sistema Escrow TCG Vault';
-            
-            try {
-                const { data, error } = await supabaseClient
-                    .from('profiles')
-                    .select('name')
-                    .eq('id', String(userId))
-                    .maybeSingle();
+            const id = String(userId);
+            if (displayNameCache[id]) return displayNameCache[id];
 
-                if (data && data.name) {
-                    return data.name;
+            try {
+                const profile = await fetchProfileById(id);
+                if (profile && profile.name) {
+                    displayNameCache[id] = profile.name;
+                    return profile.name;
                 }
             } catch (e) {
                 console.error('Errore getProfileDisplayName:', e);
@@ -2146,15 +2178,19 @@
 
             const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${userId}`) || '{}');
             if (savedProfile && savedProfile.name) {
+                displayNameCache[id] = savedProfile.name;
                 return savedProfile.name;
             }
 
             if (currentUser && String(currentUser.id) === String(userId)) {
-                return currentUser.name || currentUser.email.split('@')[0];
+                const own = currentUser.name || currentUser.email.split('@')[0];
+                displayNameCache[id] = own;
+                return own;
             }
 
             const userCard = allCards.find(c => String(c.user_id) === String(userId) && c.seller_name);
             if (userCard && userCard.seller_name) {
+                displayNameCache[id] = userCard.seller_name;
                 return userCard.seller_name;
             }
 
@@ -2580,7 +2616,7 @@
                 if (document.getElementById('chatModal').style.display === 'flex' && activeChatReceiverId) {
                     loadChatMessages(true);
                 }
-            }, 3000);
+            }, 4000);
         }
 
         async function openActiveSellerProfileFromChat() {
@@ -2645,7 +2681,7 @@
             pingInterval = setInterval(() => {
                 sendPing(false);
                 checkReceiverStatus(receiverId);
-            }, 4000);
+            }, 8000);
         }
 
         async function sendPing(isTyping) {
@@ -2699,8 +2735,10 @@
             }
         }
 
+        let chatLoadBusy = false;
         async function loadChatMessages(isBackground = false) {
-            if (!currentUser || !activeChatReceiverId) return;
+            if (!currentUser || !activeChatReceiverId || chatLoadBusy) return;
+            chatLoadBusy = true;
             try {
                 const res = await fetch(`/api/messages/${encodeURIComponent(currentUser.id)}`, { cache: 'no-store' });
                 const messages = await res.json();
@@ -2722,7 +2760,7 @@
                     if (m.senderId === 'SYSTEM_ESCROW') {
                         return `
                             <div class="escrow-alert-msg">
-                                <div>${m.text}</div>
+                                <div>${escapeHtml(m.text)}</div>
                                 <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
                                     <button onclick="openEscrowGuideModal('${m.orderId}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">📦 Guida Spedizione & Tracking</button>
                                 </div>
@@ -2730,7 +2768,7 @@
                         `;
                     }
                     const isMe = String(m.senderId) === String(currentUser.id);
-                    return `<div class="${isMe ? 'user-msg' : 'bot-msg'}">${m.text}</div>`;
+                    return `<div class="${isMe ? 'user-msg' : 'bot-msg'}">${escapeHtml(m.text)}</div>`;
                 }).join('');
 
                 if (container.innerHTML !== newHtml) {
@@ -2739,6 +2777,8 @@
                 }
             } catch (err) {
                 console.error('Errore chat:', err);
+            } finally {
+                chatLoadBusy = false;
             }
         }
 
@@ -2776,8 +2816,10 @@
             let primed = false;
             const knownIds = new Set();
 
+            let inboxBusy = false;
             const pollInbox = async () => {
-                if (!currentUser) return;
+                if (!currentUser || inboxBusy) return;
+                inboxBusy = true;
                 try {
                     const res = await fetch(`/api/messages/${encodeURIComponent(currentUser.id)}`, { cache: 'no-store' });
                     const messages = await res.json();
@@ -2803,11 +2845,13 @@
                     incoming.forEach(m => knownIds.add(String(m.id)));
                 } catch (e) {
                     console.error('Errore controllo messaggi:', e);
+                } finally {
+                    inboxBusy = false;
                 }
             };
 
             pollInbox();
-            unreadCheckInterval = setInterval(pollInbox, 4000);
+            unreadCheckInterval = setInterval(pollInbox, 8000);
         }
 
         function openEscrowGuideModal(orderId) {
@@ -2850,8 +2894,7 @@
 
         window.onload = async () => {
             document.querySelectorAll('.modal-overlay, .filters-overlay, .side-overlay').forEach(m => m.classList.remove('is-open'));
-            await initAuth();
-            await loadCardsFromSupabase();
+            await Promise.all([initAuth(), loadCardsFromSupabase()]);
         };
     </script>
 </body>

@@ -72,7 +72,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req,
     res.json({ received: true });
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -109,12 +109,7 @@ function loadMessagesFromDisk() {
 }
 
 function persistMessagesToDisk() {
-    try {
-        fs.mkdirSync(path.dirname(MESSAGES_FILE), { recursive: true });
-        fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messagesDB, null, 2));
-    } catch (err) {
-        console.error('Salvataggio messaggi fallito:', err.message);
-    }
+    persistJsonFile('messages.json', messagesDB);
 }
 
 function idsMatch(a, b) {
@@ -130,14 +125,28 @@ function extractCityFromProfile(row) {
     return parts.length ? parts[parts.length - 1] : text;
 }
 
-function persistJsonFile(fileName, data) {
-    try {
-        const file = path.join(__dirname, 'data', fileName);
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        fs.writeFileSync(file, JSON.stringify(data, null, 2));
-    } catch (err) {
-        console.error('Salvataggio ' + fileName + ' fallito:', err.message);
+const persistTimers = {};
+function persistJsonFile(fileName, data, immediate) {
+    if (!persistTimers[fileName]) persistTimers[fileName] = {};
+    const slot = persistTimers[fileName];
+    slot.data = data;
+    const flush = () => {
+        slot.timer = null;
+        try {
+            const file = path.join(__dirname, 'data', fileName);
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, JSON.stringify(slot.data, null, 2));
+        } catch (err) {
+            console.error('Salvataggio ' + fileName + ' fallito:', err.message);
+        }
+    };
+    if (immediate) {
+        if (slot.timer) clearTimeout(slot.timer);
+        flush();
+        return;
     }
+    if (slot.timer) return;
+    slot.timer = setTimeout(flush, 400);
 }
 
 function loadJsonArray(fileName) {
@@ -709,8 +718,10 @@ app.post('/api/messages', (req, res) => {
 
 app.get('/api/messages/:userId', (req, res) => {
     const userId = String(req.params.userId);
-    const userMessages = messagesDB.filter(m => idsMatch(m.senderId, userId) || idsMatch(m.receiverId, userId));
-    res.json(userMessages);
+    const userMessages = messagesDB
+        .filter(m => idsMatch(m.senderId, userId) || idsMatch(m.receiverId, userId))
+        .sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+    res.json(userMessages.length > 250 ? userMessages.slice(-250) : userMessages);
 });
 
 app.post('/api/presence/ping', (req, res) => {
