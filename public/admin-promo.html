@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Codici promo negozio - TCG Vault</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="auth-fetch.js"></script>
     <style>
         :root { --bg:#090d16; --panel:#131b2e; --accent:#00ff88; --text:#f8fafc; --muted:#94a3b8; --border:rgba(255,255,255,.08); --red:#ff4757; }
         body { margin:0; background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; padding:22px; }
@@ -56,6 +57,7 @@
     </div>
     <script>
         const supabaseClient = window.supabase.createClient('https://ahpkmppjtespemkzmkol.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk');
+        window.__tcgSupabase = supabaseClient;
         const ADMIN_EMAIL = 'francesco_delduca@icloud.com';
         let adminEmail = '';
 
@@ -74,7 +76,7 @@
         }
 
         async function loadCodes() {
-            const data = await fetch('/api/promo-codes?adminEmail=' + encodeURIComponent(adminEmail)).then(r => r.json());
+            const data = await fetch('/api/promo-codes').then(r => r.json());
             const box = document.getElementById('list');
             if (!data.success) { box.innerHTML = '<p class="err">' + (data.error || 'Accesso negato.') + '</p>'; return; }
             if (!data.codes.length) { box.innerHTML = '<p class="muted">Nessun codice.</p>'; return; }
@@ -95,7 +97,6 @@
         async function createCode() {
             const msg = document.getElementById('create-msg');
             const body = {
-                adminEmail,
                 code: document.getElementById('p-code').value.trim(),
                 label: document.getElementById('p-label').value.trim(),
                 maxUses: document.getElementById('p-uses').value,
@@ -118,7 +119,7 @@
             await fetch('/api/promo-codes/' + encodeURIComponent(id) + '/disable', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ adminEmail })
+                body: JSON.stringify({})
             });
             loadCodes();
         }

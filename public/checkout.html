@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Checkout - TCG Vault</title>
     <script src="https://js.stripe.com/v3/"></script>
-    <script src="https://cdn.js.delivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="auth-fetch.js"></script>
     <style>
         :root {
             --bg-color: #090d16;
@@ -116,6 +117,7 @@
         const SUPABASE_URL = 'https://ahpkmppjtespemkzmkol.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.__tcgSupabase = supabaseClient;
         const CART_MIN_ORDER = 20;
         let cart = JSON.parse(localStorage.getItem('tcg_cart') || '[]');
         let currentUser = null;
@@ -195,11 +197,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    amount: total,
-                    buyerId: currentUser.id,
-                    sellerId: first.user_id,
-                    cardId: first.id,
-                    cardTitle: cart.map(c => c.title).join(', ')
+                    cardIds: cart.map(c => c.id)
                 })
             });
             const data = await response.json();

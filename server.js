@@ -6,7 +6,13 @@ const crypto = require('crypto');
 const app = express();
 
 const corsMiddleware = require('cors');
-app.use(corsMiddleware());
+app.use(corsMiddleware({ origin: true }));
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+});
 
 function persistOrdersToDisk() {
     try {
@@ -202,17 +208,6 @@ function isAdminEmail(email) {
     return ADMIN_EMAILS.includes(String(email || '').trim().toLowerCase());
 }
 
-function requireAdmin(req, res) {
-    const email = (req.body && req.body.adminEmail)
-        || (req.query && req.query.adminEmail)
-        || req.headers['x-admin-email'];
-    if (!isAdminEmail(email)) {
-        res.status(403).json({ success: false, error: 'Solo Admin Supremo.' });
-        return false;
-    }
-    return true;
-}
-
 function normalizePromoCode(raw) {
     return String(raw || '').trim().toUpperCase().replace(/\s+/g, '');
 }
@@ -332,7 +327,96 @@ accountsDB = loadJsonArray('accounts.json');
 ensureDefaultPromoCodes();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ahpkmppjtespemkzmkol.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+const CART_MIN_ORDER = 20;
+const authUserCache = new Map();
+const rateBuckets = {};
+
+function clientIp(req) {
+    return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+}
+
+function rateLimit(key, max, windowMs) {
+    const now = Date.now();
+    const bucket = rateBuckets[key];
+    if (!bucket || bucket.reset < now) {
+        rateBuckets[key] = { n: 1, reset: now + windowMs };
+        return true;
+    }
+    bucket.n += 1;
+    return bucket.n <= max;
+}
+
+async function getAuthUser(req) {
+    const header = String(req.headers.authorization || '');
+    const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+    if (!token) return null;
+    const cached = authUserCache.get(token);
+    if (cached && cached.exp > Date.now()) return cached.user;
+    try {
+        const res = await fetch(SUPABASE_URL + '/auth/v1/user', {
+            headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: 'Bearer ' + token
+            }
+        });
+        if (!res.ok) return null;
+        const row = await res.json();
+        if (!row || !row.id) return null;
+        const user = { id: String(row.id), email: String(row.email || '').toLowerCase() };
+        authUserCache.set(token, { user, exp: Date.now() + 15000 });
+        if (authUserCache.size > 500) {
+            const first = authUserCache.keys().next().value;
+            authUserCache.delete(first);
+        }
+        return user;
+    } catch (err) {
+        return null;
+    }
+}
+
+async function requireAuth(req, res) {
+    const user = await getAuthUser(req);
+    if (!user) {
+        res.status(401).json({ success: false, error: 'Accesso richiesto.' });
+        return null;
+    }
+    req.auth = user;
+    return user;
+}
+
+function assertSelf(req, res, userId) {
+    if (!req.auth || String(req.auth.id) !== String(userId)) {
+        res.status(403).json({ success: false, error: 'Operazione non autorizzata.' });
+        return false;
+    }
+    return true;
+}
+
+async function requireAdmin(req, res) {
+    const user = await requireAuth(req, res);
+    if (!user) return null;
+    if (!isAdminEmail(user.email)) {
+        res.status(403).json({ success: false, error: 'Solo Admin Supremo.' });
+        return null;
+    }
+    return user;
+}
+
+async function getCardsByIds(ids) {
+    const unique = [...new Set((ids || []).map(id => String(id)).filter(Boolean))].slice(0, 40);
+    if (!unique.length) return [];
+    const list = unique.map(id => '"' + id.replace(/"/g, '') + '"').join(',');
+    const res = await fetch(SUPABASE_URL + '/rest/v1/cards?id=in.(' + list + ')&select=id,price,user_id,title,is_sold,description', {
+        headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + SUPABASE_KEY
+        }
+    });
+    const data = await res.json().catch(() => []);
+    return Array.isArray(data) ? data : [];
+}
 
 function upsertUserInMemory(profile) {
     const id = String(profile.id);
@@ -419,20 +503,20 @@ function generateTrackingLink(carrier, trackingNumber) {
     }
 }
 
-app.post('/api/auth/login', (req, res) => {
-    const { id, email, name } = req.body;
-    if (!email) return res.status(400).json({ success: false, error: 'Email obbligatoria.' });
-
-    const userId = id || ('user-' + Date.now());
-    const fallbackName = email.toLowerCase() === 'francesco_delduca@icloud.com' ? 'Francesco Del Duca (Admin)' : email.split('@')[0];
-    const user = upsertUserInMemory({ id: userId, email, name: name || fallbackName });
-    res.json({ success: true, user });
+app.post('/api/auth/login', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const { name } = req.body || {};
+    const user = upsertUserInMemory({ id: auth.id, email: auth.email, name: name || auth.email.split('@')[0] });
+    res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
 });
 
 app.post('/api/users/profile', async (req, res) => {
-    const { id, email, name, address, accountType } = req.body;
-    if (!id) return res.status(400).json({ success: false, error: 'ID obbligatorio.' });
-
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const { name, address, accountType } = req.body;
+    const id = auth.id;
+    const email = auth.email;
     const user = upsertUserInMemory({ id, email, name, address, accountType });
     if (accountType) user.accountType = setAccountType(id, accountType);
     const supabaseResult = await saveProfileToSupabase(user);
@@ -459,31 +543,39 @@ app.get('/api/users/:userId', async (req, res) => {
     if (remoteProfile) {
         upsertUserInMemory(remoteProfile);
         const flags = publicAccountMeta(userId);
-        return res.json({
+        const self = await getAuthUser(req);
+        const payload = {
             success: true,
             found: true,
             name: remoteProfile.name || '',
-            email: remoteProfile.email || '',
-            address: remoteProfile.address || remoteProfile.city || remoteProfile.location || '',
             city: extractCityFromProfile(remoteProfile),
             accountType: flags.accountType,
             partner: flags.partner
-        });
+        };
+        if (self && String(self.id) === String(userId)) {
+            payload.email = remoteProfile.email || self.email;
+            payload.address = remoteProfile.address || remoteProfile.city || remoteProfile.location || '';
+        }
+        return res.json(payload);
     }
 
     const user = usersDB.find(u => String(u.id) === String(userId));
     if (user) {
         const flags = publicAccountMeta(userId);
-        return res.json({
+        const self = await getAuthUser(req);
+        const payload = {
             success: true,
             found: true,
             name: user.name || '',
-            email: user.email || '',
-            address: user.address || '',
             city: extractCityFromProfile(user),
             accountType: flags.accountType,
             partner: flags.partner
-        });
+        };
+        if (self && String(self.id) === String(userId)) {
+            payload.email = user.email || self.email;
+            payload.address = user.address || '';
+        }
+        return res.json(payload);
     }
 
     res.json({ success: true, found: false, name: '', address: '', city: '' });
@@ -502,7 +594,6 @@ app.get('/api/profiles/:userId', async (req, res) => {
             found: true,
             id: remoteProfile.id,
             name: remoteProfile.name || '',
-            address: remoteProfile.address || remoteProfile.city || remoteProfile.location || '',
             city: extractCityFromProfile(remoteProfile),
             accountType: flags.accountType,
             partner: flags.partner
@@ -516,7 +607,6 @@ app.get('/api/profiles/:userId', async (req, res) => {
             found: true,
             id: user.id,
             name: user.name || '',
-            address: user.address || '',
             city: extractCityFromProfile(user),
             accountType: flags.accountType,
             partner: flags.partner
@@ -537,12 +627,36 @@ app.get('/api/accounts/public', (req, res) => {
 });
 
 app.post('/api/create-payment-intent', async (req, res) => {
-    const { amount, buyerId, sellerId, cardId, cardTitle } = req.body;
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    if (!rateLimit('pay:' + auth.id, 8, 60000)) {
+        return res.status(429).json({ error: { message: 'Troppe richieste di pagamento. Riprova tra poco.' } });
+    }
     try {
         if (!stripe) {
             return res.status(500).json({ error: { message: 'STRIPE_SECRET_KEY non configurata.' } });
         }
-        const baseAmountCents = Math.round(amount * 100); 
+        const body = req.body || {};
+        const cardIds = Array.isArray(body.cardIds) && body.cardIds.length ? body.cardIds : (body.cardId ? [body.cardId] : []);
+        const cards = await getCardsByIds(cardIds);
+        if (!cards.length) {
+            return res.status(400).json({ error: { message: 'Articoli non trovati.' } });
+        }
+        const sellerId = String(cards[0].user_id);
+        if (cards.some(c => String(c.user_id) !== sellerId)) {
+            return res.status(400).json({ error: { message: 'Il carrello deve contenere un solo venditore.' } });
+        }
+        if (String(sellerId) === auth.id) {
+            return res.status(400).json({ error: { message: 'Non puoi acquistare i tuoi annunci.' } });
+        }
+        if (cards.some(c => c.is_sold === true || c.is_sold === 'true')) {
+            return res.status(400).json({ error: { message: 'Uno o più articoli non sono più disponibili.' } });
+        }
+        const amount = cards.reduce((sum, c) => sum + Number(c.price || 0), 0);
+        if (amount < CART_MIN_ORDER) {
+            return res.status(400).json({ error: { message: 'Ordine minimo €' + CART_MIN_ORDER.toFixed(2) + '.' } });
+        }
+        const baseAmountCents = Math.round(amount * 100);
         const applicationFee = Math.round(baseAmountCents * 0.07);
         const estimatedStripeFee = Math.round(baseAmountCents * 0.015) + 25;
         const totalChargedToBuyer = baseAmountCents + applicationFee + estimatedStripeFee;
@@ -551,16 +665,18 @@ app.post('/api/create-payment-intent', async (req, res) => {
             amount: totalChargedToBuyer,
             currency: 'eur',
             automatic_payment_methods: { enabled: true },
+            metadata: { buyerId: auth.id, sellerId, cardIds: cards.map(c => c.id).join(',') }
         });
 
         const newOrder = {
-            id: 'order-' + Date.now(),
+            id: 'order-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex'),
             paymentIntentId: paymentIntent.id,
-            buyerId: buyerId || 'guest',
-            sellerId: sellerId || 'unknown',
-            cardId: cardId || 'unknown',
-            cardTitle: cardTitle || '',
-            amount: amount,
+            buyerId: auth.id,
+            sellerId,
+            cardId: cards[0].id,
+            cardIds: cards.map(c => c.id),
+            cardTitle: cards.map(c => c.title).join(', '),
+            amount,
             status: 'pending_payment',
             escrowNotified: false,
             createdAt: new Date().toISOString()
@@ -575,10 +691,15 @@ app.post('/api/create-payment-intent', async (req, res) => {
 });
 
 app.post('/api/payments/confirm', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     const { orderId, paymentIntentId } = req.body || {};
     let order = ordersDB.find(o => (orderId && o.id === orderId) || (paymentIntentId && o.paymentIntentId === paymentIntentId));
     if (!order) {
         return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
+    }
+    if (String(order.buyerId) !== auth.id && !isAdminEmail(auth.email)) {
+        return res.status(403).json({ success: false, error: 'Operazione non autorizzata.' });
     }
     if (order.escrowNotified) {
         return res.json({ success: true, alreadyFulfilled: true, order });
@@ -599,13 +720,18 @@ app.post('/api/payments/confirm', async (req, res) => {
     }
 });
 
-app.get('/api/orders/:userId', (req, res) => {
+app.get('/api/orders/:userId', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     const userId = req.params.userId;
+    if (!assertSelf(req, res, userId)) return;
     const userOrders = ordersDB.filter(o => o.buyerId === userId || o.sellerId === userId);
     res.json(userOrders);
 });
 
-app.post('/api/orders/:orderId/ship', (req, res) => {
+app.post('/api/orders/:orderId/ship', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     const { orderId } = req.params;
     const { carrier, trackingNumber } = req.body;
     
@@ -613,21 +739,31 @@ app.post('/api/orders/:orderId/ship', (req, res) => {
     if (!order) {
         return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
     }
+    if (String(order.sellerId) !== auth.id && !isAdminEmail(auth.email)) {
+        return res.status(403).json({ success: false, error: 'Operazione non autorizzata.' });
+    }
 
-    order.carrier = carrier;
-    order.trackingNumber = trackingNumber;
-    order.trackingLink = generateTrackingLink(carrier, trackingNumber);
+    order.carrier = String(carrier || '').slice(0, 80);
+    order.trackingNumber = String(trackingNumber || '').slice(0, 80);
+    order.trackingLink = generateTrackingLink(order.carrier, order.trackingNumber);
     order.status = 'shipped';
+    persistOrdersToDisk();
 
     res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
 });
 
-app.post('/api/orders/:orderId/complete', (req, res) => {
+app.post('/api/orders/:orderId/complete', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     const { orderId } = req.params;
     const order = ordersDB.find(o => o.id === orderId);
 
     if (!order) {
         return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
+    }
+
+    if (String(order.buyerId) !== auth.id && !isAdminEmail(auth.email)) {
+        return res.status(403).json({ success: false, error: 'Operazione non autorizzata.' });
     }
 
     if (order.status === 'completed') {
@@ -643,12 +779,16 @@ app.post('/api/orders/:orderId/complete', (req, res) => {
         usersDB.push(seller);
     }
     seller.wallet = (seller.wallet || 0) + Number(order.amount);
+    persistOrdersToDisk();
 
     res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
 });
 
 app.post('/api/wallet/payout', async (req, res) => {
-    const { userId, iban } = req.body;
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const { iban } = req.body;
+    const userId = auth.id;
     
     let user = usersDB.find(u => u.id === userId);
     if (!user) {
@@ -691,21 +831,30 @@ app.post('/api/wallet/payout', async (req, res) => {
     }
 });
 
-app.post('/api/messages', (req, res) => {
-    const { senderId, receiverId, text, offerPrice, cardId, senderName } = req.body;
-    if (!senderId || !receiverId || !String(text || '').trim()) {
-        return res.status(400).json({ success: false, error: 'senderId, receiverId e text sono obbligatori.' });
+app.post('/api/messages', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    if (!rateLimit('msg:' + auth.id, 40, 60000)) {
+        return res.status(429).json({ success: false, error: 'Troppi messaggi. Riprova tra poco.' });
+    }
+    const { receiverId, text, offerPrice, cardId, senderName } = req.body;
+    const senderId = auth.id;
+    if (!receiverId || !String(text || '').trim()) {
+        return res.status(400).json({ success: false, error: 'receiverId e text sono obbligatori.' });
+    }
+    if (String(receiverId) === 'SYSTEM_ESCROW') {
+        return res.status(400).json({ success: false, error: 'Destinatario non valido.' });
     }
 
-    if (senderName && senderId !== 'SYSTEM_ESCROW') {
-        upsertUserInMemory({ id: senderId, name: senderName });
+    if (senderName) {
+        upsertUserInMemory({ id: senderId, name: senderName, email: auth.email });
     }
 
     const newMessage = {
         id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
         senderId: String(senderId),
         receiverId: String(receiverId),
-        text: String(text).trim(),
+        text: String(text).trim().slice(0, 2000),
         offerPrice: offerPrice || null,
         cardId: cardId || null,
         senderName: senderName || null,
@@ -716,19 +865,22 @@ app.post('/api/messages', (req, res) => {
     res.json({ success: true, message: newMessage });
 });
 
-app.get('/api/messages/:userId', (req, res) => {
+app.get('/api/messages/:userId', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     const userId = String(req.params.userId);
+    if (!assertSelf(req, res, userId)) return;
     const userMessages = messagesDB
         .filter(m => idsMatch(m.senderId, userId) || idsMatch(m.receiverId, userId))
         .sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
     res.json(userMessages.length > 250 ? userMessages.slice(-250) : userMessages);
 });
 
-app.post('/api/presence/ping', (req, res) => {
-    const { userId, isTyping } = req.body;
-    if (!userId) return res.status(400).json({ success: false });
-
-    userPresenceDB[userId] = {
+app.post('/api/presence/ping', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const { isTyping } = req.body || {};
+    userPresenceDB[auth.id] = {
         lastSeen: Date.now(),
         isTyping: isTyping || false
     };
@@ -832,8 +984,11 @@ app.get('/api/shops/status/:userId', (req, res) => {
 });
 
 app.post('/api/shops/subscribe', async (req, res) => {
-    const { userId, shopName, email } = req.body || {};
-    if (!userId) return res.status(400).json({ success: false, error: 'userId obbligatorio.' });
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const userId = auth.id;
+    const email = auth.email;
+    const { shopName } = req.body || {};
     const name = String(shopName || '').trim() || 'Negozio TCG';
     let sub = shopSubsDB.find(s => String(s.userId) === String(userId));
     if (!sub) {
@@ -860,15 +1015,18 @@ app.post('/api/shops/subscribe', async (req, res) => {
         }
     }
 
-    sub.status = 'active';
-    sub.activeUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    persistShopsToDisk();
-    res.json({ success: true, requiresPayment: false, subscription: sub });
+    return res.status(503).json({ success: false, error: 'Pagamento non disponibile. Usa un codice promozionale oppure configura Stripe.' });
 });
 
-app.post('/api/shops/redeem', (req, res) => {
-    const { userId, shopName, email, code } = req.body || {};
-    if (!userId) return res.status(400).json({ success: false, error: 'Accedi per riscattare il codice.' });
+app.post('/api/shops/redeem', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    if (!rateLimit('redeem:' + auth.id, 10, 60000)) {
+        return res.status(429).json({ success: false, error: 'Troppi tentativi. Riprova tra poco.' });
+    }
+    const userId = auth.id;
+    const email = auth.email;
+    const { shopName, code } = req.body || {};
     const promo = findPromoByCode(code);
     if (!promo) return res.status(404).json({ success: false, error: 'Codice promozionale non valido.' });
     if (promo.enabled === false) return res.status(400).json({ success: false, error: 'Codice disattivato.' });
@@ -906,13 +1064,13 @@ app.post('/api/shops/redeem', (req, res) => {
     });
 });
 
-app.get('/api/promo-codes', (req, res) => {
-    if (!requireAdmin(req, res)) return;
+app.get('/api/promo-codes', async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
     res.json({ success: true, codes: promoCodesDB.map(publicPromo) });
 });
 
-app.post('/api/promo-codes', (req, res) => {
-    if (!requireAdmin(req, res)) return;
+app.post('/api/promo-codes', async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
     const { code, label, maxUses, durationDays } = req.body || {};
     let normalized = normalizePromoCode(code);
     if (!normalized) {
@@ -933,7 +1091,7 @@ app.post('/api/promo-codes', (req, res) => {
         maxUses: usesCap && usesCap > 0 ? usesCap : null,
         durationDays: days && days > 0 ? days : null,
         enabled: true,
-        createdBy: String(req.body.adminEmail || '').toLowerCase(),
+        createdBy: String(req.auth && req.auth.email || '').toLowerCase(),
         createdAt: new Date().toISOString(),
         redemptions: []
     };
@@ -942,8 +1100,8 @@ app.post('/api/promo-codes', (req, res) => {
     res.json({ success: true, code: publicPromo(promo) });
 });
 
-app.post('/api/promo-codes/:id/disable', (req, res) => {
-    if (!requireAdmin(req, res)) return;
+app.post('/api/promo-codes/:id/disable', async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
     const promo = promoCodesDB.find(p => p.id === req.params.id);
     if (!promo) return res.status(404).json({ success: false, error: 'Codice non trovato.' });
     promo.enabled = false;
@@ -952,7 +1110,10 @@ app.post('/api/promo-codes/:id/disable', (req, res) => {
 });
 
 app.post('/api/shops/confirm', async (req, res) => {
-    const { userId, paymentIntentId } = req.body || {};
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const userId = auth.id;
+    const { paymentIntentId } = req.body || {};
     const sub = shopSubsDB.find(s => String(s.userId) === String(userId));
     if (!sub) return res.status(404).json({ success: false, error: 'Abbonamento non trovato.' });
     try {
@@ -979,8 +1140,11 @@ app.get('/api/tournaments', (req, res) => {
     res.json(list);
 });
 
-app.get('/api/tournaments/shop/:shopId', (req, res) => {
+app.get('/api/tournaments/shop/:shopId', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     const shopId = String(req.params.shopId);
+    if (!assertSelf(req, res, shopId)) return;
     if (!isShopActive(shopId)) {
         return res.status(403).json({ success: false, error: 'Abbonamento negozio non attivo.' });
     }
@@ -988,8 +1152,11 @@ app.get('/api/tournaments/shop/:shopId', (req, res) => {
     res.json(list);
 });
 
-app.post('/api/tournaments', (req, res) => {
-    const { shopId, shopName, title, game, date, time, location, maxPlayers, fee, description } = req.body || {};
+app.post('/api/tournaments', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const shopId = auth.id;
+    const { shopName, title, game, date, time, location, maxPlayers, fee, description } = req.body || {};
     if (!isShopActive(shopId)) {
         return res.status(403).json({ success: false, error: 'Serve l\'abbonamento Area Negozi (€9,99/mese) per creare tornei.' });
     }
@@ -1017,14 +1184,18 @@ app.post('/api/tournaments', (req, res) => {
     res.json({ success: true, tournament });
 });
 
-app.post('/api/tournaments/:id/register', (req, res) => {
+app.post('/api/tournaments/:id/register', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     const tournament = tournamentsDB.find(t => t.id === req.params.id);
     if (!tournament) return res.status(404).json({ success: false, error: 'Torneo non trovato.' });
     if (tournament.status !== 'open') {
         return res.status(400).json({ success: false, error: 'Iscrizioni chiuse.' });
     }
-    const { userId, name, email } = req.body || {};
-    if (!userId || !email) {
+    const userId = auth.id;
+    const email = auth.email;
+    const name = (req.body && req.body.name) || auth.email.split('@')[0];
+    if (!email) {
         return res.status(400).json({ success: false, error: 'Accedi e indica un\'email valida per ricevere il QR.' });
     }
     if ((tournament.players || []).some(p => String(p.userId) === String(userId))) {
@@ -1053,7 +1224,6 @@ app.post('/api/tournaments/:id/register', (req, res) => {
     tournament.players.push(player);
     persistTournamentsToDisk();
     const qrImageUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(qrToken);
-    console.log('QR torneo per', player.email, qrToken);
     res.json({
         success: true,
         qrToken,
@@ -1063,8 +1233,11 @@ app.post('/api/tournaments/:id/register', (req, res) => {
     });
 });
 
-app.post('/api/tournaments/:id/checkin', (req, res) => {
-    const { shopId, qrToken } = req.body || {};
+app.post('/api/tournaments/:id/checkin', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const shopId = auth.id;
+    const { qrToken } = req.body || {};
     if (!isShopActive(shopId)) {
         return res.status(403).json({ success: false, error: 'Abbonamento negozio non attivo.' });
     }
@@ -1083,6 +1256,9 @@ app.post('/api/tournaments/:id/checkin', (req, res) => {
 });
 
 app.post('/api/vaultbot', (req, res) => {
+    if (!rateLimit('bot:' + clientIp(req), 30, 60000)) {
+        return res.status(429).json({ success: false, error: 'Troppe richieste a VaultBot.' });
+    }
     const reply = answerVaultBot(req.body && req.body.message);
     res.json({ success: true, reply });
 });

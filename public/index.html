@@ -6,6 +6,7 @@
     <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="auth-fetch.js"></script>
     <style>
         :root {
             --bg-color: #090d16;
@@ -1145,6 +1146,7 @@
         const SUPABASE_URL = 'https://ahpkmppjtespemkzmkol.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.__tcgSupabase = supabaseClient;
 
         const CART_MIN_ORDER = 20;
         const SELLER_MIN_CATALOG_CENTS = 5000;
@@ -2429,7 +2431,11 @@
                 const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ amount: selectedCard.price, buyerId: currentUser.id, sellerId: selectedCard.user_id, cardId: selectedCard.id, cardTitle: selectedCard.title })
+                    body: JSON.stringify({
+                        cardIds: (cart.length && String(cart[0].user_id) === String(selectedCard.user_id))
+                            ? cart.map(c => c.id)
+                            : [selectedCard.id]
+                    })
                 });
                 const data = await response.json();
                 
