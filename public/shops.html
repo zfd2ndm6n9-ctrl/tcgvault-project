@@ -56,6 +56,9 @@
             <p class="muted" id="sub-status">Accedi per attivare o gestire l'abbonamento.</p>
             <label>Nome del negozio</label>
             <input id="shop-name" placeholder="Es. TCG Store Milano">
+            <label>Inserisci codice promozionale</label>
+            <input id="promo-code" placeholder="Es. TESTFREE2026" autocomplete="off" spellcheck="false">
+            <button class="btn btn-outline" type="button" onclick="redeemPromo()">Riscatta codice e sblocca il piano</button>
             <div id="payment-element"></div>
             <button class="btn" id="subscribe-btn" onclick="startSubscribe()">Attiva abbonamento €9,99/mese</button>
             <p class="err" id="sub-msg"></p>
@@ -73,12 +76,43 @@
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session && session.user) {
                 currentUser = { id: session.user.id, email: session.user.email, name: session.user.email.split('@')[0] };
-                const st = await fetch('/api/shops/status/' + encodeURIComponent(currentUser.id)).then(r => r.json());
-                document.getElementById('sub-status').innerText = st.active
-                    ? 'Abbonamento attivo fino al ' + new Date(st.subscription.activeUntil).toLocaleDateString('it-IT') + '.'
-                    : 'Nessun piano attivo. Il marketplace resta gratis; i tornei QR richiedono €9,99/mese.';
-                if (st.subscription && st.subscription.shopName) document.getElementById('shop-name').value = st.subscription.shopName;
+                await refreshStatus();
             }
+        }
+
+        async function refreshStatus() {
+            const st = await fetch('/api/shops/status/' + encodeURIComponent(currentUser.id)).then(r => r.json());
+            if (st.active && st.subscription) {
+                document.getElementById('sub-status').innerText = st.subscription.unlimited
+                    ? 'Piano SaaS attivo senza scadenza (codice promo o sblocco illimitato).'
+                    : 'Abbonamento attivo fino al ' + new Date(st.subscription.activeUntil).toLocaleDateString('it-IT') + '.';
+            } else {
+                document.getElementById('sub-status').innerText = 'Nessun piano attivo. Il marketplace resta gratis; i tornei QR richiedono €9,99/mese o un codice promozionale.';
+            }
+            if (st.subscription && st.subscription.shopName) document.getElementById('shop-name').value = st.subscription.shopName;
+        }
+
+        async function redeemPromo() {
+            const msg = document.getElementById('sub-msg');
+            if (!currentUser) { msg.innerText = 'Accedi dal marketplace prima di riscattare un codice.'; return; }
+            const code = document.getElementById('promo-code').value.trim();
+            if (!code) { msg.innerText = 'Inserisci un codice promozionale.'; return; }
+            const data = await fetch('/api/shops/redeem', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: currentUser.id,
+                    shopName: document.getElementById('shop-name').value.trim(),
+                    email: currentUser.email,
+                    code
+                })
+            }).then(r => r.json());
+            if (!data.success) { msg.style.color = '#ff4757'; msg.innerText = data.error || 'Codice non valido.'; return; }
+            msg.style.color = 'var(--accent)';
+            msg.innerText = data.subscription && data.subscription.unlimited
+                ? 'Codice valido: piano SaaS sbloccato senza scadenza. Tornei, QR e badge partner sono attivi.'
+                : 'Codice valido: piano SaaS sbloccato senza pagamento.';
+            await refreshStatus();
         }
 
         async function startSubscribe() {

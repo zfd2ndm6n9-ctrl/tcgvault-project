@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codici promo negozio - TCG Vault</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --bg:#090d16; --panel:#131b2e; --accent:#00ff88; --text:#f8fafc; --muted:#94a3b8; --border:rgba(255,255,255,.08); --red:#ff4757; }
+        body { margin:0; background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; padding:22px; }
+        .wrap { max-width:920px; margin:0 auto; }
+        header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:22px; }
+        h1 { color:var(--accent); margin:0; font-size:1.35rem; }
+        a { color:var(--accent); text-decoration:none; }
+        .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px; }
+        label { font-size:.75rem; color:var(--muted); font-weight:700; text-transform:uppercase; }
+        input { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:10px; margin:6px 0 12px; font-size:16px; }
+        .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+        .btn { background:var(--accent); color:#000; border:none; border-radius:10px; padding:11px 14px; font-weight:800; cursor:pointer; }
+        .btn-outline { background:transparent; border:1px solid var(--border); color:var(--text); }
+        .muted { color:var(--muted); font-size:.9rem; line-height:1.5; }
+        .code-row { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; }
+        .ok { color:var(--accent); }
+        .err { color:var(--red); }
+        code { background:rgba(0,255,136,.12); padding:2px 8px; border-radius:6px; font-weight:700; }
+        @media (max-width:700px) { .row { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Codici promo SaaS</h1>
+            <a href="index.html">← Marketplace</a>
+        </header>
+        <div class="card" id="gate"><p class="muted">Verifica accesso Admin Supremo...</p></div>
+        <div id="app" style="display:none;">
+            <div class="card">
+                <h2 style="margin-top:0;">Genera codice</h2>
+                <p class="muted">Lascia vuoto il codice per generarne uno automatico. Usi vuoti = illimitati. Giorni vuoti = piano senza scadenza.</p>
+                <label>Codice personalizzato</label>
+                <input id="p-code" placeholder="Es. TESTFREE2026 o PARTNER-MILANO" maxlength="32">
+                <label>Etichetta</label>
+                <input id="p-label" placeholder="Es. Coupon test QA">
+                <div class="row">
+                    <div><label>Max usi (vuoto = illimitato)</label><input id="p-uses" type="number" min="1" placeholder="Illimitato"></div>
+                    <div><label>Durata giorni (vuoto = illimitato)</label><input id="p-days" type="number" min="1" placeholder="Illimitato"></div>
+                    <div style="display:flex;align-items:flex-end;"><button class="btn" onclick="createCode()">Crea codice</button></div>
+                </div>
+                <p id="create-msg" class="muted"></p>
+            </div>
+            <div class="card">
+                <h2 style="margin-top:0;">Codici attivi e storico</h2>
+                <div id="list"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const supabaseClient = window.supabase.createClient('https://ahpkmppjtespemkzmkol.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk');
+        const ADMIN_EMAIL = 'francesco_delduca@icloud.com';
+        let adminEmail = '';
+
+        async function init() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            const gate = document.getElementById('gate');
+            const email = session && session.user && session.user.email ? session.user.email.toLowerCase() : '';
+            if (email !== ADMIN_EMAIL) {
+                gate.innerHTML = '<p class="muted">Pannello riservato all\'Admin Supremo. Accedi con l\'account admin dal marketplace.</p>';
+                return;
+            }
+            adminEmail = email;
+            gate.style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+            loadCodes();
+        }
+
+        async function loadCodes() {
+            const data = await fetch('/api/promo-codes?adminEmail=' + encodeURIComponent(adminEmail)).then(r => r.json());
+            const box = document.getElementById('list');
+            if (!data.success) { box.innerHTML = '<p class="err">' + (data.error || 'Accesso negato.') + '</p>'; return; }
+            if (!data.codes.length) { box.innerHTML = '<p class="muted">Nessun codice.</p>'; return; }
+            box.innerHTML = data.codes.map(c => {
+                const uses = c.maxUses == null ? (c.uses + ' / illimitati') : (c.uses + ' / ' + c.maxUses);
+                const dur = c.durationDays == null ? 'piano illimitato' : (c.durationDays + ' giorni');
+                const state = c.enabled ? '<span class="ok">attivo</span>' : '<span class="err">disattivato</span>';
+                return `<div class="code-row">
+                    <div>
+                        <code>${c.code}</code> ${state}
+                        <div class="muted">${c.label || 'Senza etichetta'} · ${uses} · ${dur}</div>
+                    </div>
+                    ${c.enabled ? `<button class="btn-outline" onclick="disableCode('${c.id}')">Disattiva</button>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        async function createCode() {
+            const msg = document.getElementById('create-msg');
+            const body = {
+                adminEmail,
+                code: document.getElementById('p-code').value.trim(),
+                label: document.getElementById('p-label').value.trim(),
+                maxUses: document.getElementById('p-uses').value,
+                durationDays: document.getElementById('p-days').value
+            };
+            const data = await fetch('/api/promo-codes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            }).then(r => r.json());
+            msg.className = data.success ? 'ok' : 'err';
+            msg.innerText = data.success ? ('Creato: ' + data.code.code) : (data.error || 'Errore');
+            if (data.success) {
+                document.getElementById('p-code').value = '';
+                loadCodes();
+            }
+        }
+
+        async function disableCode(id) {
+            await fetch('/api/promo-codes/' + encodeURIComponent(id) + '/disable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ adminEmail })
+            });
+            loadCodes();
+        }
+
+        init();
+    </script>
+</body>
+</html>

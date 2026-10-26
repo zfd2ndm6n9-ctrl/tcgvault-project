@@ -87,6 +87,12 @@ let usersDB = [];
 let userPresenceDB = {};
 let shopSubsDB = [];
 let tournamentsDB = [];
+let promoCodesDB = [];
+
+const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || 'francesco_delduca@icloud.com')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
 
 const MESSAGES_FILE = path.join(__dirname, 'data', 'messages.json');
 
@@ -147,10 +153,111 @@ function loadJsonArray(fileName) {
 
 function persistShopsToDisk() { persistJsonFile('shops.json', shopSubsDB); }
 function persistTournamentsToDisk() { persistJsonFile('tournaments.json', tournamentsDB); }
+function persistPromoCodesToDisk() { persistJsonFile('promo-codes.json', promoCodesDB); }
+
+function isAdminEmail(email) {
+    return ADMIN_EMAILS.includes(String(email || '').trim().toLowerCase());
+}
+
+function requireAdmin(req, res) {
+    const email = (req.body && req.body.adminEmail)
+        || (req.query && req.query.adminEmail)
+        || req.headers['x-admin-email'];
+    if (!isAdminEmail(email)) {
+        res.status(403).json({ success: false, error: 'Solo Admin Supremo.' });
+        return false;
+    }
+    return true;
+}
+
+function normalizePromoCode(raw) {
+    return String(raw || '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function isValidPromoFormat(code) {
+    return /^[A-Z0-9][A-Z0-9_-]{3,31}$/.test(code);
+}
+
+function findPromoByCode(raw) {
+    const code = normalizePromoCode(raw);
+    return promoCodesDB.find(p => p.enabled !== false && normalizePromoCode(p.code) === code);
+}
+
+function ensureDefaultPromoCodes() {
+    const hasTest = promoCodesDB.some(p => normalizePromoCode(p.code) === 'TESTFREE2026');
+    if (!hasTest) {
+        promoCodesDB.push({
+            id: 'promo-testfree2026',
+            code: 'TESTFREE2026',
+            label: 'Test interno SaaS negozio',
+            maxUses: null,
+            durationDays: null,
+            enabled: true,
+            createdBy: 'system',
+            createdAt: new Date().toISOString(),
+            redemptions: []
+        });
+        persistPromoCodesToDisk();
+    }
+}
+
+function getOrCreateShopSub(userId, shopName, email) {
+    let sub = shopSubsDB.find(s => String(s.userId) === String(userId));
+    const name = String(shopName || '').trim() || 'Negozio TCG';
+    if (!sub) {
+        sub = {
+            userId: String(userId),
+            shopName: name,
+            email: email || '',
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        };
+        shopSubsDB.push(sub);
+    } else {
+        if (shopName) sub.shopName = name;
+        if (email) sub.email = email;
+    }
+    return sub;
+}
+
+function activateShopFromPromo(sub, promo) {
+    sub.status = 'active';
+    sub.planSource = 'promo';
+    sub.promoCode = promo.code;
+    sub.pricePaid = 0;
+    const days = Number(promo.durationDays);
+    if (!days || days <= 0) {
+        sub.activeUntil = null;
+        sub.unlimited = true;
+    } else {
+        sub.unlimited = false;
+        sub.activeUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    }
+}
+
+function publicPromo(p) {
+    return {
+        id: p.id,
+        code: p.code,
+        label: p.label || '',
+        maxUses: p.maxUses == null ? null : Number(p.maxUses),
+        durationDays: p.durationDays == null ? null : Number(p.durationDays),
+        enabled: p.enabled !== false,
+        createdBy: p.createdBy || '',
+        createdAt: p.createdAt,
+        uses: (p.redemptions || []).length,
+        redemptions: (p.redemptions || []).map(r => ({
+            userId: r.userId,
+            email: r.email || '',
+            at: r.at
+        }))
+    };
+}
 
 function isShopActive(userId) {
     const sub = shopSubsDB.find(s => String(s.userId) === String(userId));
     if (!sub || sub.status !== 'active') return false;
+    if (sub.unlimited) return true;
     if (sub.activeUntil && new Date(sub.activeUntil).getTime() < Date.now()) return false;
     return true;
 }
@@ -177,6 +284,8 @@ loadMessagesFromDisk();
 loadOrdersFromDisk();
 shopSubsDB = loadJsonArray('shops.json');
 tournamentsDB = loadJsonArray('tournaments.json');
+promoCodesDB = loadJsonArray('promo-codes.json');
+ensureDefaultPromoCodes();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ahpkmppjtespemkzmkol.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
@@ -621,8 +730,8 @@ function answerVaultBot(message) {
     if (/(ospite|guest|login|registr|account|profilo)/.test(q)) {
         return 'Puoi sfogliare il catalogo da ospite. Per vendere, chattare, salvare, offrire o comprare serve l\'accesso. Il profilo salva nome, email e address su Supabase.';
     }
-    if (/(negozio|partner|saas|abbonamento|9,99|9.99|area negozi)/.test(q)) {
-        return 'Area Negozi: il marketplace e il caricamento carte restano gratuiti. I servizi avanzati (tornei, check-in QR, dashboard eventi) si sbloccano con l\'abbonamento SaaS a €9,99 al mese. Trovi tutto nel menu ☰ → Area Negozi.';
+    if (/(negozio|partner|saas|abbonamento|9,99|9.99|area negozi|promo|coupon|codice)/.test(q)) {
+        return 'Area Negozi: marketplace e caricamento carte restano gratuiti. I servizi avanzati (tornei, check-in QR, dashboard) si sbloccano con SaaS €9,99/mese oppure con un codice promozionale valido, senza pagamento. L\'Admin Supremo genera i codici dal menu Admin.';
     }
     if (/(torneo|eventi|qr|iscriv)/.test(q)) {
         return 'Tornei: i giocatori vedono gli eventi dei negozi partner, si iscrivono con un click e ricevono un QR personale da mostrare in store. I negozi abbonati creano i tornei e scansionano i QR al check-in dalla dashboard negozio.';
@@ -644,6 +753,8 @@ app.get('/api/shops/status/:userId', (req, res) => {
             shopName: sub.shopName,
             status: active ? 'active' : (sub.status || 'inactive'),
             activeUntil: sub.activeUntil || null,
+            unlimited: !!sub.unlimited || (!sub.activeUntil && active),
+            planSource: sub.planSource || (active ? 'paid' : null),
             priceMonthly: 9.99
         } : null
     });
@@ -682,6 +793,91 @@ app.post('/api/shops/subscribe', async (req, res) => {
     sub.activeUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     persistShopsToDisk();
     res.json({ success: true, requiresPayment: false, subscription: sub });
+});
+
+app.post('/api/shops/redeem', (req, res) => {
+    const { userId, shopName, email, code } = req.body || {};
+    if (!userId) return res.status(400).json({ success: false, error: 'Accedi per riscattare il codice.' });
+    const promo = findPromoByCode(code);
+    if (!promo) return res.status(404).json({ success: false, error: 'Codice promozionale non valido.' });
+    if (promo.enabled === false) return res.status(400).json({ success: false, error: 'Codice disattivato.' });
+    if (promo.validUntil && new Date(promo.validUntil).getTime() < Date.now()) {
+        return res.status(400).json({ success: false, error: 'Codice scaduto.' });
+    }
+    promo.redemptions = promo.redemptions || [];
+    const already = promo.redemptions.some(r => String(r.userId) === String(userId));
+    const maxUses = promo.maxUses == null ? null : Number(promo.maxUses);
+    if (!already && maxUses != null && maxUses > 0 && promo.redemptions.length >= maxUses) {
+        return res.status(400).json({ success: false, error: 'Codice esaurito.' });
+    }
+    const sub = getOrCreateShopSub(userId, shopName, email);
+    activateShopFromPromo(sub, promo);
+    if (!already) {
+        promo.redemptions.push({
+            userId: String(userId),
+            email: email || '',
+            at: new Date().toISOString()
+        });
+    }
+    persistShopsToDisk();
+    persistPromoCodesToDisk();
+    res.json({
+        success: true,
+        requiresPayment: false,
+        activatedByPromo: true,
+        subscription: {
+            shopName: sub.shopName,
+            status: 'active',
+            activeUntil: sub.activeUntil,
+            unlimited: !!sub.unlimited,
+            planSource: 'promo'
+        }
+    });
+});
+
+app.get('/api/promo-codes', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ success: true, codes: promoCodesDB.map(publicPromo) });
+});
+
+app.post('/api/promo-codes', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const { code, label, maxUses, durationDays } = req.body || {};
+    let normalized = normalizePromoCode(code);
+    if (!normalized) {
+        normalized = 'PROMO-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+    }
+    if (!isValidPromoFormat(normalized)) {
+        return res.status(400).json({ success: false, error: 'Formato codice non valido (4-32 caratteri, lettere, numeri, - _).' });
+    }
+    if (promoCodesDB.some(p => normalizePromoCode(p.code) === normalized)) {
+        return res.status(400).json({ success: false, error: 'Codice già esistente.' });
+    }
+    const usesCap = maxUses === '' || maxUses == null ? null : Number(maxUses);
+    const days = durationDays === '' || durationDays == null ? null : Number(durationDays);
+    const promo = {
+        id: 'promo-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex'),
+        code: normalized,
+        label: String(label || '').trim(),
+        maxUses: usesCap && usesCap > 0 ? usesCap : null,
+        durationDays: days && days > 0 ? days : null,
+        enabled: true,
+        createdBy: String(req.body.adminEmail || '').toLowerCase(),
+        createdAt: new Date().toISOString(),
+        redemptions: []
+    };
+    promoCodesDB.push(promo);
+    persistPromoCodesToDisk();
+    res.json({ success: true, code: publicPromo(promo) });
+});
+
+app.post('/api/promo-codes/:id/disable', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const promo = promoCodesDB.find(p => p.id === req.params.id);
+    if (!promo) return res.status(404).json({ success: false, error: 'Codice non trovato.' });
+    promo.enabled = false;
+    persistPromoCodesToDisk();
+    res.json({ success: true, code: publicPromo(promo) });
 });
 
 app.post('/api/shops/confirm', async (req, res) => {
