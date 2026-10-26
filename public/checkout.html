@@ -211,6 +211,7 @@
                 return;
             }
             clientSecret = data.clientSecret;
+            window.__pendingOrderId = data.orderId || null;
             elements = stripe.elements({
                 appearance: { theme: 'night', variables: { colorPrimary: '#00ff88', colorBackground: '#131b2e', colorText: '#f8fafc', borderRadius: '10px' } },
                 clientSecret
@@ -247,6 +248,14 @@
                 btn.innerText = 'Conferma e Paga';
                 return;
             }
+            await fetch('/api/payments/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: window.__pendingOrderId,
+                    paymentIntentId: clientSecret ? String(clientSecret).split('_secret')[0] : null
+                })
+            });
             for (const item of cart) {
                 await supabaseClient.from('cards').update({ is_sold: true }).eq('id', item.id);
             }

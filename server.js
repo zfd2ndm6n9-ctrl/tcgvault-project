@@ -6,6 +6,71 @@ const app = express();
 
 const corsMiddleware = require('cors');
 app.use(corsMiddleware());
+
+function persistOrdersToDisk() {
+    try {
+        const file = path.join(__dirname, 'data', 'orders.json');
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(ordersDB, null, 2));
+    } catch (err) {
+        console.error('Salvataggio ordini fallito:', err.message);
+    }
+}
+
+function loadOrdersFromDisk() {
+    try {
+        const file = path.join(__dirname, 'data', 'orders.json');
+        if (!fs.existsSync(file)) return;
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (Array.isArray(parsed)) ordersDB = parsed;
+    } catch (err) {
+        console.error('Lettura ordini persistiti fallita:', err.message);
+    }
+}
+
+function fulfillPaidOrder(order) {
+    if (!order || order.escrowNotified) return order;
+    order.status = 'paid';
+    order.paidAt = new Date().toISOString();
+    order.escrowNotified = true;
+    if (order.sellerId && order.sellerId !== 'unknown') {
+        messagesDB.push({
+            id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+            senderId: 'SYSTEM_ESCROW',
+            receiverId: order.sellerId,
+            cardId: order.cardId || null,
+            text: `📦 VENDITA EFFETTUATA! Il tuo prodotto "${order.cardTitle || 'Articolo TCG'}" è stato acquistato per €${Number(order.amount).toFixed(2)}. I fondi sono al sicuro in Escrow. Clicca qui per inserire corriere e tracciamento.`,
+            isEscrowAlert: true,
+            orderId: order.id,
+            timestamp: new Date().toISOString()
+        });
+        persistMessagesToDisk();
+    }
+    persistOrdersToDisk();
+    return order;
+}
+
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+    if (!stripe) return res.status(400).json({ error: 'Stripe non configurato.' });
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    let event = null;
+    try {
+        if (secret && req.headers['stripe-signature']) {
+            event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], secret);
+        } else {
+            return res.status(400).json({ error: 'Webhook non verificato.' });
+        }
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
+    if (event.type === 'payment_intent.succeeded') {
+        const pi = event.data.object;
+        const order = ordersDB.find(o => o.paymentIntentId === pi.id);
+        if (order) fulfillPaidOrder(order);
+    }
+    res.json({ received: true });
+});
+
 app.use(express.json());
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -56,6 +121,7 @@ function extractCityFromProfile(row) {
 }
 
 loadMessagesFromDisk();
+loadOrdersFromDisk();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ahpkmppjtespemkzmkol.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
@@ -260,30 +326,43 @@ app.post('/api/create-payment-intent', async (req, res) => {
             buyerId: buyerId || 'guest',
             sellerId: sellerId || 'unknown',
             cardId: cardId || 'unknown',
+            cardTitle: cardTitle || '',
             amount: amount,
-            status: 'paid',
+            status: 'pending_payment',
+            escrowNotified: false,
             createdAt: new Date().toISOString()
         };
         ordersDB.push(newOrder);
-
-        if (sellerId && sellerId !== 'unknown') {
-            const notificationMsg = {
-                id: 'msg-' + Date.now(),
-                senderId: 'SYSTEM_ESCROW',
-                receiverId: sellerId,
-                cardId: cardId || null,
-                text: `📦 VENDITA EFFETTUATA! Il tuo prodotto "${cardTitle || 'Articolo TCG'}" è stato acquistato per €${Number(amount).toFixed(2)}. I fondi sono al sicuro in Escrow. Clicca qui per inserire corriere e tracciamento.`,
-                isEscrowAlert: true,
-                orderId: newOrder.id,
-                timestamp: new Date().toISOString()
-            };
-            messagesDB.push(notificationMsg);
-            persistMessagesToDisk();
-        }
+        persistOrdersToDisk();
 
         res.send({ clientSecret: paymentIntent.client_secret, orderId: newOrder.id });
     } catch (error) {
         res.status(400).send({ error: { message: error.message } });
+    }
+});
+
+app.post('/api/payments/confirm', async (req, res) => {
+    const { orderId, paymentIntentId } = req.body || {};
+    let order = ordersDB.find(o => (orderId && o.id === orderId) || (paymentIntentId && o.paymentIntentId === paymentIntentId));
+    if (!order) {
+        return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
+    }
+    if (order.escrowNotified) {
+        return res.json({ success: true, alreadyFulfilled: true, order });
+    }
+    try {
+        if (stripe && (paymentIntentId || order.paymentIntentId)) {
+            const pi = await stripe.paymentIntents.retrieve(paymentIntentId || order.paymentIntentId);
+            if (pi.status !== 'succeeded') {
+                return res.status(400).json({ success: false, error: 'Pagamento non confermato dal gateway.' });
+            }
+        } else if (!stripe) {
+            return res.status(400).json({ success: false, error: 'Impossibile verificare il pagamento.' });
+        }
+        fulfillPaidOrder(order);
+        res.json({ success: true, order });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
     }
 });
 

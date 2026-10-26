@@ -76,6 +76,69 @@
             flex-wrap: wrap;
         }
 
+        .hamburger-btn {
+            background: var(--panel-solid);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            width: 44px; height: 44px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1.35rem;
+            line-height: 1;
+            position: relative;
+            transition: border-color 0.2s ease, transform 0.2s ease;
+        }
+        .hamburger-btn:hover { border-color: var(--accent-neon); transform: scale(1.04); }
+
+        .side-overlay {
+            position: fixed; inset: 0; z-index: 1500;
+            background: rgba(0,0,0,0);
+            display: flex; justify-content: flex-end;
+            pointer-events: none;
+            visibility: hidden;
+            transition: background 0.32s ease, visibility 0.32s ease;
+        }
+        .side-overlay.is-open {
+            background: rgba(0,0,0,0.55);
+            pointer-events: auto;
+            visibility: visible;
+        }
+        .side-drawer {
+            width: min(360px, 100%);
+            height: 100%;
+            background: var(--panel-solid);
+            border-left: 1px solid var(--border-color);
+            padding: 20px 18px 32px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            transform: translateX(100%);
+            transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .side-overlay.is-open .side-drawer { transform: translateX(0); }
+        .side-section { margin-bottom: 22px; }
+        .side-section h3 {
+            margin: 0 0 4px;
+            font-size: 0.72rem;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--accent-neon);
+        }
+        .side-section p.side-sub {
+            margin: 0 0 10px;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+        .side-link {
+            width: 100%;
+            text-align: left;
+            box-sizing: border-box;
+            margin-bottom: 7px;
+            display: block;
+        }
+        .side-link .user-badge, .side-link.admin-badge, .side-link.user-badge {
+            max-width: none; display: block;
+        }
+
         .search-row {
             display: flex;
             align-items: stretch;
@@ -109,13 +172,21 @@
 
         .filters-overlay {
             position: fixed; inset: 0; z-index: 1400;
-            background: rgba(0,0,0,0.55);
-            display: none;
+            background: rgba(0,0,0,0);
+            display: flex;
             justify-content: center;
             align-items: flex-start;
             padding: 18px 12px;
             overflow-y: auto;
             box-sizing: border-box;
+            pointer-events: none;
+            visibility: hidden;
+            transition: background 0.28s ease, visibility 0.28s ease;
+        }
+        .filters-overlay.is-open {
+            background: rgba(0,0,0,0.55);
+            pointer-events: auto;
+            visibility: visible;
         }
         .filters-panel {
             width: min(520px, 100%);
@@ -127,6 +198,13 @@
             padding: 22px 20px 24px;
             box-sizing: border-box;
             margin: auto;
+            transform: translateY(16px) scale(0.98);
+            opacity: 0;
+            transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease;
+        }
+        .filters-overlay.is-open .filters-panel {
+            transform: none;
+            opacity: 1;
         }
         .filters-panel .filter-input, .filters-panel .filter-select { width: 100%; box-sizing: border-box; }
 
@@ -316,14 +394,34 @@
 
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
-            display: none; justify-content: center; align-items: center; z-index: 1000;
+            background: rgba(0, 0, 0, 0); backdrop-filter: blur(0);
+            display: flex; justify-content: center; align-items: center; z-index: 1000;
             overflow-y: auto; padding: 15px; box-sizing: border-box;
+            pointer-events: none; visibility: hidden;
+            transition: background 0.28s ease, visibility 0.28s ease, backdrop-filter 0.28s ease;
+        }
+        .modal-overlay.is-open {
+            background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
+            pointer-events: auto; visibility: visible;
         }
         .modal-content {
             background: var(--panel-solid); border: 1px solid var(--border-color);
             border-radius: 16px; padding: 25px; width: 100%; max-width: 520px; max-height: 85vh;
             overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.5); margin: auto;
+            transform: translateY(14px) scale(0.98);
+            opacity: 0;
+            transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease;
+        }
+        .modal-overlay.is-open .modal-content {
+            transform: none;
+            opacity: 1;
+        }
+        .tab-content { animation: fadeSection 0.22s ease; }
+        @keyframes fadeSection { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) {
+            .modal-overlay, .modal-content, .side-overlay, .side-drawer, .filters-overlay, .filters-panel, .tab-content {
+                transition: none !important; animation: none !important;
+            }
         }
         .modal-content-large { max-width: 820px; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
@@ -378,9 +476,10 @@
 
         @media screen and (max-width: 768px) {
             body { padding: 10px; }
-            header { flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 12px; margin-bottom: 20px; }
-            h1 { font-size: 1.4rem; text-align: center; }
-            .header-actions { justify-content: center; gap: 6px; }
+            header { flex-direction: row; align-items: center; gap: 8px; padding-bottom: 12px; margin-bottom: 20px; flex-wrap: nowrap; }
+            h1 { font-size: 1.15rem; text-align: left; }
+            .header-actions { justify-content: flex-end; gap: 6px; flex-wrap: nowrap; }
+            .side-drawer { width: 100%; }
             .vaultbot-fab { right: 12px; bottom: 12px; }
             .filters-panel { width: 100%; max-height: 88vh; }
             .btn-outline, .btn-sell, .user-badge, .admin-badge { font-size: 0.78rem; padding: 6px 10px; }
@@ -444,7 +543,7 @@
     </div>
 
     <!-- MODALE ONBOARDING OBBLIGATORIO -->
-    <div class="modal-overlay" id="onboarding-wizard-modal" style="display: none; z-index: 2500;">
+    <div class="modal-overlay" id="onboarding-wizard-modal" style="z-index: 2500;">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>👋 Completa il tuo Profilo TCG Vault</h2>
@@ -553,16 +652,11 @@
         <header>
             <h1>TCG VAULT</h1>
             <div class="header-actions">
-                <button class="icon-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Cambia Tema">🌙</button>
-                <button class="icon-btn" onclick="openNotificationsModal()" title="Notifiche">
-                    🔔 <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
+                <button class="btn-outline" onclick="openCartModal()">🛒 <span id="cart-count">0</span></button>
+                <button class="btn-sell" onclick="checkAuthAndOpenSellModal()">+ Vendi</button>
+                <button class="hamburger-btn" onclick="openSideMenu()" title="Menu" aria-label="Apri menu">
+                    ☰ <span id="menu-badge" class="bell-badge" style="display:none;">0</span>
                 </button>
-                <button class="btn-outline" onclick="openCartModal()">🛒 Carrello (<span id="cart-count">0</span>)</button>
-                <button class="btn-outline" onclick="openSavedModal()">❤️ Salvati (<span id="saved-count">0</span>)</button>
-                <div id="auth-actions">
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
-                </div>
-                <button class="btn-sell" onclick="checkAuthAndOpenSellModal()">+ Metti in Vendita</button>
             </div>
         </header>
 
@@ -589,6 +683,58 @@
         </div>
         <div class="section-title" style="font-size: 0.9rem; margin-bottom: 15px;">Prodotti Disponibili</div>
         <div id="product-list" class="card-grid"></div>
+    </div>
+
+    <div class="side-overlay" id="side-overlay" onclick="closeSideMenu()">
+        <aside class="side-drawer" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Menu</h2>
+                <button class="close-btn" onclick="closeSideMenu()">&times;</button>
+            </div>
+
+            <div class="side-section">
+                <h3>Navigazione</h3>
+                <p class="side-sub">Marketplace e azioni principali</p>
+                <button class="btn-outline side-link" onclick="closeSideMenu()">🏠 Catalogo</button>
+                <button class="btn-outline side-link" onclick="closeSideMenu(); openSavedModal()">❤️ Salvati (<span id="saved-count">0</span>)</button>
+                <button class="btn-outline side-link" onclick="closeSideMenu(); openCartModal()">🛒 Carrello</button>
+                <button class="btn-sell side-link" onclick="closeSideMenu(); checkAuthAndOpenSellModal()">+ Metti in Vendita</button>
+            </div>
+
+            <div class="side-section">
+                <h3>Profilo / Account</h3>
+                <p class="side-sub">Accesso, messaggi e portafoglio</p>
+                <div id="side-guest-actions">
+                    <button class="btn-outline side-link" onclick="closeSideMenu(); openAuthModal()">Accedi / Registrati</button>
+                </div>
+                <div id="side-user-actions" style="display:none;">
+                    <button class="btn-outline side-link" id="side-profile-btn" onclick="closeSideMenu(); openProfileTabFromMenu('info')">👤 Il Mio Profilo</button>
+                    <button class="btn-outline side-link" id="messages-btn-nav" onclick="closeSideMenu(); openMyMessagesModal()">💬 Messaggi</button>
+                    <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('my-orders')">📦 I Miei Ordini</button>
+                    <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('wallet-escrow')">💰 Portafoglio</button>
+                    <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('my-listings')">📋 I Miei Annunci</button>
+                    <button class="btn-outline side-link" onclick="closeSideMenu(); logoutSupabase()">Esci</button>
+                </div>
+                <button class="icon-btn side-link" onclick="closeSideMenu(); openNotificationsModal()">
+                    🔔 Notifiche <span id="notification-badge" class="bell-badge" style="display:none;">0</span>
+                </button>
+                <button class="icon-btn side-link" id="theme-toggle-btn" onclick="toggleTheme()">🌙 Tema</button>
+            </div>
+
+            <div class="side-section">
+                <h3>Supporto / FAQ</h3>
+                <p class="side-sub">Assistenza e regole della piattaforma</p>
+                <button class="btn-outline side-link" onclick="closeSideMenu(); openVaultBot()">🤖 VaultBot</button>
+                <button class="btn-outline side-link" onclick="closeSideMenu(); openTosFaqFromMenu()">📜 ToS & FAQ</button>
+            </div>
+
+            <div class="side-section" id="side-admin-section" style="display:none;">
+                <h3>Admin</h3>
+                <p class="side-sub">Strumenti riservati</p>
+                <button class="btn-outline side-link admin-badge" onclick="closeSideMenu(); openProfileTabFromMenu('my-listings')">🛡️ Gestione annunci</button>
+                <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('reviews-tab')">⭐ Recensioni marketplace</button>
+            </div>
+        </aside>
     </div>
 
     <div class="filters-overlay" id="filters-overlay" onclick="closeFiltersPanel()">
@@ -983,6 +1129,7 @@
         let selectedCategory = '';
         let currentUser = null;
         let selectedCard = null;
+        let pendingPaymentOrderId = null;
         let elements = null;
         let clientSecret = null;
         let activeChatReceiverId = null;
@@ -1000,10 +1147,10 @@
             const savedTheme = localStorage.getItem('tcg_vault_theme') || 'dark';
             if (savedTheme === 'light') {
                 document.body.classList.add('light-theme');
-                document.getElementById('theme-toggle-btn').innerText = '☀️';
+                document.getElementById('theme-toggle-btn').innerText = '☀️ Tema';
             } else {
                 document.body.classList.remove('light-theme');
-                document.getElementById('theme-toggle-btn').innerText = '🌙';
+                document.getElementById('theme-toggle-btn').innerText = '🌙 Tema';
             }
         }
 
@@ -1011,10 +1158,10 @@
             const isLight = document.body.classList.toggle('light-theme');
             const btn = document.getElementById('theme-toggle-btn');
             if (isLight) {
-                btn.innerText = '☀️';
+                btn.innerText = '☀️ Tema';
                 localStorage.setItem('tcg_vault_theme', 'light');
             } else {
-                btn.innerText = '🌙';
+                btn.innerText = '🌙 Tema';
                 localStorage.setItem('tcg_vault_theme', 'dark');
             }
         }
@@ -1133,6 +1280,15 @@
                     badge.style.display = 'none';
                 }
             }
+            const menuBadge = document.getElementById('menu-badge');
+            if (menuBadge) {
+                if (unreadMessagesCount > 0) {
+                    menuBadge.innerText = unreadMessagesCount;
+                    menuBadge.style.display = 'inline-block';
+                } else {
+                    menuBadge.style.display = 'none';
+                }
+            }
         }
 
         function openNotificationsModal() {
@@ -1147,11 +1303,11 @@
                     </div>
                 `).join('');
             }
-            document.getElementById('notifications-modal').style.display = 'flex';
+            showOverlay('notifications-modal');
         }
 
         function closeNotificationsModal() { 
-            document.getElementById('notifications-modal').style.display = 'none';
+            hideOverlay('notifications-modal');
         }
 
         async function initAuth() {
@@ -1192,13 +1348,13 @@
                 };
 
                 if (!currentUser.name || !currentUser.address) {
-                    document.getElementById('onboarding-wizard-modal').style.display = 'flex';
+                    showOverlay('onboarding-wizard-modal');
                 } else {
-                    document.getElementById('onboarding-wizard-modal').style.display = 'none';
+                    hideOverlay('onboarding-wizard-modal');
                 }
             } else {
                 currentUser = null;
-                document.getElementById('onboarding-wizard-modal').style.display = 'none';
+                hideOverlay('onboarding-wizard-modal');
             }
             updateHeaderUI();
             updateSavedCounter();
@@ -1262,52 +1418,65 @@
                 localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({ name, address, userType }));
             }
 
-            document.getElementById('onboarding-wizard-modal').style.display = 'none';
+            hideOverlay('onboarding-wizard-modal');
             showNotification('🎉 Profilo completato e salvato su Supabase!');
             updateHeaderUI();
             loadCardsFromSupabase();
         }
 
-        function openFiltersPanel() {
-            document.getElementById('filters-overlay').style.display = 'flex';
+        function showOverlay(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('is-open');
         }
-        function closeFiltersPanel() {
-            document.getElementById('filters-overlay').style.display = 'none';
+        function hideOverlay(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('is-open');
         }
-        function openVaultBot() {
-            document.getElementById('vaultbot-modal').style.display = 'flex';
-        }
-        function closeVaultBot() {
-            document.getElementById('vaultbot-modal').style.display = 'none';
-        }
-        function closeLegalModal() {
-            document.getElementById('legal-modal').style.display = 'none';
-        }
+        function openSideMenu() { showOverlay('side-overlay'); }
+        function closeSideMenu() { hideOverlay('side-overlay'); }
+        function openFiltersPanel() { showOverlay('filters-overlay'); }
+        function closeFiltersPanel() { hideOverlay('filters-overlay'); }
+        function openVaultBot() { showOverlay('vaultbot-modal'); }
+        function closeVaultBot() { hideOverlay('vaultbot-modal'); }
+        function closeLegalModal() { hideOverlay('legal-modal'); }
         function openTosFaqFromMenu() {
             renderLegalContent('legal-accordion-modal');
-            document.getElementById('legal-modal').style.display = 'flex';
+            showOverlay('legal-modal');
             setTimeout(() => {
                 const tos = document.querySelector('#legal-accordion-modal #tos');
                 if (tos) tos.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 50);
         }
+        function openProfileTabFromMenu(tabName) {
+            if (!currentUser) { openAuthModal(); return; }
+            openProfileModal();
+            const labels = {
+                info: 'Profilo',
+                'my-listings': 'Annunci',
+                'my-orders': 'I Miei Ordini',
+                'wallet-escrow': 'Portafoglio',
+                'reviews-tab': 'Recensioni',
+                'bot-support': 'VaultBot',
+                'tos-faq': 'ToS'
+            };
+            const btn = Array.from(document.querySelectorAll('.profile-tab')).find(t => t.textContent.includes(labels[tabName] || tabName));
+            if (btn) switchProfileTab(tabName, btn);
+        }
 
         function updateHeaderUI() {
-            const authContainer = document.getElementById('auth-actions');
+            const guest = document.getElementById('side-guest-actions');
+            const userBox = document.getElementById('side-user-actions');
+            const adminBox = document.getElementById('side-admin-section');
+            const profileBtn = document.getElementById('side-profile-btn');
             if (currentUser) {
-                const badgeClass = isAdmin() ? 'admin-badge' : 'user-badge';
-                const badgeText = isAdmin() ? '🛡️ Admin Supremo' : `👤 ${currentUser.name || currentUser.email}`;
-                authContainer.innerHTML = `
-                    <button class="btn-outline" id="messages-btn-nav" onclick="openMyMessagesModal()">
-                        💬 Messaggi ${unreadMessagesCount > 0 ? `<span class="bell-badge">${unreadMessagesCount}</span>` : ''}
-                    </button>
-                    <span class="${badgeClass}" onclick="openProfileModal()" title="${currentUser.email}">${badgeText}</span>
-                    <button class="btn-outline" onclick="logoutSupabase()">Esci</button>
-                `;
+                if (guest) guest.style.display = 'none';
+                if (userBox) userBox.style.display = 'block';
+                if (adminBox) adminBox.style.display = isAdmin() ? 'block' : 'none';
+                if (profileBtn) profileBtn.textContent = isAdmin() ? '🛡️ Admin Supremo' : `👤 ${currentUser.name || currentUser.email}`;
             } else {
-                authContainer.innerHTML = `
-                    <button class="btn-outline" onclick="openAuthModal()">Accedi / Registrati</button>
-                `;
+                if (guest) guest.style.display = 'block';
+                if (userBox) userBox.style.display = 'none';
+                if (adminBox) adminBox.style.display = 'none';
             }
         }
 
@@ -1470,12 +1639,12 @@
             document.getElementById('edit-price').value = card.price || '';
             document.getElementById('edit-condition').value = card.condition || 'Nuovo Sigillato';
             document.getElementById('edit-description').value = stripPendingMarker(card.description || '');
-            document.getElementById('profile-modal').style.display = 'none';
-            document.getElementById('edit-listing-modal').style.display = 'flex';
+            hideOverlay('profile-modal');
+            showOverlay('edit-listing-modal');
         }
 
         function closeEditListingModal() {
-            document.getElementById('edit-listing-modal').style.display = 'none';
+            hideOverlay('edit-listing-modal');
         }
 
         async function handleEditListingSubmit(e) {
@@ -1551,10 +1720,10 @@
             } else {
                 renderCardsToContainer(savedCards, container);
             }
-            document.getElementById('saved-modal').style.display = 'flex';
+            showOverlay('saved-modal');
         }
 
-        function closeSavedModal() { document.getElementById('saved-modal').style.display = 'none'; }
+        function closeSavedModal() { hideOverlay('saved-modal'); }
 
         function openProfileModal() {
             if (!currentUser) { openAuthModal(); return; }
@@ -1566,10 +1735,10 @@
             document.getElementById('payout-iban').value = currentUser.iban || '';
             loadUserReviews();
             loadMyOrders();
-            document.getElementById('profile-modal').style.display = 'flex';
+            showOverlay('profile-modal');
         }
 
-        function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
+        function closeProfileModal() { hideOverlay('profile-modal'); }
 
         function switchProfileTab(tabName, btn) {
             document.querySelectorAll('.profile-tab').forEach(t => t.classList.remove('active'));
@@ -1910,11 +2079,11 @@
                 `).join('');
             }
 
-            document.getElementById('seller-public-profile-modal').style.display = 'flex';
+            showOverlay('seller-public-profile-modal');
         }
 
         function closeSellerProfileModal() {
-            document.getElementById('seller-public-profile-modal').style.display = 'none';
+            hideOverlay('seller-public-profile-modal');
         }
 
         function addToCart(card) {
@@ -1961,11 +2130,11 @@
         function openCartModal() {
             validateAndCleanCart();
             renderCartModal();
-            document.getElementById('cart-modal').style.display = 'flex';
+            showOverlay('cart-modal');
         }
 
         function closeCartModal() {
-            document.getElementById('cart-modal').style.display = 'none';
+            hideOverlay('cart-modal');
         }
 
         function renderCartModal() {
@@ -2043,11 +2212,11 @@
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
 
-            document.getElementById('detail-modal').style.display = 'flex';
+            showOverlay('detail-modal');
         }
 
         function closeDetailModal() { 
-            document.getElementById('detail-modal').style.display = 'none'; 
+            hideOverlay('detail-modal'); 
         }
 
         async function openStripeCheckoutModal() {
@@ -2079,7 +2248,7 @@
             if (nameEl) nameEl.value = currentUser.name || '';
             if (addrEl) addrEl.value = currentUser.address || '';
             if (tosEl) tosEl.checked = false;
-            document.getElementById('stripe-checkout-modal').style.display = 'flex';
+            showOverlay('stripe-checkout-modal');
 
             try {
                 const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
@@ -2091,6 +2260,7 @@
                 
                 if (data.clientSecret) {
                     clientSecret = data.clientSecret;
+                    pendingPaymentOrderId = data.orderId || null;
                     
                     const appearance = { 
                         theme: 'night',
@@ -2117,7 +2287,7 @@
             }
         }
 
-        function closeStripeCheckoutModal() { document.getElementById('stripe-checkout-modal').style.display = 'none'; }
+        function closeStripeCheckoutModal() { hideOverlay('stripe-checkout-modal'); }
 
         document.getElementById('payment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -2152,6 +2322,16 @@
                 submitBtn.disabled = false;
                 submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
             } else {
+                const paymentIntentId = clientSecret ? String(clientSecret).split('_secret')[0] : null;
+                await fetch('/api/payments/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        orderId: pendingPaymentOrderId,
+                        paymentIntentId,
+                        cardId: selectedCard.id
+                    })
+                });
                 selectedCard.is_sold = true;
                 
                 await supabaseClient
@@ -2159,6 +2339,7 @@
                     .update({ is_sold: true })
                     .eq('id', selectedCard.id);
 
+                pendingPaymentOrderId = null;
                 closeStripeCheckoutModal();
                 showNotification(`💳 Pagamento completato! Fondi custoditi in Escrow.`);
                 loadCardsFromSupabase();
@@ -2224,13 +2405,13 @@
 
                     container.innerHTML = renderedConversations.join('');
                 }
-                document.getElementById('my-messages-modal').style.display = 'flex';
+                showOverlay('my-messages-modal');
             } catch (err) {
                 showNotification('Errore caricamento messaggi.', 'error');
             }
         }
 
-        function closeMyMessagesModal() { document.getElementById('my-messages-modal').style.display = 'none'; }
+        function closeMyMessagesModal() { hideOverlay('my-messages-modal'); }
 
         async function openChatModal(receiverId, cardTitle = '', sellerId = null) {
             if (!currentUser) { openAuthModal(); return; }
@@ -2304,7 +2485,7 @@
                 `).join('');
             }
 
-            document.getElementById('seller-public-profile-modal').style.display = 'flex';
+            showOverlay('seller-public-profile-modal');
         }
 
         function closeChat() {
@@ -2516,16 +2697,16 @@
                 document.getElementById('sell-location').value = currentUser.address;
             }
 
-            document.getElementById('sell-modal').style.display='flex'; 
+            showOverlay('sell-modal');
         }
 
-        function closeSellModal() { document.getElementById('sell-modal').style.display='none'; }
-        function openAuthModal() { document.getElementById('auth-modal').style.display='flex'; }
-        function closeAuthModal() { document.getElementById('auth-modal').style.display='none'; }
+        function closeSellModal() { hideOverlay('sell-modal'); }
+        function openAuthModal() { showOverlay('auth-modal'); }
+        function closeAuthModal() { hideOverlay('auth-modal'); }
         function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
 
         window.onload = async () => {
-            document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+            document.querySelectorAll('.modal-overlay, .filters-overlay, .side-overlay').forEach(m => m.classList.remove('is-open'));
             await initAuth();
             await loadCardsFromSupabase();
         };
