@@ -362,6 +362,25 @@
         .card-title { margin: 6px 0 10px 0; font-size: 1.15rem; color: var(--text-main); font-weight: 700; line-height: 1.3; }
         .price { color: var(--accent-neon); font-size: 1.35rem; font-weight: 800; margin-bottom: 6px; }
         .card-location { font-size: 0.82rem; color: var(--text-muted); font-weight: 500; margin-bottom: 8px; }
+        .account-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 8px; }
+        .badge-type {
+            font-size: 0.66rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+            padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-muted);
+            background: rgba(148,163,184,.08);
+        }
+        .badge-type.is-shop {
+            color: #7dd3fc; border-color: rgba(125,211,252,.35); background: rgba(125,211,252,.1);
+        }
+        .badge-partner {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 0.66rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+            padding: 3px 9px; border-radius: 999px; color: #1a1200;
+            background: linear-gradient(135deg, #f8e7a0 0%, #d4af37 55%, #f6d36b 100%);
+            border: 1px solid rgba(255, 215, 120, 0.7);
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.28);
+        }
+        .badge-partner .badge-shield { font-size: 0.72rem; line-height: 1; }
+        #chatTitle .account-badges, #conversations-list .account-badges { display: inline-flex; margin: 0 0 0 6px; }
 
         .heart-btn {
             position: absolute; top: 14px; right: 14px; background: var(--panel-solid);
@@ -555,8 +574,8 @@
                 <div class="form-group">
                     <label>Tipologia Utente *</label>
                     <select id="wizard-usertype">
-                        <option value="Privato">Privato / Hobbista</option>
-                        <option value="Negozio / Azienda">Negozio / Attività Commerciale</option>
+                        <option value="privato">Utente Privato / Hobbista</option>
+                        <option value="negozio">Negozio / Attività Commerciale</option>
                     </select>
                 </div>
                 <div style="display: flex; gap: 10px;">
@@ -851,10 +870,18 @@
             </div>
 
             <div id="tab-info" class="tab-content">
+                <div id="profile-identity-badges" class="account-badges"></div>
                 <form onsubmit="saveProfileDetails(event)">
                     <div class="form-group">
                         <label>Nome / Nickname</label>
                         <input type="text" id="profile-name" placeholder="Es. Marco TCG Collector">
+                    </div>
+                    <div class="form-group">
+                        <label>Tipologia account</label>
+                        <select id="profile-account-type">
+                            <option value="privato">Utente Privato</option>
+                            <option value="negozio">Negozio</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>Indirizzo</label>
@@ -935,6 +962,7 @@
                     <h2 id="detail-name" style="margin: 6px 0 10px 0; color: var(--text-main); font-size: 1.5rem; font-weight: 800;"></h2>
                     <div id="detail-condition" style="font-size:0.88rem; color:var(--accent-neon); margin-bottom:6px; font-weight: 600;"></div>
                     <div id="detail-location-view" style="font-size:0.88rem; color:var(--text-muted); margin-bottom:6px; font-weight: 500;">📍 Indirizzo: </div>
+                    <div id="detail-seller-identity" class="account-badges"></div>
                     <div style="margin-bottom: 10px;">
                         <button class="btn-outline" onclick="openSellerPublicProfile()" style="font-size: 0.82rem; padding: 6px 12px;">👤 Visualizza Profilo e Recensioni del Venditore</button>
                     </div>
@@ -1144,6 +1172,50 @@
             return currentUser && currentUser.email.toLowerCase() === 'francesco_delduca@icloud.com';
         }
 
+        let accountMetaCache = {};
+
+        function normalizeAccountType(raw) {
+            const v = String(raw || '').trim().toLowerCase();
+            if (v.includes('negozio') || v.includes('azienda') || v === 'shop' || v === 'store') return 'negozio';
+            return 'privato';
+        }
+
+        function identityBadgesHtml(meta) {
+            const type = normalizeAccountType(meta && meta.accountType);
+            const isShop = type === 'negozio';
+            const typeLabel = isShop ? 'Negozio' : 'Utente Privato';
+            const typeClass = isShop ? 'badge-type is-shop' : 'badge-type';
+            const partner = meta && meta.partner;
+            const partnerLabel = isShop ? 'Negozio Partner' : 'PRO';
+            const partnerHtml = partner
+                ? `<span class="badge-partner" title="Piano SaaS attivo"><span class="badge-shield">🛡️</span>${partnerLabel}</span>`
+                : '';
+            return `<span class="${typeClass}">${typeLabel}</span>${partnerHtml}`;
+        }
+
+        async function loadAccountMeta(ids) {
+            const unique = [...new Set((ids || []).filter(Boolean).map(id => String(id)))];
+            const missing = unique.filter(id => !accountMetaCache[id]);
+            if (!missing.length) return accountMetaCache;
+            try {
+                const res = await fetch('/api/accounts/public?ids=' + encodeURIComponent(missing.join(',')));
+                const data = await res.json();
+                Object.assign(accountMetaCache, data.accounts || {});
+            } catch (e) {
+                missing.forEach(id => {
+                    if (!accountMetaCache[id]) accountMetaCache[id] = { accountType: 'privato', partner: false };
+                });
+            }
+            return accountMetaCache;
+        }
+
+        function paintSellerBadges(root) {
+            (root || document).querySelectorAll('[data-seller-id]').forEach(el => {
+                const meta = accountMetaCache[el.getAttribute('data-seller-id')] || { accountType: 'privato', partner: false };
+                el.innerHTML = identityBadgesHtml(meta);
+            });
+        }
+
         function initTheme() {
             const savedTheme = localStorage.getItem('tcg_vault_theme') || 'dark';
             if (savedTheme === 'light') {
@@ -1341,12 +1413,11 @@
                     console.error('Errore lettura profilo supabase:', e);
                 }
 
+                const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${session.user.id}`) || '{}');
                 if (!profileName) {
-                    const savedProfile = JSON.parse(localStorage.getItem(`tcg_vault_profile_${session.user.id}`) || '{}');
                     profileName = savedProfile.name || '';
                     profileAddress = savedProfile.address || '';
                 }
-                
                 currentUser = {
                     id: session.user.id,
                     email: session.user.email,
@@ -1354,8 +1425,16 @@
                     address: profileAddress,
                     phone: session.user.user_metadata?.phone || '',
                     wallet: 0.00,
-                    iban: ''
+                    iban: '',
+                    accountType: normalizeAccountType(savedProfile.userType || savedProfile.accountType || 'privato'),
+                    partner: false
                 };
+                try {
+                    const flags = await fetch('/api/users/' + encodeURIComponent(currentUser.id)).then(r => r.json());
+                    if (flags && flags.accountType) currentUser.accountType = normalizeAccountType(flags.accountType);
+                    if (flags && flags.partner) currentUser.partner = true;
+                    accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
+                } catch (e) {}
 
                 if (!currentUser.name || !currentUser.address) {
                     showOverlay('onboarding-wizard-modal');
@@ -1405,6 +1484,7 @@
                 currentUser.name = name;
                 currentUser.address = address;
                 currentUser.userType = userType;
+                currentUser.accountType = normalizeAccountType(userType);
 
                 const profilePayload = {
                     id: String(currentUser.id),
@@ -1412,6 +1492,12 @@
                     email: String(currentUser.email || ''),
                     address: String(address)
                 };
+                fetch('/api/users/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...profilePayload, accountType: currentUser.accountType })
+                }).catch(() => {});
+                accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
 
                 const { data, error } = await supabaseClient
                     .from('profiles')
@@ -1490,7 +1576,14 @@
                 if (profileBtn) profileBtn.textContent = isAdmin() ? '🛡️ Admin Supremo' : `👤 ${currentUser.name || currentUser.email}`;
                 fetch('/api/shops/status/' + encodeURIComponent(currentUser.id))
                     .then(r => r.json())
-                    .then(data => { if (shopDash) shopDash.style.display = data.active ? 'block' : 'none'; })
+                    .then(data => {
+                        if (shopDash) shopDash.style.display = data.active ? 'block' : 'none';
+                        currentUser.partner = !!data.active;
+                        accountMetaCache[String(currentUser.id)] = {
+                            accountType: normalizeAccountType(currentUser.accountType),
+                            partner: !!data.active
+                        };
+                    })
                     .catch(() => { if (shopDash) shopDash.style.display = 'none'; });
             } else {
                 if (guest) guest.style.display = 'block';
@@ -1751,6 +1844,13 @@
             document.getElementById('profile-name').value = currentUser.name || '';
             document.getElementById('profile-address').value = currentUser.address || '';
             document.getElementById('profile-phone').value = currentUser.phone || '';
+            const typeSelect = document.getElementById('profile-account-type');
+            if (typeSelect) typeSelect.value = normalizeAccountType(currentUser.accountType);
+            const identityBox = document.getElementById('profile-identity-badges');
+            if (identityBox) identityBox.innerHTML = identityBadgesHtml({
+                accountType: currentUser.accountType,
+                partner: !!currentUser.partner
+            });
             document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
             document.getElementById('payout-iban').value = currentUser.iban || '';
             loadUserReviews();
@@ -1824,6 +1924,7 @@
             currentUser.name = document.getElementById('profile-name').value;
             currentUser.address = document.getElementById('profile-address').value;
             currentUser.phone = document.getElementById('profile-phone').value;
+            currentUser.accountType = normalizeAccountType(document.getElementById('profile-account-type').value);
             
             await supabaseClient
                 .from('profiles')
@@ -1831,7 +1932,23 @@
                     { id: String(currentUser.id), email: String(currentUser.email), name: String(currentUser.name), address: String(currentUser.address) }
                 ], { onConflict: 'id' });
 
-            const profileData = { name: currentUser.name, address: currentUser.address, email: currentUser.email };
+            fetch('/api/users/profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: String(currentUser.id),
+                    email: String(currentUser.email),
+                    name: String(currentUser.name),
+                    address: String(currentUser.address),
+                    accountType: currentUser.accountType
+                })
+            }).catch(() => {});
+
+            accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
+            const identityBox = document.getElementById('profile-identity-badges');
+            if (identityBox) identityBox.innerHTML = identityBadgesHtml(accountMetaCache[String(currentUser.id)]);
+
+            const profileData = { name: currentUser.name, address: currentUser.address, email: currentUser.email, accountType: currentUser.accountType };
             localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify(profileData));
 
             showNotification('Profilo aggiornato!');
@@ -1942,6 +2059,7 @@
                         <span class="card-category">${card.category} • ${card.type}</span>
                         <h3 class="card-title">${card.title}</h3>
                         <div class="price">€ ${Number(card.price).toFixed(2)}</div>
+                        <div class="account-badges" data-seller-id="${card.user_id}">${identityBadgesHtml(accountMetaCache[String(card.user_id)] || { accountType: 'privato', partner: false })}</div>
                         <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
                         <div class="status-badge ${status.className}">${status.label}</div>
                         <button class="btn-edit-icon" onclick="openEditListingModal('${card.id}')">✏️ Modifica</button>
@@ -1950,6 +2068,7 @@
                 </div>
             `;
             }).join('');
+            loadAccountMeta(myCards.map(c => c.user_id)).then(() => paintSellerBadges(container));
         }
 
         function applyFilters() {
@@ -1998,12 +2117,14 @@
                             <span class="card-category">${card.category} • ${card.type}</span>
                             <h3 class="card-title">${card.title}</h3>
                             <div class="price">€ ${Number(card.price).toFixed(2)}</div>
+                            <div class="account-badges" data-seller-id="${card.user_id}">${identityBadgesHtml(accountMetaCache[String(card.user_id)] || { accountType: 'privato', partner: false })}</div>
                             <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
                             <div class="status-badge ${status.className}">${status.label}</div>
                         </div>
                     </div>
                 `;
             }).join('');
+            loadAccountMeta(cards.map(c => c.user_id)).then(() => paintSellerBadges(container));
         }
 
         async function getProfileDisplayName(userId) {
@@ -2052,7 +2173,8 @@
             closeDetailModal();
 
             document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
-            document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
+            await loadAccountMeta([sellerId]);
+            document.getElementById('seller-profile-type').innerHTML = identityBadgesHtml(accountMetaCache[String(sellerId)] || { accountType: 'privato', partner: false });
             await setProfileLocationEl(sellerId);
 
             try {
@@ -2214,6 +2336,12 @@
             document.getElementById('detail-name').innerText = selectedCard.title;
             document.getElementById('detail-category').innerText = (selectedCard.category || 'TCG') + ' • ' + (selectedCard.type || 'Articolo');
             document.getElementById('detail-condition').innerText = 'Condizione: ' + (selectedCard.condition || 'N/D');
+            const sellerIdentity = document.getElementById('detail-seller-identity');
+            if (sellerIdentity) {
+                sellerIdentity.setAttribute('data-seller-id', selectedCard.user_id);
+                sellerIdentity.innerHTML = identityBadgesHtml(accountMetaCache[String(selectedCard.user_id)] || { accountType: 'privato', partner: false });
+                loadAccountMeta([selectedCard.user_id]).then(() => paintSellerBadges(sellerIdentity.parentElement));
+            }
             document.getElementById('detail-location-view').innerText = '📍 Caricamento città...';
             fetchProfileById(selectedCard.user_id).then(profile => {
                 const city = extractProfileCity(profile);
@@ -2402,11 +2530,13 @@
                     const renderedConversations = await Promise.all(Object.keys(conversationsMap).map(async otherUserId => {
                         const m = conversationsMap[otherUserId];
                         const partnerName = await getProfileDisplayName(otherUserId);
+                        await loadAccountMeta([otherUserId]);
+                        const badges = otherUserId === 'SYSTEM_ESCROW' ? '' : identityBadgesHtml(accountMetaCache[String(otherUserId)] || { accountType: 'privato', partner: false });
                         
                         return `
                             <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; cursor: pointer;" onclick="openChatModal('${otherUserId}', '', '${otherUserId}')">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                    <strong style="color: var(--accent-neon); font-size: 0.95rem;">💬 ${partnerName}</strong>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 8px; flex-wrap: wrap;">
+                                    <strong style="color: var(--accent-neon); font-size: 0.95rem;">💬 ${escapeHtml(partnerName)} ${badges}</strong>
                                     <span style="font-size: 0.75rem; color: var(--accent-neon);">● Online</span>
                                 </div>
                                 <div style="font-size: 0.9rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${m.text}</div>
@@ -2434,7 +2564,9 @@
             updateUnreadMessagesBadge();
 
             const displayName = await getProfileDisplayName(receiverId);
-            const fullTitle = cardTitle ? `${displayName} <span style="font-weight: normal; font-size: 0.8rem; color: var(--text-muted);">• ${cardTitle}</span>` : displayName;
+            await loadAccountMeta([receiverId]);
+            const badges = receiverId === 'SYSTEM_ESCROW' ? '' : identityBadgesHtml(accountMetaCache[String(receiverId)] || { accountType: 'privato', partner: false });
+            const fullTitle = `${escapeHtml(displayName)} ${badges}${cardTitle ? ` <span style="font-weight: normal; font-size: 0.8rem; color: var(--text-muted);">• ${escapeHtml(cardTitle)}</span>` : ''}`;
 
             document.getElementById('chatTitle').innerHTML = fullTitle;
             document.getElementById('chatModal').style.display = 'flex';
@@ -2458,7 +2590,8 @@
             
             const sellerName = await getProfileDisplayName(activeChatSellerId);
             document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
-            document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
+            await loadAccountMeta([activeChatSellerId]);
+            document.getElementById('seller-profile-type').innerHTML = identityBadgesHtml(accountMetaCache[String(activeChatSellerId)] || { accountType: 'privato', partner: false });
             await setProfileLocationEl(activeChatSellerId);
 
             try {

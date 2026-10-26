@@ -88,6 +88,7 @@ let userPresenceDB = {};
 let shopSubsDB = [];
 let tournamentsDB = [];
 let promoCodesDB = [];
+let accountsDB = [];
 
 const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || 'francesco_delduca@icloud.com')
     .split(',')
@@ -154,6 +155,39 @@ function loadJsonArray(fileName) {
 function persistShopsToDisk() { persistJsonFile('shops.json', shopSubsDB); }
 function persistTournamentsToDisk() { persistJsonFile('tournaments.json', tournamentsDB); }
 function persistPromoCodesToDisk() { persistJsonFile('promo-codes.json', promoCodesDB); }
+function persistAccountsToDisk() { persistJsonFile('accounts.json', accountsDB); }
+
+function normalizeAccountType(raw) {
+    const v = String(raw || '').trim().toLowerCase();
+    if (v.includes('negozio') || v.includes('azienda') || v === 'shop' || v === 'store') return 'negozio';
+    return 'privato';
+}
+
+function getAccountType(userId) {
+    const row = accountsDB.find(a => String(a.userId) === String(userId));
+    return row ? normalizeAccountType(row.accountType) : 'privato';
+}
+
+function setAccountType(userId, raw) {
+    const accountType = normalizeAccountType(raw);
+    let row = accountsDB.find(a => String(a.userId) === String(userId));
+    if (!row) {
+        row = { userId: String(userId), accountType, updatedAt: new Date().toISOString() };
+        accountsDB.push(row);
+    } else {
+        row.accountType = accountType;
+        row.updatedAt = new Date().toISOString();
+    }
+    persistAccountsToDisk();
+    return accountType;
+}
+
+function publicAccountMeta(userId) {
+    return {
+        accountType: getAccountType(userId),
+        partner: isShopActive(userId)
+    };
+}
 
 function isAdminEmail(email) {
     return ADMIN_EMAILS.includes(String(email || '').trim().toLowerCase());
@@ -285,6 +319,7 @@ loadOrdersFromDisk();
 shopSubsDB = loadJsonArray('shops.json');
 tournamentsDB = loadJsonArray('tournaments.json');
 promoCodesDB = loadJsonArray('promo-codes.json');
+accountsDB = loadJsonArray('accounts.json');
 ensureDefaultPromoCodes();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ahpkmppjtespemkzmkol.supabase.co';
@@ -308,6 +343,7 @@ function upsertUserInMemory(profile) {
         if (profile.name) user.name = profile.name;
         if (profile.address !== undefined) user.address = profile.address;
         if (profile.email) user.email = profile.email;
+        if (profile.accountType) user.accountType = normalizeAccountType(profile.accountType);
     }
     return user;
 }
@@ -385,10 +421,11 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.post('/api/users/profile', async (req, res) => {
-    const { id, email, name, address } = req.body;
+    const { id, email, name, address, accountType } = req.body;
     if (!id) return res.status(400).json({ success: false, error: 'ID obbligatorio.' });
 
-    const user = upsertUserInMemory({ id, email, name, address });
+    const user = upsertUserInMemory({ id, email, name, address, accountType });
+    if (accountType) user.accountType = setAccountType(id, accountType);
     const supabaseResult = await saveProfileToSupabase(user);
 
     res.json({
@@ -412,25 +449,31 @@ app.get('/api/users/:userId', async (req, res) => {
     const remoteProfile = await getProfileFromSupabase(userId);
     if (remoteProfile) {
         upsertUserInMemory(remoteProfile);
+        const flags = publicAccountMeta(userId);
         return res.json({
             success: true,
             found: true,
             name: remoteProfile.name || '',
             email: remoteProfile.email || '',
             address: remoteProfile.address || remoteProfile.city || remoteProfile.location || '',
-            city: extractCityFromProfile(remoteProfile)
+            city: extractCityFromProfile(remoteProfile),
+            accountType: flags.accountType,
+            partner: flags.partner
         });
     }
 
     const user = usersDB.find(u => String(u.id) === String(userId));
     if (user) {
+        const flags = publicAccountMeta(userId);
         return res.json({
             success: true,
             found: true,
             name: user.name || '',
             email: user.email || '',
             address: user.address || '',
-            city: extractCityFromProfile(user)
+            city: extractCityFromProfile(user),
+            accountType: flags.accountType,
+            partner: flags.partner
         });
     }
 
@@ -444,27 +487,44 @@ app.get('/api/profiles/:userId', async (req, res) => {
     }
     const remoteProfile = await getProfileFromSupabase(userId);
     if (remoteProfile) {
+        const flags = publicAccountMeta(userId);
         return res.json({
             success: true,
             found: true,
             id: remoteProfile.id,
             name: remoteProfile.name || '',
             address: remoteProfile.address || remoteProfile.city || remoteProfile.location || '',
-            city: extractCityFromProfile(remoteProfile)
+            city: extractCityFromProfile(remoteProfile),
+            accountType: flags.accountType,
+            partner: flags.partner
         });
     }
     const user = usersDB.find(u => String(u.id) === userId);
     if (user) {
+        const flags = publicAccountMeta(userId);
         return res.json({
             success: true,
             found: true,
             id: user.id,
             name: user.name || '',
             address: user.address || '',
-            city: extractCityFromProfile(user)
+            city: extractCityFromProfile(user),
+            accountType: flags.accountType,
+            partner: flags.partner
         });
     }
-    res.json({ success: true, found: false, address: '', city: '' });
+    res.json({ success: true, found: false, address: '', city: '', accountType: 'privato', partner: false });
+});
+
+app.get('/api/accounts/public', (req, res) => {
+    const ids = String(req.query.ids || '')
+        .split(',')
+        .map(id => id.trim())
+        .filter(Boolean)
+        .slice(0, 100);
+    const accounts = {};
+    ids.forEach(id => { accounts[id] = publicAccountMeta(id); });
+    res.json({ success: true, accounts });
 });
 
 app.post('/api/create-payment-intent', async (req, res) => {
