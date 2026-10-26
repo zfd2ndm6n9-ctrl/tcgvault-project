@@ -231,6 +231,12 @@
         }
         .status-available { background: rgba(0, 255, 136, 0.1); color: var(--accent-neon); border: 1px solid rgba(0, 255, 136, 0.3); }
         .status-sold { background: rgba(255, 71, 87, 0.1); color: var(--heart-red); border: 1px solid rgba(255, 71, 87, 0.3); }
+        .status-pending { background: rgba(245, 158, 11, 0.12); color: var(--admin-gold); border: 1px solid rgba(245, 158, 11, 0.35); }
+        .rules-banner {
+            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 14px;
+            padding: 14px 16px; margin-bottom: 20px; font-size: 0.86rem; color: var(--text-muted); line-height: 1.5;
+        }
+        .rules-banner strong { color: var(--accent-neon); }
 
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -522,6 +528,10 @@
             </div>
         </div>
 
+        <div class="rules-banner">
+            <strong>Compratori:</strong> ordine minimo €20,00 e articoli di un solo venditore.
+            <br><strong>Venditori:</strong> sotto €50,00 di catalogo (non venduti) gli annunci restano in attesa e si pubblicano tutti insieme al raggiungimento della soglia.
+        </div>
         <div class="section-title" style="font-size: 0.9rem; margin-bottom: 15px;">Prodotti Disponibili</div>
         <div id="product-list" class="card-grid"></div>
     </div>
@@ -534,7 +544,7 @@
                 <button class="close-btn" onclick="closeCartModal()">&times;</button>
             </div>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
-                Regola TCG Vault: Ordine minimo €5.00 da un singolo venditore. Non è possibile mischiare prodotti di venditori diversi.
+                Ordine minimo <strong style="color: var(--accent-neon);">€20,00</strong> e articoli dello <strong>stesso venditore</strong>. Non si possono mischiare venditori diversi.
             </p>
             <div id="cart-items-container" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
                 <p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>
@@ -614,7 +624,8 @@
             </div>
 
             <div id="tab-my-listings" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci, modificali o eliminali con un click.</p>
+                <div class="rules-banner" id="seller-threshold-status">Soglia catalogo venditore: €50,00. Sotto soglia gli annunci restano in attesa.</div>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci. Sotto i €50 di prodotti non venduti restano in attesa; al raggiungimento della soglia si pubblicano tutti insieme.</p>
                 <div id="my-listings-container" class="card-grid">
                     <p style="color: var(--text-muted);">Caricamento annunci...</p>
                 </div>
@@ -806,6 +817,7 @@
                 <h2>Crea Annuncio di Vendita</h2>
                 <button class="close-btn" onclick="closeSellModal()">&times;</button>
             </div>
+            <div class="rules-banner">Soglia catalogo: <strong>€50,00</strong>. Sotto soglia l'annuncio viene salvato <strong>in attesa</strong> e non compare in vetrina.</div>
             <form id="sell-form" onsubmit="handleSellSubmit(event)">
                 <div class="form-group">
                     <label>Categoria TCG *</label>
@@ -870,6 +882,10 @@
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+        const CART_MIN_ORDER = 20;
+        const SELLER_MIN_CATALOG_CENTS = 5000;
+        const PENDING_MARKER = '[[PENDING]]';
+
         let allCards = [];
         let savedProductIds = JSON.parse(localStorage.getItem('tcg_saved_products') || '[]');
         let notifications = JSON.parse(localStorage.getItem('tcg_notifications') || '[]');
@@ -921,6 +937,95 @@
             toast.innerHTML = `<span>${type === 'success' ? '✅' : '⚠️'}</span> <span>${message}</span>`;
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3000);
+        }
+
+        function isCardSold(card) {
+            return !!(card && (card.is_sold === true || card.is_sold === 'true' || Number(card.is_sold) === 1));
+        }
+
+        function stripPendingMarker(text) {
+            return String(text || '').replace(/^\[\[PENDING\]\]/, '');
+        }
+
+        function withPendingMarker(text, pending) {
+            const clean = stripPendingMarker(text);
+            return pending ? (PENDING_MARKER + clean) : clean;
+        }
+
+        function priceToCents(value) {
+            const amount = Number(String(value ?? '').replace(',', '.'));
+            return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+        }
+
+        function getSellerCatalogCents(userId, extraPrice = 0) {
+            return allCards
+                .filter(c => String(c.user_id) === String(userId) && !isCardSold(c))
+                .reduce((sum, c) => sum + priceToCents(c.price), 0) + priceToCents(extraPrice);
+        }
+
+        function isListingPending(card) {
+            if (!card || isCardSold(card)) return false;
+            if (typeof card.description === 'string' && card.description.startsWith(PENDING_MARKER)) return true;
+            return getSellerCatalogCents(card.user_id) < SELLER_MIN_CATALOG_CENTS;
+        }
+
+        function isListingBuyable(card) {
+            return !!(card && !isCardSold(card) && !isListingPending(card));
+        }
+
+        function listingStatusMeta(card) {
+            if (isCardSold(card)) return { label: 'VENDUTO', className: 'status-sold' };
+            if (isListingPending(card)) return { label: 'IN ATTESA', className: 'status-pending' };
+            return { label: 'DISPONIBILE', className: 'status-available' };
+        }
+
+        function extractProfileCity(profile) {
+            if (!profile) return '';
+            const raw = profile.city || profile.citta || profile.location || profile.address || '';
+            const text = String(raw).trim();
+            if (!text) return '';
+            const parts = text.split(',').map(part => part.trim()).filter(Boolean);
+            return parts.length ? parts[parts.length - 1] : text;
+        }
+
+        async function fetchProfileById(userId) {
+            if (!userId || userId === 'SYSTEM_ESCROW') return null;
+            const id = String(userId);
+            try {
+                const { data, error } = await supabaseClient.from('profiles').select('*').eq('id', id).maybeSingle();
+                if (!error && data) return data;
+            } catch (e) {
+                console.warn('Lettura profiles client:', e);
+            }
+            try {
+                const res = await fetch(`/api/profiles/${encodeURIComponent(id)}`, { cache: 'no-store' });
+                const json = await res.json();
+                if (json && json.found) return json;
+            } catch (e) {
+                console.warn('Lettura profiles API:', e);
+            }
+            return null;
+        }
+
+        async function setProfileLocationEl(userId) {
+            const el = document.getElementById('seller-profile-location');
+            if (!el) return;
+            el.innerText = '📍 Caricamento località...';
+            const profile = await fetchProfileById(userId);
+            const city = extractProfileCity(profile);
+            el.innerText = city ? `📍 ${city}` : '📍 Città non trovata sul profilo';
+        }
+
+        async function syncSellerListingStatuses(userId) {
+            const unsold = allCards.filter(c => String(c.user_id) === String(userId) && !isCardSold(c));
+            const pending = unsold.reduce((sum, c) => sum + priceToCents(c.price), 0) < SELLER_MIN_CATALOG_CENTS;
+            await Promise.all(unsold.map(async card => {
+                const nextDesc = withPendingMarker(card.description, pending);
+                if (nextDesc === card.description) return;
+                card.description = nextDesc;
+                await supabaseClient.from('cards').update({ description: nextDesc }).eq('id', card.id);
+            }));
+            return { pending, total: unsold.reduce((sum, c) => sum + priceToCents(c.price), 0) / 100 };
         }
 
         function updateUnreadMessagesBadge() {
@@ -1146,6 +1251,7 @@
                 }
 
                 validateAndCleanCart();
+                if (currentUser) await syncSellerListingStatuses(currentUser.id);
                 applyFilters();
             } catch (err) {
                 allCards = [];
@@ -1157,7 +1263,7 @@
             if (!cart || cart.length === 0) return;
             cart = cart.filter(cartItem => {
                 const foundCard = allCards.find(c => String(c.id) === String(cartItem.id));
-                return foundCard && !foundCard.is_sold;
+                return foundCard && isListingBuyable(foundCard);
             });
             localStorage.setItem('tcg_cart', JSON.stringify(cart));
             updateCartCounter();
@@ -1199,18 +1305,24 @@
 
             const imageUrl = publicUrlData.publicUrl;
             const sellerRealName = currentUser.name || currentUser.email.split('@')[0];
+            const price = parseFloat(String(document.getElementById('sell-price').value).replace(',', '.'));
+            if (!price || price <= 0) {
+                showNotification('Inserisci un prezzo valido.', 'error');
+                return;
+            }
 
+            const pending = getSellerCatalogCents(currentUser.id, price) < SELLER_MIN_CATALOG_CENTS;
             const newCard = {
                 user_id: currentUser.id,
                 seller_name: sellerRealName,
                 category: document.getElementById('sell-category').value,
                 type: document.getElementById('sell-type').value,
                 title: document.getElementById('sell-title').value,
-                price: parseFloat(document.getElementById('sell-price').value),
+                price,
                 location: document.getElementById('sell-location').value,
                 condition: document.getElementById('sell-condition').value,
                 image_url: imageUrl,
-                description: document.getElementById('sell-description').value,
+                description: withPendingMarker(document.getElementById('sell-description').value, pending),
                 is_sold: false
             };
 
@@ -1223,8 +1335,17 @@
             } else {
                 document.getElementById('sell-form').reset();
                 closeSellModal();
-                showNotification('✅ Annuncio pubblicato e sincronizzato!');
-                loadCardsFromSupabase();
+                await loadCardsFromSupabase();
+                const sync = await syncSellerListingStatuses(currentUser.id);
+                applyFilters();
+                if (sync.pending) {
+                    const remaining = (50 - sync.total).toFixed(2);
+                    alert(`ANNUNCIO IN ATTESA\n\nCatalogo: €${sync.total.toFixed(2)} / €50,00 (mancano €${remaining}).\nNon è visibile in vetrina finché il totale dei prodotti non venduti non raggiunge €50. A soglia raggiunta verranno pubblicati tutti insieme.`);
+                    openProfileModal();
+                    switchProfileTab('my-listings', document.querySelectorAll('.profile-tab')[1]);
+                } else {
+                    showNotification('✅ Catalogo ≥ €50: gli annunci sono pubblicati in vetrina.');
+                }
             }
         }
 
@@ -1235,7 +1356,7 @@
             document.getElementById('edit-title').value = card.title || '';
             document.getElementById('edit-price').value = card.price || '';
             document.getElementById('edit-condition').value = card.condition || 'Nuovo Sigillato';
-            document.getElementById('edit-description').value = card.description || '';
+            document.getElementById('edit-description').value = stripPendingMarker(card.description || '');
             document.getElementById('profile-modal').style.display = 'none';
             document.getElementById('edit-listing-modal').style.display = 'flex';
         }
@@ -1254,15 +1375,17 @@
 
             const { error } = await supabaseClient
                 .from('cards')
-                .update({ title, price, condition, description })
+                .update({ title, price, condition, description: stripPendingMarker(description) })
                 .eq('id', cardId);
 
             if (error) {
                 showNotification('Errore modifica: ' + error.message, 'error');
             } else {
-                showNotification('✅ Annuncio modificato con successo!');
                 closeEditListingModal();
-                loadCardsFromSupabase();
+                await loadCardsFromSupabase();
+                if (currentUser) await syncSellerListingStatuses(currentUser.id);
+                applyFilters();
+                loadMyListings();
                 openProfileModal();
                 switchProfileTab('my-listings', document.querySelectorAll('.profile-tab')[1]);
             }
@@ -1284,6 +1407,7 @@
                     showNotification('Errore eliminazione: ' + error.message, 'error');
                     loadCardsFromSupabase();
                 } else {
+                    if (currentUser) await syncSellerListingStatuses(currentUser.id);
                     showNotification('Annuncio eliminato definitivamente.');
                 }
             }
@@ -1456,9 +1580,21 @@
 
         function loadMyListings() {
             const container = document.getElementById('my-listings-container');
-            const myCards = isAdmin() ? allCards : allCards.filter(c => c.user_id === (currentUser ? currentUser.id : ''));
+            const ownerId = currentUser ? currentUser.id : '';
+            const myCards = isAdmin() ? allCards : allCards.filter(c => String(c.user_id) === String(ownerId));
+            const total = getSellerCatalogCents(ownerId) / 100;
+            const thresholdEl = document.getElementById('seller-threshold-status');
+            if (thresholdEl) {
+                if (getSellerCatalogCents(ownerId) >= SELLER_MIN_CATALOG_CENTS) {
+                    thresholdEl.innerHTML = `Catalogo: <strong>€${total.toFixed(2)}</strong> — soglia raggiunta, gli annunci non venduti sono pubblicati.`;
+                } else {
+                    thresholdEl.innerHTML = `Catalogo: <strong>€${total.toFixed(2)}</strong> / €50,00. Mancano <strong>€${(50 - total).toFixed(2)}</strong>: gli annunci restano in attesa e si pubblicheranno tutti insieme.`;
+                }
+            }
             if (myCards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto in gestione.</p>'; return; }
-            container.innerHTML = myCards.map(card => `
+            container.innerHTML = myCards.map(card => {
+                const status = listingStatusMeta(card);
+                return `
                 <div class="tcg-card">
                     <img src="${card.image_url}" class="card-img">
                     <div class="card-body">
@@ -1466,12 +1602,13 @@
                         <h3 class="card-title">${card.title}</h3>
                         <div class="price">€ ${Number(card.price).toFixed(2)}</div>
                         <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
-                        <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
+                        <div class="status-badge ${status.className}">${status.label}</div>
                         <button class="btn-edit-icon" onclick="openEditListingModal('${card.id}')">✏️ Modifica</button>
                         <button class="btn-delete-icon" onclick="deleteCard('${card.id}')">🗑️ Elimina</button>
                     </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function applyFilters() {
@@ -1490,9 +1627,11 @@
                 const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
                 const matchesPrice = (Number(card.price) || 0) <= maxPrice;
                 
+                if (isListingPending(card)) return false;
+
                 let matchesStatus = true;
-                if (statusFilter === 'available') matchesStatus = !card.is_sold;
-                if (statusFilter === 'sold') matchesStatus = card.is_sold;
+                if (statusFilter === 'available') matchesStatus = isListingBuyable(card);
+                if (statusFilter === 'sold') matchesStatus = isCardSold(card);
 
                 return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
             });
@@ -1508,7 +1647,8 @@
             if (!container) return;
             if (cards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto trovato.</p>'; return; }
             container.innerHTML = cards.map(card => {
-                const isSaved = savedProductIds.includes(card.id);
+                const isSaved = savedProductIds.some(id => String(id) === String(card.id));
+                const status = listingStatusMeta(card);
                 return `
                     <div class="tcg-card" onclick="openDetailModal('${card.id}')">
                         <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${card.id}')">${isSaved ? '❤️' : '🤍'}</div>
@@ -1518,7 +1658,7 @@
                             <h3 class="card-title">${card.title}</h3>
                             <div class="price">€ ${Number(card.price).toFixed(2)}</div>
                             <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
-                            <div class="status-badge ${card.is_sold ? 'status-sold' : 'status-available'}">${card.is_sold ? 'VENDUTO' : 'DISPONIBILE'}</div>
+                            <div class="status-badge ${status.className}">${status.label}</div>
                         </div>
                     </div>
                 `;
@@ -1572,7 +1712,7 @@
 
             document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
             document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
-            document.getElementById('seller-profile-location').innerText = `📍 Località: ${selectedCard.location || 'Non specificata'}`;
+            await setProfileLocationEl(sellerId);
 
             try {
                 const res = await fetch(`${window.location.origin}/api/reviews/${sellerId}`);
@@ -1618,22 +1758,19 @@
 
         function addToCart(card) {
             if (!card) return;
-            if (card.is_sold) {
-                showNotification('Questo prodotto è già stato venduto!', 'error');
+            if (!isListingBuyable(card)) {
+                showNotification(isCardSold(card) ? 'Questo prodotto è già stato venduto!' : 'Annuncio in attesa: il venditore non ha ancora raggiunto €50 di catalogo.', 'error');
                 return;
             }
 
-            if (currentUser && card.user_id === currentUser.id) {
+            if (currentUser && String(card.user_id) === String(currentUser.id)) {
                 showNotification('Non puoi aggiungere al carrello un tuo stesso annuncio!', 'error');
                 return;
             }
 
-            if (cart.length > 0) {
-                const currentSellerId = cart[0].user_id;
-                if (currentSellerId !== card.user_id) {
-                    showNotification('Non puoi aggiungere articoli di venditori diversi nello stesso carrello!', 'error');
-                    return;
-                }
+            if (cart.length > 0 && String(cart[0].user_id) !== String(card.user_id)) {
+                showNotification('Nel carrello puoi avere solo articoli dello stesso venditore.', 'error');
+                return;
             }
 
             if (cart.some(item => String(item.id) === String(card.id))) {
@@ -1704,10 +1841,15 @@
                 return;
             }
 
+            if (cart.some(item => String(item.user_id) !== String(cart[0].user_id))) {
+                showNotification('Il carrello deve contenere solo articoli dello stesso venditore.', 'error');
+                return;
+            }
+
             let total = cart.reduce((acc, item) => acc + Number(item.price), 0);
 
-            if (total < 5.00) {
-                showNotification('L\'ordine minimo deve essere di almeno € 5.00.', 'error');
+            if (total < CART_MIN_ORDER) {
+                showNotification(`L'ordine minimo è di €${CART_MIN_ORDER.toFixed(2)}. Totale attuale: €${total.toFixed(2)}.`, 'error');
                 return;
             }
 
@@ -1731,8 +1873,12 @@
             document.getElementById('detail-name').innerText = selectedCard.title;
             document.getElementById('detail-category').innerText = (selectedCard.category || 'TCG') + ' • ' + (selectedCard.type || 'Articolo');
             document.getElementById('detail-condition').innerText = 'Condizione: ' + (selectedCard.condition || 'N/D');
-            document.getElementById('detail-location-view').innerText = '📍 Indirizzo: ' + (selectedCard.location || 'Non specificato');
-            document.getElementById('detail-desc').innerText = selectedCard.description || 'Nessuna descrizione.';
+            document.getElementById('detail-location-view').innerText = '📍 Caricamento città...';
+            fetchProfileById(selectedCard.user_id).then(profile => {
+                const city = extractProfileCity(profile);
+                document.getElementById('detail-location-view').innerText = city ? `📍 ${city}` : '📍 Città non trovata sul profilo';
+            });
+            document.getElementById('detail-desc').innerText = stripPendingMarker(selectedCard.description) || 'Nessuna descrizione.';
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
             document.getElementById('detail-btn-price').innerText = Number(selectedCard.price).toFixed(2);
 
@@ -1748,8 +1894,15 @@
             if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
             if (selectedCard.user_id === currentUser.id) { showNotification('Non puoi comprare un tuo annuncio!', 'error'); return; }
             
-            if (Number(selectedCard.price) < 5.00) {
-                showNotification('L\'ordine minimo deve essere di almeno € 5.00.', 'error');
+            if (!isListingBuyable(selectedCard)) {
+                showNotification('Questo annuncio non è acquistabile (venduto o in attesa).', 'error');
+                return;
+            }
+            const checkoutTotal = cart.length && String(cart[0].id) === String(selectedCard.id)
+                ? cart.reduce((acc, item) => acc + Number(item.price), 0)
+                : Number(selectedCard.price);
+            if (checkoutTotal < CART_MIN_ORDER) {
+                showNotification(`L'ordine minimo è di €${CART_MIN_ORDER.toFixed(2)}.`, 'error');
                 return;
             }
             
@@ -1900,8 +2053,8 @@
 
         async function openChatModal(receiverId, cardTitle = '', sellerId = null) {
             if (!currentUser) { openAuthModal(); return; }
-            activeChatReceiverId = receiverId;
-            activeChatSellerId = sellerId || receiverId;
+            activeChatReceiverId = String(receiverId || '');
+            activeChatSellerId = String(sellerId || receiverId || '');
 
             unreadMessagesCount = 0;
             localStorage.setItem('tcg_unread_msg_count', '0');
@@ -1933,7 +2086,7 @@
             const sellerName = await getProfileDisplayName(activeChatSellerId);
             document.getElementById('seller-profile-name').innerText = `👤 ${sellerName}`;
             document.getElementById('seller-profile-type').innerText = `Tipologia: Utente Verificato TCG Vault`;
-            document.getElementById('seller-profile-location').innerText = `📍 Località: Verificata`;
+            await setProfileLocationEl(activeChatSellerId);
 
             try {
                 const res = await fetch(`${window.location.origin}/api/reviews/${activeChatSellerId}`);
@@ -2043,10 +2196,11 @@
         async function loadChatMessages(isBackground = false) {
             if (!currentUser || !activeChatReceiverId) return;
             try {
-                const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
+                const res = await fetch(`/api/messages/${encodeURIComponent(currentUser.id)}`, { cache: 'no-store' });
                 const messages = await res.json();
                 const container = document.getElementById('chatMessages');
-                
+                if (!Array.isArray(messages)) return;
+
                 const relevant = messages.filter(m => 
                     (String(m.senderId) === String(currentUser.id) && String(m.receiverId) === String(activeChatReceiverId)) ||
                     (String(m.senderId) === String(activeChatReceiverId) && String(m.receiverId) === String(currentUser.id)) ||
@@ -2090,18 +2244,22 @@
             sendPing(false);
 
             try {
-                await fetch(`${window.location.origin}/api/messages`, {
+                const res = await fetch('/api/messages', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        senderId: currentUser.id, 
-                        receiverId: activeChatReceiverId, 
+                        senderId: String(currentUser.id), 
+                        receiverId: String(activeChatReceiverId), 
                         text,
                         senderName: currentUser.name || currentUser.email.split('@')[0]
                     })
                 });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok || json.success === false) {
+                    throw new Error(json.error || 'Invio non riuscito');
+                }
                 input.value = '';
-                loadChatMessages();
+                await loadChatMessages();
             } catch (err) {
                 showNotification('Errore invio messaggio.', 'error');
             }
@@ -2109,26 +2267,42 @@
 
         function startUnreadMessagesPolling() {
             if (unreadCheckInterval) clearInterval(unreadCheckInterval);
-            let lastCheckedMsgCount = -1;
+            let primed = false;
+            const knownIds = new Set();
 
-            unreadCheckInterval = setInterval(async () => {
+            const pollInbox = async () => {
                 if (!currentUser) return;
                 try {
-                    const res = await fetch(`${window.location.origin}/api/messages/${currentUser.id}`);
+                    const res = await fetch(`/api/messages/${encodeURIComponent(currentUser.id)}`, { cache: 'no-store' });
                     const messages = await res.json();
-                    if (messages && messages.length > 0) {
-                        const incoming = messages.filter(m => m.receiverId === currentUser.id && m.senderId !== currentUser.id);
-                        if (lastCheckedMsgCount !== -1 && incoming.length > lastCheckedMsgCount) {
-                            unreadMessagesCount++;
-                            localStorage.setItem('tcg_unread_msg_count', unreadMessagesCount);
-                            updateUnreadMessagesBadge();
-                        }
-                        lastCheckedMsgCount = incoming.length;
+                    if (!Array.isArray(messages)) return;
+
+                    const incoming = messages.filter(m =>
+                        String(m.receiverId) === String(currentUser.id) &&
+                        String(m.senderId) !== String(currentUser.id)
+                    );
+
+                    if (!primed) {
+                        incoming.forEach(m => knownIds.add(String(m.id)));
+                        primed = true;
+                        return;
                     }
+
+                    const fresh = incoming.filter(m => !knownIds.has(String(m.id)));
+                    if (fresh.length > 0) {
+                        unreadMessagesCount += fresh.length;
+                        localStorage.setItem('tcg_unread_msg_count', unreadMessagesCount);
+                        updateUnreadMessagesBadge();
+                        showNotification(fresh[0].text || 'Nuovo messaggio ricevuto');
+                    }
+                    incoming.forEach(m => knownIds.add(String(m.id)));
                 } catch (e) {
                     console.error('Errore controllo messaggi:', e);
                 }
-            }, 4000);
+            };
+
+            pollInbox();
+            unreadCheckInterval = setInterval(pollInbox, 4000);
         }
 
         function openEscrowGuideModal(orderId) {

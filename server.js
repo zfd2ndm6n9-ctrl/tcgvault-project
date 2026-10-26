@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const fs = require('fs');
 const path = require('path'); 
 const app = express();
 
@@ -16,6 +17,43 @@ let reviewsDB = [];
 let ordersDB = [];
 let usersDB = []; 
 let userPresenceDB = {};
+
+const MESSAGES_FILE = path.join(__dirname, 'data', 'messages.json');
+
+function loadMessagesFromDisk() {
+    try {
+        if (!fs.existsSync(MESSAGES_FILE)) return;
+        const parsed = JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
+        messagesDB = Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+        console.error('Lettura messaggi persistiti fallita:', err.message);
+        messagesDB = [];
+    }
+}
+
+function persistMessagesToDisk() {
+    try {
+        fs.mkdirSync(path.dirname(MESSAGES_FILE), { recursive: true });
+        fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messagesDB, null, 2));
+    } catch (err) {
+        console.error('Salvataggio messaggi fallito:', err.message);
+    }
+}
+
+function idsMatch(a, b) {
+    return String(a || '') === String(b || '');
+}
+
+function extractCityFromProfile(row) {
+    if (!row) return '';
+    const raw = row.city || row.citta || row.location || row.address || '';
+    const text = String(raw).trim();
+    if (!text) return '';
+    const parts = text.split(',').map(part => part.trim()).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : text;
+}
+
+loadMessagesFromDisk();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ahpkmppjtespemkzmkol.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
@@ -71,7 +109,7 @@ async function saveProfileToSupabase(profile) {
 }
 
 async function getProfileFromSupabase(userId) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(String(userId))}&select=id,name,email,address`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(String(userId))}&select=*`, {
         headers: {
             apikey: SUPABASE_KEY,
             Authorization: `Bearer ${SUPABASE_KEY}`
@@ -140,17 +178,61 @@ app.get('/api/users/:userId', async (req, res) => {
     }
 
     const remoteProfile = await getProfileFromSupabase(userId);
-    if (remoteProfile && remoteProfile.name) {
+    if (remoteProfile) {
         upsertUserInMemory(remoteProfile);
-        return res.json({ success: true, found: true, name: remoteProfile.name, email: remoteProfile.email || '', address: remoteProfile.address || '' });
+        return res.json({
+            success: true,
+            found: true,
+            name: remoteProfile.name || '',
+            email: remoteProfile.email || '',
+            address: remoteProfile.address || remoteProfile.city || remoteProfile.location || '',
+            city: extractCityFromProfile(remoteProfile)
+        });
     }
 
     const user = usersDB.find(u => String(u.id) === String(userId));
-    if (user && user.name) {
-        return res.json({ success: true, found: true, name: user.name, email: user.email || '', address: user.address || '' });
+    if (user) {
+        return res.json({
+            success: true,
+            found: true,
+            name: user.name || '',
+            email: user.email || '',
+            address: user.address || '',
+            city: extractCityFromProfile(user)
+        });
     }
 
-    res.json({ success: true, found: false, name: 'Utente TCG Vault' });
+    res.json({ success: true, found: false, name: '', address: '', city: '' });
+});
+
+app.get('/api/profiles/:userId', async (req, res) => {
+    const userId = String(req.params.userId || '');
+    if (!userId || userId === 'SYSTEM_ESCROW') {
+        return res.json({ success: true, found: false, address: '', city: '' });
+    }
+    const remoteProfile = await getProfileFromSupabase(userId);
+    if (remoteProfile) {
+        return res.json({
+            success: true,
+            found: true,
+            id: remoteProfile.id,
+            name: remoteProfile.name || '',
+            address: remoteProfile.address || remoteProfile.city || remoteProfile.location || '',
+            city: extractCityFromProfile(remoteProfile)
+        });
+    }
+    const user = usersDB.find(u => String(u.id) === userId);
+    if (user) {
+        return res.json({
+            success: true,
+            found: true,
+            id: user.id,
+            name: user.name || '',
+            address: user.address || '',
+            city: extractCityFromProfile(user)
+        });
+    }
+    res.json({ success: true, found: false, address: '', city: '' });
 });
 
 app.post('/api/create-payment-intent', async (req, res) => {
@@ -191,6 +273,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
                 timestamp: new Date().toISOString()
             };
             messagesDB.push(notificationMsg);
+            persistMessagesToDisk();
         }
 
         res.send({ clientSecret: paymentIntent.client_secret, orderId: newOrder.id });
@@ -293,32 +376,32 @@ app.post('/api/wallet/payout', async (req, res) => {
 
 app.post('/api/messages', (req, res) => {
     const { senderId, receiverId, text, offerPrice, cardId, senderName } = req.body;
-    
-    if (senderId && senderName && senderId !== 'SYSTEM_ESCROW') {
-        let u = usersDB.find(user => user.id === senderId);
-        if (u) {
-            u.name = senderName;
-        } else {
-            usersDB.push({ id: senderId, name: senderName, email: '', wallet: 0, iban: '' });
-        }
+    if (!senderId || !receiverId || !String(text || '').trim()) {
+        return res.status(400).json({ success: false, error: 'senderId, receiverId e text sono obbligatori.' });
+    }
+
+    if (senderName && senderId !== 'SYSTEM_ESCROW') {
+        upsertUserInMemory({ id: senderId, name: senderName });
     }
 
     const newMessage = {
-        id: 'msg-' + Date.now(),
-        senderId,
-        receiverId,
-        text,
+        id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        senderId: String(senderId),
+        receiverId: String(receiverId),
+        text: String(text).trim(),
         offerPrice: offerPrice || null,
         cardId: cardId || null,
+        senderName: senderName || null,
         timestamp: new Date().toISOString()
     };
     messagesDB.push(newMessage);
+    persistMessagesToDisk();
     res.json({ success: true, message: newMessage });
 });
 
 app.get('/api/messages/:userId', (req, res) => {
-    const userId = req.params.userId;
-    const userMessages = messagesDB.filter(m => m.senderId === userId || m.receiverId === userId);
+    const userId = String(req.params.userId);
+    const userMessages = messagesDB.filter(m => idsMatch(m.senderId, userId) || idsMatch(m.receiverId, userId));
     res.json(userMessages);
 });
 
