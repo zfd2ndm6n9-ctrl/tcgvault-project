@@ -208,13 +208,6 @@
         }
         .filters-panel .filter-input, .filters-panel .filter-select { width: 100%; box-sizing: border-box; }
 
-        .vaultbot-fab {
-            position: fixed; right: 18px; bottom: 18px; z-index: 1100;
-            background: var(--accent-neon); color: #000; border: none;
-            border-radius: 999px; padding: 12px 16px; font-weight: 800;
-            cursor: pointer; box-shadow: 0 10px 24px rgba(0,255,136,0.28);
-        }
-
         .accordion { display: flex; flex-direction: column; gap: 10px; }
         .acc-item { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
         .acc-item summary {
@@ -481,7 +474,6 @@
             h1 { font-size: 1.15rem; text-align: left; }
             .header-actions { justify-content: flex-end; gap: 6px; flex-wrap: nowrap; }
             .side-drawer { width: 100%; }
-            .vaultbot-fab { right: 12px; bottom: 12px; }
             .filters-panel { width: 100%; max-height: 88vh; }
             .btn-outline, .btn-sell, .user-badge, .admin-badge { font-size: 0.78rem; padding: 6px 10px; }
             .user-badge, .admin-badge { max-width: 120px; }
@@ -514,7 +506,6 @@
 </head>
 <body>
     <div id="toast-container"></div>
-    <button class="vaultbot-fab" onclick="openVaultBot()" title="VaultBot">🤖 VaultBot</button>
 
     <div class="modal-overlay" id="vaultbot-modal">
         <div class="modal-content">
