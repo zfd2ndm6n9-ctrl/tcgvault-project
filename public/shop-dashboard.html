@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Negozio - TCG Vault</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        :root { --bg:#090d16; --panel:#131b2e; --accent:#00ff88; --text:#f8fafc; --muted:#94a3b8; --border:rgba(255,255,255,.08); --red:#ff4757; }
+        body { margin:0; background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; padding:22px; }
+        .wrap { max-width:920px; margin:0 auto; }
+        header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:22px; }
+        h1 { color:var(--accent); margin:0; font-size:1.35rem; }
+        a { color:var(--accent); text-decoration:none; }
+        .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px; }
+        label { font-size:.75rem; color:var(--muted); font-weight:700; text-transform:uppercase; }
+        input, select, textarea { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:10px; margin:6px 0 12px; font-size:16px; font-family:inherit; }
+        .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .btn { background:var(--accent); color:#000; border:none; border-radius:10px; padding:11px 14px; font-weight:800; cursor:pointer; }
+        .btn-outline { background:transparent; border:1px solid var(--border); color:var(--text); }
+        .muted { color:var(--muted); font-size:.9rem; line-height:1.5; }
+        .event { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; }
+        .ok { color:var(--accent); }
+        .err { color:var(--red); }
+        #reader { width:100%; max-width:360px; margin:10px auto; }
+        @media (max-width:700px) { .row { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Dashboard negozio</h1>
+            <div><a href="shops.html">Area Negozi</a> · <a href="index.html">Marketplace</a></div>
+        </header>
+        <div class="card" id="gate">
+            <p class="muted">Caricamento abbonamento...</p>
+        </div>
+        <div id="app" style="display:none;">
+            <div class="card">
+                <h2 style="margin-top:0;">Crea torneo / evento</h2>
+                <label>Titolo</label>
+                <input id="t-title" placeholder="Es. FNM Modern">
+                <div class="row">
+                    <div><label>Gioco</label><select id="t-game"><option>Pokémon</option><option>Yu-Gi-Oh!</option><option>Magic</option><option>One Piece</option><option>Lorcana</option></select></div>
+                    <div><label>Quota €</label><input id="t-fee" type="number" min="0" step="0.01" value="0"></div>
+                </div>
+                <div class="row">
+                    <div><label>Data</label><input id="t-date" type="date"></div>
+                    <div><label>Ora</label><input id="t-time" type="time"></div>
+                </div>
+                <div class="row">
+                    <div><label>Luogo</label><input id="t-location" placeholder="Indirizzo negozio"></div>
+                    <div><label>Posti max</label><input id="t-max" type="number" min="2" value="16"></div>
+                </div>
+                <label>Dettagli</label>
+                <textarea id="t-desc" rows="3" placeholder="Formato, award, note..."></textarea>
+                <button class="btn" onclick="createTournament()">Lancia torneo</button>
+                <p class="muted" id="create-msg"></p>
+            </div>
+            <div class="card">
+                <h2 style="margin-top:0;">I tuoi eventi</h2>
+                <div id="events"></div>
+            </div>
+            <div class="card">
+                <h2 style="margin-top:0;">Check-in QR in negozio</h2>
+                <p class="muted">Seleziona il torneo, poi inquadra il QR del giocatore oppure inserisci il codice.</p>
+                <label>Torneo</label>
+                <select id="checkin-tournament"></select>
+                <div id="reader"></div>
+                <button class="btn btn-outline" onclick="toggleScanner()">Avvia / ferma scanner</button>
+                <label>Codice QR</label>
+                <input id="qr-manual" placeholder="TCG-trn-...">
+                <button class="btn" onclick="checkIn(document.getElementById('qr-manual').value)">Registra check-in</button>
+                <p id="checkin-msg" class="muted"></p>
+            </div>
+        </div>
+    </div>
+    <script>
+        const supabaseClient = window.supabase.createClient('https://ahpkmppjtespemkzmkol.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk');
+        let currentUser = null;
+        let shopName = 'Negozio TCG';
+        let scanner = null;
+        let scanning = false;
+
+        async function init() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            const gate = document.getElementById('gate');
+            if (!session || !session.user) {
+                gate.innerHTML = '<p class="muted">Accedi dal marketplace, poi attiva l\'abbonamento da Area Negozi.</p>';
+                return;
+            }
+            currentUser = { id: session.user.id, email: session.user.email, name: session.user.email.split('@')[0] };
+            const st = await fetch('/api/shops/status/' + encodeURIComponent(currentUser.id)).then(r => r.json());
+            if (!st.active) {
+                gate.innerHTML = '<p class="muted">Dashboard riservata ai negozi abbonati (€9,99/mese). <a href="shops.html">Attiva il piano</a>. Catalogo e vendita carte restano gratuiti.</p>';
+                return;
+            }
+            shopName = (st.subscription && st.subscription.shopName) || currentUser.name;
+            gate.style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+            loadEvents();
+        }
+
+        async function createTournament() {
+            const msg = document.getElementById('create-msg');
+            const body = {
+                shopId: currentUser.id,
+                shopName,
+                title: document.getElementById('t-title').value.trim(),
+                game: document.getElementById('t-game').value,
+                date: document.getElementById('t-date').value,
+                time: document.getElementById('t-time').value,
+                location: document.getElementById('t-location').value.trim(),
+                maxPlayers: document.getElementById('t-max').value,
+                fee: document.getElementById('t-fee').value,
+                description: document.getElementById('t-desc').value.trim()
+            };
+            const res = await fetch('/api/tournaments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const data = await res.json();
+            msg.className = data.success ? 'ok' : 'err';
+            msg.innerText = data.success ? 'Torneo pubblicato nella sezione Tornei.' : (data.error || 'Errore');
+            if (data.success) loadEvents();
+        }
+
+        async function loadEvents() {
+            const list = await fetch('/api/tournaments/shop/' + encodeURIComponent(currentUser.id)).then(r => r.json());
+            const box = document.getElementById('events');
+            const sel = document.getElementById('checkin-tournament');
+            if (!Array.isArray(list) || !list.length) {
+                box.innerHTML = '<p class="muted">Nessun evento ancora.</p>';
+                sel.innerHTML = '';
+                return;
+            }
+            box.innerHTML = list.map(t => `<div class="event"><strong>${t.title}</strong><div class="muted">${t.game} · ${t.date || ''} ${t.time || ''} · ${t.players.length}/${t.maxPlayers} iscritti · check-in ${t.players.filter(p=>p.checkedIn).length}</div></div>`).join('');
+            sel.innerHTML = list.map(t => `<option value="${t.id}">${t.title}</option>`).join('');
+        }
+
+        async function checkIn(token) {
+            const msg = document.getElementById('checkin-msg');
+            const id = document.getElementById('checkin-tournament').value;
+            if (!id || !token) { msg.className = 'err'; msg.innerText = 'Seleziona un torneo e un QR.'; return; }
+            const data = await fetch('/api/tournaments/' + encodeURIComponent(id) + '/checkin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ shopId: currentUser.id, qrToken: token.trim() })
+            }).then(r => r.json());
+            msg.className = data.success ? 'ok' : 'err';
+            if (data.success) {
+                msg.innerText = data.alreadyCheckedIn
+                    ? (data.player.name + ' era già registrato.')
+                    : ('Check-in ok: ' + data.player.name);
+                loadEvents();
+            } else msg.innerText = data.error || 'QR non valido.';
+        }
+
+        async function toggleScanner() {
+            if (scanning && scanner) {
+                await scanner.stop();
+                scanning = false;
+                return;
+            }
+            scanner = new Html5Qrcode('reader');
+            scanning = true;
+            await scanner.start({ facingMode: 'environment' }, { fps: 8, qrbox: 220 }, (text) => {
+                document.getElementById('qr-manual').value = text;
+                checkIn(text);
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>

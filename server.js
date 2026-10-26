@@ -1,7 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
-const path = require('path'); 
+const path = require('path');
+const crypto = require('crypto');
 const app = express();
 
 const corsMiddleware = require('cors');
@@ -84,6 +85,8 @@ let reviewsDB = [];
 let ordersDB = [];
 let usersDB = []; 
 let userPresenceDB = {};
+let shopSubsDB = [];
+let tournamentsDB = [];
 
 const MESSAGES_FILE = path.join(__dirname, 'data', 'messages.json');
 
@@ -120,8 +123,60 @@ function extractCityFromProfile(row) {
     return parts.length ? parts[parts.length - 1] : text;
 }
 
+function persistJsonFile(fileName, data) {
+    try {
+        const file = path.join(__dirname, 'data', fileName);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    } catch (err) {
+        console.error('Salvataggio ' + fileName + ' fallito:', err.message);
+    }
+}
+
+function loadJsonArray(fileName) {
+    try {
+        const file = path.join(__dirname, 'data', fileName);
+        if (!fs.existsSync(file)) return [];
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+        console.error('Lettura ' + fileName + ' fallita:', err.message);
+        return [];
+    }
+}
+
+function persistShopsToDisk() { persistJsonFile('shops.json', shopSubsDB); }
+function persistTournamentsToDisk() { persistJsonFile('tournaments.json', tournamentsDB); }
+
+function isShopActive(userId) {
+    const sub = shopSubsDB.find(s => String(s.userId) === String(userId));
+    if (!sub || sub.status !== 'active') return false;
+    if (sub.activeUntil && new Date(sub.activeUntil).getTime() < Date.now()) return false;
+    return true;
+}
+
+function publicTournament(t) {
+    return {
+        id: t.id,
+        shopId: t.shopId,
+        shopName: t.shopName,
+        title: t.title,
+        game: t.game,
+        date: t.date,
+        time: t.time,
+        location: t.location,
+        maxPlayers: t.maxPlayers,
+        fee: t.fee,
+        description: t.description,
+        status: t.status,
+        playersCount: (t.players || []).length
+    };
+}
+
 loadMessagesFromDisk();
 loadOrdersFromDisk();
+shopSubsDB = loadJsonArray('shops.json');
+tournamentsDB = loadJsonArray('tournaments.json');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ahpkmppjtespemkzmkol.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
@@ -566,11 +621,199 @@ function answerVaultBot(message) {
     if (/(ospite|guest|login|registr|account|profilo)/.test(q)) {
         return 'Puoi sfogliare il catalogo da ospite. Per vendere, chattare, salvare, offrire o comprare serve l\'accesso. Il profilo salva nome, email e address su Supabase.';
     }
+    if (/(negozio|partner|saas|abbonamento|9,99|9.99|area negozi)/.test(q)) {
+        return 'Area Negozi: il marketplace e il caricamento carte restano gratuiti. I servizi avanzati (tornei, check-in QR, dashboard eventi) si sbloccano con l\'abbonamento SaaS a €9,99 al mese. Trovi tutto nel menu ☰ → Area Negozi.';
+    }
+    if (/(torneo|eventi|qr|iscriv)/.test(q)) {
+        return 'Tornei: i giocatori vedono gli eventi dei negozi partner, si iscrivono con un click e ricevono un QR personale da mostrare in store. I negozi abbonati creano i tornei e scansionano i QR al check-in dalla dashboard negozio.';
+    }
     if (/(faq|come funziona|regole|marketplace)/.test(q)) {
         return 'TCG Vault è un marketplace TCG. In evidenza restano ricerca e categorie. I filtri avanzati stanno nell\'ingranaggio ⚙️. Regole chiave: carrello €20 stesso venditore; annunci in attesa sotto €50 cumulativi; località da address; chat con notifica dal primo messaggio; pagamenti Escrow Stripe.';
     }
     return 'Ho letto la tua domanda. In sintesi TCG Vault protegge compravendite TCG con Escrow, carrello minimo €20 dallo stesso venditore, pubblicazione annunci al raggiungimento di €50 di catalogo, località da address e chat con notifica già dal primo messaggio. Riformula il dettaglio (carrello, annuncio, chat, pagamento o spedizione) e ti rispondo in modo puntuale. Per casi account puoi scrivere a support@tcgvault.com.';
 }
+
+app.get('/api/shops/status/:userId', (req, res) => {
+    const userId = String(req.params.userId || '');
+    const sub = shopSubsDB.find(s => String(s.userId) === userId);
+    const active = isShopActive(userId);
+    res.json({
+        success: true,
+        active,
+        subscription: sub ? {
+            shopName: sub.shopName,
+            status: active ? 'active' : (sub.status || 'inactive'),
+            activeUntil: sub.activeUntil || null,
+            priceMonthly: 9.99
+        } : null
+    });
+});
+
+app.post('/api/shops/subscribe', async (req, res) => {
+    const { userId, shopName, email } = req.body || {};
+    if (!userId) return res.status(400).json({ success: false, error: 'userId obbligatorio.' });
+    const name = String(shopName || '').trim() || 'Negozio TCG';
+    let sub = shopSubsDB.find(s => String(s.userId) === String(userId));
+    if (!sub) {
+        sub = { userId: String(userId), shopName: name, email: email || '', status: 'pending', createdAt: new Date().toISOString() };
+        shopSubsDB.push(sub);
+    } else {
+        sub.shopName = name;
+        if (email) sub.email = email;
+    }
+
+    if (stripe) {
+        try {
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: 999,
+                currency: 'eur',
+                automatic_payment_methods: { enabled: true },
+                metadata: { type: 'shop_saas', userId: String(userId) }
+            });
+            sub.pendingPaymentIntentId = paymentIntent.id;
+            persistShopsToDisk();
+            return res.json({ success: true, requiresPayment: true, clientSecret: paymentIntent.client_secret, price: 9.99 });
+        } catch (err) {
+            return res.status(400).json({ success: false, error: err.message });
+        }
+    }
+
+    sub.status = 'active';
+    sub.activeUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    persistShopsToDisk();
+    res.json({ success: true, requiresPayment: false, subscription: sub });
+});
+
+app.post('/api/shops/confirm', async (req, res) => {
+    const { userId, paymentIntentId } = req.body || {};
+    const sub = shopSubsDB.find(s => String(s.userId) === String(userId));
+    if (!sub) return res.status(404).json({ success: false, error: 'Abbonamento non trovato.' });
+    try {
+        if (stripe && (paymentIntentId || sub.pendingPaymentIntentId)) {
+            const pi = await stripe.paymentIntents.retrieve(paymentIntentId || sub.pendingPaymentIntentId);
+            if (pi.status !== 'succeeded') {
+                return res.status(400).json({ success: false, error: 'Pagamento abbonamento non confermato.' });
+            }
+        }
+        sub.status = 'active';
+        sub.activeUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        persistShopsToDisk();
+        res.json({ success: true, subscription: sub });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/tournaments', (req, res) => {
+    const list = tournamentsDB
+        .filter(t => t.status !== 'cancelled')
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+        .map(publicTournament);
+    res.json(list);
+});
+
+app.get('/api/tournaments/shop/:shopId', (req, res) => {
+    const shopId = String(req.params.shopId);
+    if (!isShopActive(shopId)) {
+        return res.status(403).json({ success: false, error: 'Abbonamento negozio non attivo.' });
+    }
+    const list = tournamentsDB.filter(t => String(t.shopId) === shopId);
+    res.json(list);
+});
+
+app.post('/api/tournaments', (req, res) => {
+    const { shopId, shopName, title, game, date, time, location, maxPlayers, fee, description } = req.body || {};
+    if (!isShopActive(shopId)) {
+        return res.status(403).json({ success: false, error: 'Serve l\'abbonamento Area Negozi (€9,99/mese) per creare tornei.' });
+    }
+    if (!title || !date) {
+        return res.status(400).json({ success: false, error: 'Titolo e data sono obbligatori.' });
+    }
+    const tournament = {
+        id: 'trn-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex'),
+        shopId: String(shopId),
+        shopName: shopName || 'Negozio TCG',
+        title: String(title).trim(),
+        game: game || 'TCG',
+        date,
+        time: time || '',
+        location: location || '',
+        maxPlayers: Number(maxPlayers) || 32,
+        fee: Number(fee) || 0,
+        description: description || '',
+        status: 'open',
+        players: [],
+        createdAt: new Date().toISOString()
+    };
+    tournamentsDB.push(tournament);
+    persistTournamentsToDisk();
+    res.json({ success: true, tournament });
+});
+
+app.post('/api/tournaments/:id/register', (req, res) => {
+    const tournament = tournamentsDB.find(t => t.id === req.params.id);
+    if (!tournament) return res.status(404).json({ success: false, error: 'Torneo non trovato.' });
+    if (tournament.status !== 'open') {
+        return res.status(400).json({ success: false, error: 'Iscrizioni chiuse.' });
+    }
+    const { userId, name, email } = req.body || {};
+    if (!userId || !email) {
+        return res.status(400).json({ success: false, error: 'Accedi e indica un\'email valida per ricevere il QR.' });
+    }
+    if ((tournament.players || []).some(p => String(p.userId) === String(userId))) {
+        const existing = tournament.players.find(p => String(p.userId) === String(userId));
+        return res.json({
+            success: true,
+            alreadyRegistered: true,
+            qrToken: existing.qrToken,
+            qrImageUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(existing.qrToken),
+            emailSent: false,
+            message: 'Sei già iscritto. Mostra questo QR in negozio.'
+        });
+    }
+    if ((tournament.players || []).length >= Number(tournament.maxPlayers || 32)) {
+        return res.status(400).json({ success: false, error: 'Torneo al completo.' });
+    }
+    const qrToken = 'TCG-' + tournament.id + '-' + crypto.randomBytes(6).toString('hex');
+    const player = {
+        userId: String(userId),
+        name: name || 'Giocatore',
+        email: String(email).trim(),
+        qrToken,
+        checkedIn: false,
+        registeredAt: new Date().toISOString()
+    };
+    tournament.players.push(player);
+    persistTournamentsToDisk();
+    const qrImageUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(qrToken);
+    console.log('QR torneo per', player.email, qrToken);
+    res.json({
+        success: true,
+        qrToken,
+        qrImageUrl,
+        emailSent: false,
+        message: 'Iscrizione confermata. Il QR è pronto: salvalo e usalo al check-in. L\'invio email parte quando SMTP è configurato sul server.'
+    });
+});
+
+app.post('/api/tournaments/:id/checkin', (req, res) => {
+    const { shopId, qrToken } = req.body || {};
+    if (!isShopActive(shopId)) {
+        return res.status(403).json({ success: false, error: 'Abbonamento negozio non attivo.' });
+    }
+    const tournament = tournamentsDB.find(t => t.id === req.params.id && String(t.shopId) === String(shopId));
+    if (!tournament) return res.status(404).json({ success: false, error: 'Torneo non trovato.' });
+    const token = String(qrToken || '').trim();
+    const player = (tournament.players || []).find(p => p.qrToken === token);
+    if (!player) return res.status(404).json({ success: false, error: 'QR non valido per questo evento.' });
+    if (player.checkedIn) {
+        return res.json({ success: true, alreadyCheckedIn: true, player: { name: player.name, email: player.email } });
+    }
+    player.checkedIn = true;
+    player.checkedInAt = new Date().toISOString();
+    persistTournamentsToDisk();
+    res.json({ success: true, player: { name: player.name, email: player.email } });
+});
 
 app.post('/api/vaultbot', (req, res) => {
     const reply = answerVaultBot(req.body && req.body.message);

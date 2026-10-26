@@ -698,6 +698,14 @@
             </div>
 
             <div class="side-section">
+                <h3>Negozi & Tornei</h3>
+                <p class="side-sub">Partner in store e eventi della community</p>
+                <button class="btn-outline side-link" onclick="window.location.href='shops.html'">🏪 Area Negozi</button>
+                <button class="btn-outline side-link" onclick="window.location.href='tournaments.html'">🏆 Tornei</button>
+                <button class="btn-outline side-link" id="side-shop-dash" style="display:none;" onclick="window.location.href='shop-dashboard.html'">📋 Dashboard negozio</button>
+            </div>
+
+            <div class="side-section">
                 <h3>Profilo / Account</h3>
                 <p class="side-sub">Accesso, messaggi e portafoglio</p>
                 <div id="side-guest-actions">
@@ -1473,15 +1481,21 @@
             const userBox = document.getElementById('side-user-actions');
             const adminBox = document.getElementById('side-admin-section');
             const profileBtn = document.getElementById('side-profile-btn');
+            const shopDash = document.getElementById('side-shop-dash');
             if (currentUser) {
                 if (guest) guest.style.display = 'none';
                 if (userBox) userBox.style.display = 'block';
                 if (adminBox) adminBox.style.display = isAdmin() ? 'block' : 'none';
                 if (profileBtn) profileBtn.textContent = isAdmin() ? '🛡️ Admin Supremo' : `👤 ${currentUser.name || currentUser.email}`;
+                fetch('/api/shops/status/' + encodeURIComponent(currentUser.id))
+                    .then(r => r.json())
+                    .then(data => { if (shopDash) shopDash.style.display = data.active ? 'block' : 'none'; })
+                    .catch(() => { if (shopDash) shopDash.style.display = 'none'; });
             } else {
                 if (guest) guest.style.display = 'block';
                 if (userBox) userBox.style.display = 'none';
                 if (adminBox) adminBox.style.display = 'none';
+                if (shopDash) shopDash.style.display = 'none';
             }
         }
 

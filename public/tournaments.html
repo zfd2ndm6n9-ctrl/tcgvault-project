@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tornei - TCG Vault</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --bg:#090d16; --panel:#131b2e; --accent:#00ff88; --text:#f8fafc; --muted:#94a3b8; --border:rgba(255,255,255,.08); }
+        body { margin:0; background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; padding:22px; }
+        .wrap { max-width:860px; margin:0 auto; }
+        header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:22px; }
+        h1 { color:var(--accent); margin:0; font-size:1.4rem; }
+        a { color:var(--accent); text-decoration:none; }
+        .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:12px; }
+        .muted { color:var(--muted); font-size:.9rem; line-height:1.5; }
+        .btn { background:var(--accent); color:#000; border:none; border-radius:10px; padding:10px 14px; font-weight:800; cursor:pointer; }
+        .qr { text-align:center; margin-top:12px; }
+        .qr img { background:#fff; padding:8px; border-radius:10px; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Tornei</h1>
+            <a href="index.html">← Marketplace</a>
+        </header>
+        <div class="card">
+            <p class="muted">Eventi organizzati dai negozi partner. Iscriviti con un click: ricevi un QR personale da mostrare in store al check-in.</p>
+        </div>
+        <div id="list"></div>
+        <div class="card" id="qr-box" style="display:none;"></div>
+    </div>
+    <script>
+        const supabaseClient = window.supabase.createClient('https://ahpkmppjtespemkzmkol.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk');
+        let currentUser = null;
+
+        async function init() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session && session.user) currentUser = { id: session.user.id, email: session.user.email, name: session.user.email.split('@')[0] };
+            const list = await fetch('/api/tournaments').then(r => r.json());
+            const box = document.getElementById('list');
+            if (!Array.isArray(list) || !list.length) {
+                box.innerHTML = '<div class="card"><p class="muted">Nessun torneo pubblicato al momento.</p></div>';
+                return;
+            }
+            box.innerHTML = list.map(t => `
+                <div class="card">
+                    <strong>${t.title}</strong>
+                    <div class="muted">${t.shopName || 'Negozio'} · ${t.game} · ${t.date || ''} ${t.time || ''}</div>
+                    <div class="muted">${t.location || ''} · ${t.playersCount}/${t.maxPlayers} iscritti · quota €${Number(t.fee||0).toFixed(2)}</div>
+                    <p class="muted">${t.description || ''}</p>
+                    <button class="btn" onclick="register('${t.id}')">Iscriviti</button>
+                </div>
+            `).join('');
+        }
+
+        async function register(id) {
+            const qrBox = document.getElementById('qr-box');
+            if (!currentUser) {
+                qrBox.style.display = 'block';
+                qrBox.innerHTML = '<p class="muted">Accedi dal marketplace per iscriverti e ricevere il QR.</p>';
+                return;
+            }
+            const data = await fetch('/api/tournaments/' + encodeURIComponent(id) + '/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id, name: currentUser.name, email: currentUser.email })
+            }).then(r => r.json());
+            qrBox.style.display = 'block';
+            if (!data.success) {
+                qrBox.innerHTML = '<p class="muted">' + (data.error || 'Iscrizione non riuscita.') + '</p>';
+                return;
+            }
+            qrBox.innerHTML = `
+                <h2 style="margin-top:0;">Il tuo QR di check-in</h2>
+                <p class="muted">${data.message}</p>
+                <div class="qr">
+                    <img src="${data.qrImageUrl}" alt="QR iscrizione">
+                    <div class="muted" style="margin-top:8px;">${data.qrToken}</div>
+                </div>
+            `;
+        }
+
+        init();
+    </script>
+</body>
+</html>

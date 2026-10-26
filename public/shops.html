@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Area Negozi - TCG Vault</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --bg:#090d16; --panel:#131b2e; --accent:#00ff88; --text:#f8fafc; --muted:#94a3b8; --border:rgba(255,255,255,.08); --blue:#635bff; }
+        body { margin:0; background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; padding:22px; }
+        .wrap { max-width:860px; margin:0 auto; }
+        header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; gap:12px; flex-wrap:wrap; }
+        h1 { color:var(--accent); margin:0; font-size:1.45rem; }
+        a { color:var(--accent); text-decoration:none; }
+        .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:22px; margin-bottom:16px; }
+        .card h2 { margin:0 0 10px; font-size:1.05rem; }
+        .muted { color:var(--muted); line-height:1.55; font-size:.92rem; }
+        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin:14px 0; }
+        .pill { background:rgba(0,255,136,.08); border:1px solid rgba(0,255,136,.25); border-radius:12px; padding:14px; }
+        .pill strong { display:block; color:var(--accent); margin-bottom:6px; }
+        .price { font-size:2rem; font-weight:800; color:var(--accent); }
+        .btn { background:var(--accent); color:#000; border:none; border-radius:10px; padding:12px 16px; font-weight:800; cursor:pointer; width:100%; }
+        .btn-outline { background:transparent; border:1px solid var(--border); color:var(--text); }
+        input { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:11px; margin:8px 0 12px; font-size:16px; }
+        label { font-size:.78rem; color:var(--muted); font-weight:700; text-transform:uppercase; }
+        .err { color:#ff4757; min-height:1.2em; text-align:center; }
+        #payment-element { margin:12px 0; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Area Negozi</h1>
+            <a href="index.html">← Marketplace</a>
+        </header>
+
+        <div class="card">
+            <h2>Partner store TCG Vault</h2>
+            <p class="muted">Il caricamento carte e il marketplace restano <strong style="color:var(--accent)">gratuiti per tutti</strong>. L'abbonamento SaaS sblocca i servizi avanzati per i negozi fisici.</p>
+            <div class="price">€ 9,99 <span style="font-size:1rem;color:var(--muted);">/ mese</span></div>
+        </div>
+
+        <div class="card">
+            <h2>Cosa include l'abbonamento</h2>
+            <div class="grid">
+                <div class="pill"><strong>Tornei ed eventi</strong><span class="muted">Crea, pubblica e lancia tornei dalla dashboard negozio.</span></div>
+                <div class="pill"><strong>Check-in QR</strong><span class="muted">Scansiona i QR dei partecipanti in loco in pochi secondi.</span></div>
+                <div class="pill"><strong>Iscrizioni B2C</strong><span class="muted">I giocatori si iscrivono dal menu Tornei e arrivano già registrati.</span></div>
+                <div class="pill"><strong>Visibilità partner</strong><span class="muted">Il tuo store compare come organizzatore degli eventi.</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Attiva il piano negozio</h2>
+            <p class="muted" id="sub-status">Accedi per attivare o gestire l'abbonamento.</p>
+            <label>Nome del negozio</label>
+            <input id="shop-name" placeholder="Es. TCG Store Milano">
+            <div id="payment-element"></div>
+            <button class="btn" id="subscribe-btn" onclick="startSubscribe()">Attiva abbonamento €9,99/mese</button>
+            <p class="err" id="sub-msg"></p>
+            <button class="btn btn-outline" style="margin-top:8px;" onclick="window.location.href='shop-dashboard.html'">Apri dashboard negozio</button>
+        </div>
+    </div>
+    <script>
+        const stripe = Stripe('pk_live_51URVxbB5CcM9bCL44GCB7XIP7NX3ofDkHfnTf0pXzL0T0w0ggdve6GQI9bGvsRgW08uheTInau2mFFBZG4CTkLXl00CqE2fp40');
+        const supabaseClient = window.supabase.createClient('https://ahpkmppjtespemkzmkol.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk');
+        let currentUser = null;
+        let elements = null;
+        let clientSecret = null;
+
+        async function init() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session && session.user) {
+                currentUser = { id: session.user.id, email: session.user.email, name: session.user.email.split('@')[0] };
+                const st = await fetch('/api/shops/status/' + encodeURIComponent(currentUser.id)).then(r => r.json());
+                document.getElementById('sub-status').innerText = st.active
+                    ? 'Abbonamento attivo fino al ' + new Date(st.subscription.activeUntil).toLocaleDateString('it-IT') + '.'
+                    : 'Nessun piano attivo. Il marketplace resta gratis; i tornei QR richiedono €9,99/mese.';
+                if (st.subscription && st.subscription.shopName) document.getElementById('shop-name').value = st.subscription.shopName;
+            }
+        }
+
+        async function startSubscribe() {
+            const msg = document.getElementById('sub-msg');
+            if (!currentUser) { msg.innerText = 'Accedi dal marketplace prima di attivare il piano.'; return; }
+            const shopName = document.getElementById('shop-name').value.trim();
+            const res = await fetch('/api/shops/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id, shopName, email: currentUser.email })
+            });
+            const data = await res.json();
+            if (!data.success) { msg.innerText = data.error || 'Errore attivazione.'; return; }
+            if (!data.requiresPayment) {
+                msg.style.color = 'var(--accent)';
+                msg.innerText = 'Piano negozio attivo. Puoi aprire la dashboard.';
+                return;
+            }
+            clientSecret = data.clientSecret;
+            elements = stripe.elements({ clientSecret, appearance: { theme: 'night', variables: { colorPrimary: '#00ff88', colorBackground: '#131b2e', colorText: '#f8fafc' } } });
+            document.getElementById('payment-element').innerHTML = '';
+            elements.create('payment').mount('#payment-element');
+            document.getElementById('subscribe-btn').onclick = confirmSubscribe;
+            document.getElementById('subscribe-btn').innerText = 'Conferma pagamento €9,99';
+        }
+
+        async function confirmSubscribe() {
+            const msg = document.getElementById('sub-msg');
+            if (!stripe || !elements) return;
+            const { error } = await stripe.confirmPayment({ elements, redirect: 'if_required', confirmParams: { return_url: location.href } });
+            if (error) { msg.innerText = error.message; return; }
+            const pi = clientSecret.split('_secret')[0];
+            const done = await fetch('/api/shops/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id, paymentIntentId: pi })
+            }).then(r => r.json());
+            if (!done.success) { msg.innerText = done.error || 'Conferma fallita.'; return; }
+            msg.style.color = 'var(--accent)';
+            msg.innerText = 'Abbonamento attivo. La dashboard negozio è sbloccata.';
+        }
+
+        init();
+    </script>
+</body>
+</html>
