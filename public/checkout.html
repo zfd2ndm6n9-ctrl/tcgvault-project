@@ -251,9 +251,6 @@
                     paymentIntentId: clientSecret ? String(clientSecret).split('_secret')[0] : null
                 })
             });
-            for (const item of cart) {
-                await supabaseClient.from('cards').update({ is_sold: true }).eq('id', item.id);
-            }
             localStorage.removeItem('tcg_cart');
             window.location.href = 'index.html?payment_success=true';
         });

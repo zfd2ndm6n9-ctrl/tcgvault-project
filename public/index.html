@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
     <script src="https://js.stripe.com/v3/"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0"></script>
     <script src="auth-fetch.js"></script>
     <style>
         :root {
@@ -270,6 +270,26 @@
             transition: all 0.2s ease; position: relative;
         }
         .btn-outline:hover { border-color: var(--accent-neon); color: var(--accent-neon); }
+
+        .auth-card { max-width: 440px; padding: 28px 26px 24px; }
+        .auth-brand { display:flex; align-items:center; gap:10px; margin-bottom: 6px; }
+        .auth-brand span { font-weight: 800; letter-spacing: .4px; }
+        .auth-lead { color: var(--text-muted); font-size: .88rem; line-height: 1.45; margin: 0 0 18px; }
+        .auth-tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; background: rgba(255,255,255,.04); border:1px solid var(--border-color); border-radius:12px; padding:4px; margin-bottom:18px; }
+        .auth-tab { border:0; background:transparent; color:var(--text-muted); font-weight:700; padding:10px; border-radius:9px; cursor:pointer; }
+        .auth-tab.active { background: var(--accent-neon); color:#04140c; }
+        .auth-pane { display:none; }
+        .auth-pane.active { display:block; }
+        .auth-checks { display:flex; flex-direction:column; gap:8px; margin: 0 0 16px; }
+        .auth-check { display:flex; align-items:center; gap:8px; font-size:.78rem; color:var(--text-muted); }
+        .auth-check b { color: var(--text-main); }
+        .auth-divider { display:flex; align-items:center; gap:10px; color:var(--text-muted); font-size:.75rem; margin:14px 0; text-transform:uppercase; letter-spacing:.6px; }
+        .auth-divider::before, .auth-divider::after { content:''; flex:1; height:1px; background: var(--border-color); }
+        .auth-hint { font-size:.78rem; color:var(--text-muted); margin-top:8px; line-height:1.4; }
+        .verify-steps { display:flex; gap:6px; margin-bottom:16px; }
+        .verify-step { flex:1; height:4px; border-radius:99px; background: rgba(255,255,255,.08); }
+        .verify-step.done, .verify-step.now { background: var(--accent-neon); }
+        .verify-step.now { opacity:.55; }
 
         .btn-edit-icon {
             background: rgba(99, 91, 255, 0.15); border: 1px solid var(--card-blue); color: #fff;
@@ -898,6 +918,12 @@
                     </div>
                     <button type="submit" class="btn-submit">Salva Modifiche Profilo</button>
                 </form>
+                <div id="admin-2fa-box" style="display:none;margin-top:22px;padding:16px;border:1px solid var(--border-color);border-radius:12px;">
+                    <h3 style="margin:0 0 8px;color:var(--admin-gold);">Sicurezza account</h3>
+                    <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 12px;">Collega Face ID / passkey. Email, cellulare e 2FA sono obbligatori per tutti.</p>
+                    <button type="button" class="btn-outline" onclick="registerSitePasskey()">Collega Face ID / passkey</button>
+                    <p id="admin-2fa-msg" style="font-size:.85rem;margin-top:10px;color:var(--accent-neon);"></p>
+                </div>
             </div>
 
             <div id="tab-my-listings" class="tab-content" style="display: none;">
@@ -1050,28 +1076,110 @@
         </div>
     </div>
 
-    <!-- MODALE AUTH SUPABASE -->
     <div class="modal-overlay" id="auth-modal">
-        <div class="modal-content">
+        <div class="modal-content auth-card">
             <div class="modal-header">
-                <h2 id="auth-modal-title">Accedi o Registrati (TCG Vault)</h2>
+                <div class="auth-brand"><span>TCG Vault</span></div>
                 <button class="close-btn" onclick="closeAuthModal()">&times;</button>
             </div>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
-                Inserisci la tua email e la tua password per autenticarti.
-            </p>
-            <form id="auth-form" onsubmit="handleSupabaseAuth(event)">
+            <p class="auth-lead">Account verificato: email, cellulare e 2FA. Così il marketplace resta protetto.</p>
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab active" id="tab-login-btn" onclick="switchAuthPane('login')">Accedi</button>
+                <button type="button" class="auth-tab" id="tab-register-btn" onclick="switchAuthPane('register')">Crea account</button>
+            </div>
+
+            <form id="auth-login-form" class="auth-pane active" onsubmit="handleLogin(event)">
                 <div class="form-group">
-                    <label>Email *</label>
-                    <input type="email" id="auth-email" placeholder="la-tua-email@esempio.com" required>
+                    <label>Email</label>
+                    <input type="email" id="login-email" placeholder="nome@email.com" required autocomplete="username">
                 </div>
                 <div class="form-group">
-                    <label>Password *</label>
-                    <input type="password" id="auth-password" placeholder="••••••••" required minlength="6">
+                    <label>Password</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required minlength="6" autocomplete="current-password">
                 </div>
-                <button type="submit" class="btn-submit" id="auth-submit-btn">Accedi / Registrati</button>
-                <div id="auth-message" style="font-size: 0.85rem; margin-top: 10px; text-align: center; color: var(--accent-neon);"></div>
+                <button type="submit" class="btn-submit">Accedi</button>
+                <div class="auth-divider">oppure</div>
+                <button type="button" class="btn-outline" onclick="handlePasskeySignIn()" style="width:100%;">Face ID / passkey</button>
+                <p id="login-message" class="auth-hint"></p>
             </form>
+
+            <form id="auth-register-form" class="auth-pane" onsubmit="handleRegister(event)">
+                <div class="auth-checks">
+                    <div class="auth-check">1. <b>Email</b> — link di conferma obbligatorio</div>
+                    <div class="auth-check">2. <b>Cellulare</b> — codice SMS obbligatorio</div>
+                    <div class="auth-check">3. <b>2FA</b> — Face ID o app Password</div>
+                </div>
+                <div class="form-group">
+                    <label>Nome completo</label>
+                    <input type="text" id="register-name" placeholder="Mario Rossi" required autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="register-email" placeholder="nome@email.com" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label>Cellulare (Italia)</label>
+                    <input type="tel" id="register-phone" placeholder="340 123 4567" required autocomplete="tel">
+                </div>
+                <div class="form-group">
+                    <label>Password (min. 8 caratteri)</label>
+                    <input type="password" id="register-password" placeholder="••••••••" required minlength="8" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label>Conferma password</label>
+                    <input type="password" id="register-password-2" placeholder="••••••••" required minlength="8" autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn-submit">Crea account e verifica</button>
+                <p id="register-message" class="auth-hint"></p>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="mfa-modal">
+        <div class="modal-content auth-card">
+            <div class="modal-header">
+                <h2 id="verify-title">Verifica account</h2>
+                <button class="close-btn" onclick="logoutSupabase()">&times;</button>
+            </div>
+            <div class="verify-steps" aria-hidden="true">
+                <div class="verify-step" id="vstep-email"></div>
+                <div class="verify-step" id="vstep-phone"></div>
+                <div class="verify-step" id="vstep-mfa"></div>
+            </div>
+            <p class="auth-lead" id="verify-lead">Completa i tre passaggi per usare TCG Vault.</p>
+
+            <div id="verify-email-pane" style="display:none;">
+                <p class="auth-hint">Ti abbiamo inviato un link. Apri la mail e conferma, poi torna qui.</p>
+                <button type="button" class="btn-submit" onclick="resendEmailVerify()">Invia di nuovo la mail</button>
+            </div>
+
+            <div id="verify-phone-pane" style="display:none;">
+                <div class="form-group">
+                    <label>Numero di cellulare</label>
+                    <input type="tel" id="verify-phone-input" placeholder="340 123 4567">
+                </div>
+                <button type="button" class="btn-submit" onclick="sendPhoneOtp()">Invia codice SMS</button>
+                <div class="form-group" style="margin-top:12px;">
+                    <label>Codice SMS</label>
+                    <input type="text" id="verify-phone-code" inputmode="numeric" maxlength="8" placeholder="000000" autocomplete="one-time-code">
+                </div>
+                <button type="button" class="btn-outline" style="width:100%;" onclick="confirmPhoneOtp()">Conferma cellulare</button>
+            </div>
+
+            <div id="verify-mfa-pane" style="display:none;">
+                <div id="mfa-enroll-wrap" style="display:none;text-align:center;margin-bottom:14px;">
+                    <p class="auth-hint">Apri l'app <strong>Password</strong> di Apple → + → Scansiona QR.</p>
+                    <img id="mfa-qr" alt="QR 2FA" style="max-width:220px;margin:10px auto;display:block;background:#fff;padding:8px;border-radius:8px;">
+                </div>
+                <button type="button" class="btn-submit" onclick="verifyAdminPasskey()">Continua con Face ID / passkey</button>
+                <div class="form-group" style="margin-top:14px;">
+                    <label>Oppure codice a 6 cifre</label>
+                    <input type="text" id="mfa-code" inputmode="numeric" maxlength="8" placeholder="000000" autocomplete="one-time-code">
+                </div>
+                <button type="button" class="btn-outline" onclick="verifyAdminTotp()" style="width:100%;">Verifica codice</button>
+            </div>
+            <p id="mfa-message" class="auth-hint"></p>
+            <button type="button" class="btn-outline" onclick="logoutSupabase()" style="width:100%;margin-top:10px;">Esci</button>
         </div>
     </div>
 
@@ -1145,8 +1253,12 @@
 
         const SUPABASE_URL = 'https://ahpkmppjtespemkzmkol.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
-        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: { experimental: { passkey: true } }
+        });
         window.__tcgSupabase = supabaseClient;
+        const ADMIN_EMAIL = 'francesco_delduca@icloud.com';
+        let pendingMfaFactorId = null;
 
         const CART_MIN_ORDER = 20;
         const SELLER_MIN_CATALOG_CENTS = 5000;
@@ -1170,8 +1282,56 @@
         let pingInterval = null;
         let typingTimeout = null;
 
+        function isAdminEmail(email) {
+            return String(email || '').trim().toLowerCase() === ADMIN_EMAIL;
+        }
+
+        function decodeJwtPayload(token) {
+            try {
+                const part = String(token || '').split('.')[1] || '';
+                const padded = part.replace(/-/g, '+').replace(/_/g, '/');
+                return JSON.parse(decodeURIComponent(atob(padded).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function sessionIsStrong(session) {
+            const p = decodeJwtPayload(session && session.access_token);
+            if (p.aal === 'aal2') return true;
+            const amr = Array.isArray(p.amr) ? p.amr : [];
+            return amr.some(x => /totp|otp|mfa|webauthn|wna|passkey/i.test(String((x && x.method) || x || '')));
+        }
+
         function isAdmin() {
-            return currentUser && currentUser.email.toLowerCase() === 'francesco_delduca@icloud.com';
+            return !!(currentUser && isAdminEmail(currentUser.email) && currentUser.strongAuth);
+        }
+
+        function accountReady() {
+            return !!(currentUser && currentUser.emailConfirmed && currentUser.phoneConfirmed && currentUser.strongAuth);
+        }
+
+        function normalizeItPhone(raw) {
+            let s = String(raw || '').replace(/[\s().-]/g, '');
+            if (s.startsWith('00')) s = '+' + s.slice(2);
+            if (s.startsWith('+')) return s;
+            if (s.startsWith('39') && s.length > 10) return '+' + s;
+            if (s.startsWith('3')) return '+39' + s;
+            return s;
+        }
+
+        function isValidE164(phone) {
+            return /^\+[1-9]\d{7,14}$/.test(phone);
+        }
+
+        function requireVerifiedUser() {
+            if (!currentUser) { openAuthModal(); return false; }
+            if (!accountReady()) {
+                startAccountVerification();
+                showNotification('Completa verifica email, cellulare e 2FA.', 'error');
+                return false;
+            }
+            return true;
         }
 
         let accountMetaCache = {};
@@ -1320,15 +1480,6 @@
             const cached = profileByIdCache[id];
             if (cached && Date.now() - cached.t < 60000) return cached.data;
             try {
-                const { data, error } = await supabaseClient.from('profiles').select('id,name,address,city,location').eq('id', id).maybeSingle();
-                if (!error && data) {
-                    profileByIdCache[id] = { t: Date.now(), data };
-                    return data;
-                }
-            } catch (e) {
-                console.warn('Lettura profiles client:', e);
-            }
-            try {
                 const res = await fetch(`/api/profiles/${encodeURIComponent(id)}`, { cache: 'no-store' });
                 const json = await res.json();
                 if (json && json.found) {
@@ -1448,11 +1599,14 @@
                     email: session.user.email,
                     name: profileName,
                     address: profileAddress,
-                    phone: session.user.user_metadata?.phone || '',
                     wallet: 0.00,
                     iban: '',
                     accountType: normalizeAccountType(savedProfile.userType || savedProfile.accountType || 'privato'),
-                    partner: false
+                    partner: false,
+                    phone: session.user.phone || session.user.user_metadata?.phone || savedProfile.phone || '',
+                    emailConfirmed: !!(session.user.email_confirmed_at || session.user.confirmed_at),
+                    phoneConfirmed: !!session.user.phone_confirmed_at,
+                    strongAuth: sessionIsStrong(session)
                 };
                 try {
                     const flags = await fetch('/api/users/' + encodeURIComponent(currentUser.id)).then(r => r.json());
@@ -1461,7 +1615,7 @@
                     accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
                 } catch (e) {}
 
-                if (!currentUser.name || !currentUser.address) {
+                if (accountReady() && (!currentUser.name || !currentUser.address)) {
                     showOverlay('onboarding-wizard-modal');
                 } else {
                     hideOverlay('onboarding-wizard-modal');
@@ -1478,6 +1632,12 @@
             
             if (currentUser) {
                 startUnreadMessagesPolling();
+                const box = document.getElementById('admin-2fa-box');
+                if (box) box.style.display = 'block';
+                if (!accountReady()) startAccountVerification();
+                else hideOverlay('mfa-modal');
+            } else {
+                hideOverlay('mfa-modal');
             }
         }
 
@@ -1618,33 +1778,269 @@
             }
         }
 
-        async function handleSupabaseAuth(e) {
+        function switchAuthPane(which) {
+            const login = which === 'login';
+            document.getElementById('auth-login-form').classList.toggle('active', login);
+            document.getElementById('auth-register-form').classList.toggle('active', !login);
+            document.getElementById('tab-login-btn').classList.toggle('active', login);
+            document.getElementById('tab-register-btn').classList.toggle('active', !login);
+        }
+
+        function setAuthMsg(id, text, isError) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.style.color = isError ? 'var(--heart-red)' : 'var(--accent-neon)';
+            el.innerText = text;
+        }
+
+        async function handleLogin(e) {
             e.preventDefault();
-            const email = document.getElementById('auth-email').value.trim();
-            const password = document.getElementById('auth-password').value;
-            const msgEl = document.getElementById('auth-message');
-            msgEl.innerText = "Autenticazione in corso...";
-
-            let { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+            setAuthMsg('login-message', 'Accesso in corso...');
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (error) {
-                let signUpRes = await supabaseClient.auth.signUp({ email, password });
-                if (signUpRes.error) {
-                    msgEl.style.color = 'var(--heart-red)';
-                    msgEl.innerText = signUpRes.error.message;
-                } else {
-                    msgEl.style.color = 'var(--accent-neon)';
-                    msgEl.innerText = "✉️ Registrazione avvenuta! Controlla la tua email per confermare l'account.";
+                setAuthMsg('login-message', error.message, true);
+                return;
+            }
+            closeAuthModal();
+            await initAuth();
+            loadCardsFromSupabase();
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const name = document.getElementById('register-name').value.trim();
+            const email = document.getElementById('register-email').value.trim();
+            const phone = normalizeItPhone(document.getElementById('register-phone').value);
+            const password = document.getElementById('register-password').value;
+            const password2 = document.getElementById('register-password-2').value;
+            if (password !== password2) {
+                setAuthMsg('register-message', 'Le password non coincidono.', true);
+                return;
+            }
+            if (!isValidE164(phone)) {
+                setAuthMsg('register-message', 'Inserisci un cellulare italiano valido.', true);
+                return;
+            }
+            setAuthMsg('register-message', 'Creazione account...');
+            const { data, error } = await supabaseClient.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: { full_name: name, phone },
+                    emailRedirectTo: window.location.origin
                 }
-            } else {
-                msgEl.style.color = 'var(--accent-neon)';
-                msgEl.innerText = "Accesso effettuato!";
-                setTimeout(() => {
-                    closeAuthModal();
-                    initAuth();
-                    loadCardsFromSupabase();
-                    showNotification('Accesso eseguito con successo!');
-                }, 800);
+            });
+            if (error) {
+                setAuthMsg('register-message', error.message, true);
+                return;
+            }
+            try {
+                localStorage.setItem('tcg_pending_phone', phone);
+                localStorage.setItem(`tcg_vault_profile_${data.user && data.user.id || email}`, JSON.stringify({ name, phone }));
+            } catch (err) {}
+            setAuthMsg('register-message', 'Account creato. Conferma la email dal link che ti abbiamo inviato, poi accedi.');
+            if (data.session) {
+                closeAuthModal();
+                await initAuth();
+            }
+        }
+
+        function setMfaMessage(text, isError) {
+            const el = document.getElementById('mfa-message');
+            if (!el) return;
+            el.style.color = isError ? 'var(--heart-red)' : 'var(--accent-neon)';
+            el.innerText = text;
+        }
+
+        function setVerifyPane(which) {
+            document.getElementById('verify-email-pane').style.display = which === 'email' ? 'block' : 'none';
+            document.getElementById('verify-phone-pane').style.display = which === 'phone' ? 'block' : 'none';
+            document.getElementById('verify-mfa-pane').style.display = which === 'mfa' ? 'block' : 'none';
+            document.getElementById('vstep-email').className = 'verify-step' + (which === 'email' ? ' now' : ' done');
+            document.getElementById('vstep-phone').className = 'verify-step' + (which === 'phone' ? ' now' : (which === 'mfa' ? ' done' : ''));
+            document.getElementById('vstep-mfa').className = 'verify-step' + (which === 'mfa' ? ' now' : '');
+            const titles = { email: 'Conferma email', phone: 'Conferma cellulare', mfa: 'Attiva 2FA' };
+            document.getElementById('verify-title').innerText = titles[which] || 'Verifica account';
+        }
+
+        async function startAccountVerification() {
+            if (!currentUser) return;
+            showOverlay('mfa-modal');
+            closeAuthModal();
+            if (!currentUser.emailConfirmed) {
+                setVerifyPane('email');
+                setMfaMessage('Apri la casella (e lo spam) e clicca il link di conferma.');
+                return;
+            }
+            if (!currentUser.phoneConfirmed) {
+                setVerifyPane('phone');
+                const pending = currentUser.phone || localStorage.getItem('tcg_pending_phone') || '';
+                const input = document.getElementById('verify-phone-input');
+                if (input && pending) input.value = pending;
+                setMfaMessage('Invia il codice SMS e inseriscilo qui.');
+                return;
+            }
+            setVerifyPane('mfa');
+            await startAdminSecondFactor();
+        }
+
+        async function resendEmailVerify() {
+            try {
+                const { error } = await supabaseClient.auth.resend({ type: 'signup', email: currentUser.email });
+                if (error) throw error;
+                setMfaMessage('Mail inviata di nuovo.');
+            } catch (err) {
+                setMfaMessage(err.message || 'Invio mail non riuscito.', true);
+            }
+        }
+
+        async function sendPhoneOtp() {
+            const phone = normalizeItPhone(document.getElementById('verify-phone-input').value);
+            if (!isValidE164(phone)) {
+                setMfaMessage('Numero non valido.', true);
+                return;
+            }
+            setMfaMessage('Invio SMS...');
+            const { error } = await supabaseClient.auth.updateUser({ phone });
+            if (error) {
+                setMfaMessage(error.message + ' — In Supabase attiva Authentication → Phone (SMS).', true);
+                return;
+            }
+            try { localStorage.setItem('tcg_pending_phone', phone); } catch (e) {}
+            setMfaMessage('Codice inviato. Inseriscilo sotto.');
+        }
+
+        async function confirmPhoneOtp() {
+            const phone = normalizeItPhone(document.getElementById('verify-phone-input').value);
+            const token = String(document.getElementById('verify-phone-code').value || '').replace(/\s/g, '');
+            if (!token) {
+                setMfaMessage('Inserisci il codice SMS.', true);
+                return;
+            }
+            const { error } = await supabaseClient.auth.verifyOtp({ phone, token, type: 'phone_change' });
+            if (error) {
+                setMfaMessage(error.message, true);
+                return;
+            }
+            try { localStorage.removeItem('tcg_pending_phone'); } catch (e) {}
+            await initAuth();
+        }
+
+        async function startAdminSecondFactor() {
+            pendingMfaFactorId = null;
+            const enrollWrap = document.getElementById('mfa-enroll-wrap');
+            if (enrollWrap) enrollWrap.style.display = 'none';
+            setMfaMessage('Usa Face ID oppure il codice dell\'app Password.');
+            try {
+                const { data, error } = await supabaseClient.auth.mfa.listFactors();
+                if (error) throw error;
+                const totp = (data && data.totp ? data.totp : []).filter(f => f.status === 'verified');
+                if (totp.length) {
+                    pendingMfaFactorId = totp[0].id;
+                    return;
+                }
+                const enrolled = await supabaseClient.auth.mfa.enroll({
+                    factorType: 'totp',
+                    friendlyName: 'Password Apple'
+                });
+                if (enrolled.error) {
+                    setMfaMessage(enrolled.error.message + ' — In Supabase: Authentication → MFA, attiva TOTP.', true);
+                    return;
+                }
+                pendingMfaFactorId = enrolled.data.id;
+                const qr = document.getElementById('mfa-qr');
+                if (qr && enrolled.data.totp && enrolled.data.totp.qr_code) {
+                    qr.src = enrolled.data.totp.qr_code;
+                    enrollWrap.style.display = 'block';
+                }
+            } catch (err) {
+                setMfaMessage(err.message || '2FA non disponibile. Attiva MFA in Supabase.', true);
+            }
+        }
+
+        async function finishAdminVerified() {
+            hideOverlay('mfa-modal');
+            await initAuth();
+            showNotification('Account verificato: email, telefono e 2FA attivi.');
+        }
+
+        async function verifyAdminPasskey() {
+            setMfaMessage('Attendi Face ID...');
+            try {
+                if (typeof supabaseClient.auth.registerPasskey === 'function') {
+                    const listed = await supabaseClient.auth.passkey.list().catch(() => ({ data: [] }));
+                    const hasPasskey = listed && listed.data && listed.data.length;
+                    if (!hasPasskey) {
+                        const reg = await supabaseClient.auth.registerPasskey();
+                        if (reg.error) throw reg.error;
+                    }
+                }
+                const { error } = await supabaseClient.auth.signInWithPasskey();
+                if (error) throw error;
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                if (!sessionIsStrong(session)) {
+                    setMfaMessage('Passkey ok. Inserisci anche il codice 2FA una volta per attivare l\'admin.', true);
+                    return;
+                }
+                await finishAdminVerified();
+            } catch (err) {
+                setMfaMessage(err.message || 'Passkey non riuscita. Attiva Passkeys in Supabase (Authentication → Passkeys, dominio tcg-vault.it).', true);
+            }
+        }
+
+        async function verifyAdminTotp() {
+            const code = String((document.getElementById('mfa-code') || {}).value || '').replace(/\s/g, '');
+            if (!code || code.length < 6) {
+                setMfaMessage('Inserisci il codice a 6 cifre.', true);
+                return;
+            }
+            try {
+                if (!pendingMfaFactorId) {
+                    const { data } = await supabaseClient.auth.mfa.listFactors();
+                    const totp = (data && data.totp ? data.totp : []).filter(f => f.status === 'verified' || f.status === 'unverified');
+                    pendingMfaFactorId = totp[0] && totp[0].id;
+                }
+                if (!pendingMfaFactorId) throw new Error('Fattore 2FA assente. Ricarica e riprova.');
+                const challenge = await supabaseClient.auth.mfa.challenge({ factorId: pendingMfaFactorId });
+                if (challenge.error) throw challenge.error;
+                const verified = await supabaseClient.auth.mfa.verify({
+                    factorId: pendingMfaFactorId,
+                    challengeId: challenge.data.id,
+                    code
+                });
+                if (verified.error) throw verified.error;
+                await finishAdminVerified();
+            } catch (err) {
+                setMfaMessage(err.message || 'Codice non valido.', true);
+            }
+        }
+
+        async function handlePasskeySignIn() {
+            setAuthMsg('login-message', 'Attendi Face ID...');
+            try {
+                const { error } = await supabaseClient.auth.signInWithPasskey();
+                if (error) throw error;
+                closeAuthModal();
+                await initAuth();
+                loadCardsFromSupabase();
+                showNotification('Accesso con passkey riuscito.');
+            } catch (err) {
+                setAuthMsg('login-message', err.message || 'Passkey non disponibile. Prima accedi con password e collegalo dal profilo.', true);
+            }
+        }
+
+        async function registerSitePasskey() {
+            const msg = document.getElementById('admin-2fa-msg');
+            if (msg) msg.innerText = 'Attendi Face ID...';
+            try {
+                const { error } = await supabaseClient.auth.registerPasskey();
+                if (error) throw error;
+                if (msg) msg.innerText = 'Passkey collegata a questo sito.';
+                showNotification('Passkey del sito salvata.');
+            } catch (err) {
+                if (msg) msg.innerText = err.message || 'Attiva Authentication → Passkeys in Supabase (RP ID: tcg-vault.it).';
             }
         }
 
@@ -1652,6 +2048,7 @@
             await supabaseClient.auth.signOut();
             currentUser = null;
             closeChat();
+            hideOverlay('mfa-modal');
             if (unreadCheckInterval) clearInterval(unreadCheckInterval);
             updateHeaderUI();
             showNotification('Logout effettuato.');
@@ -2397,7 +2794,7 @@
         }
 
         async function openStripeCheckoutModal() {
-            if (!currentUser) { showNotification('Accedi per procedere.', 'error'); closeDetailModal(); openAuthModal(); return; }
+            if (!requireVerifiedUser()) { closeDetailModal(); return; }
             if (selectedCard.is_sold) { showNotification('Prodotto già venduto!', 'error'); return; }
             if (selectedCard.user_id === currentUser.id) { showNotification('Non puoi comprare un tuo annuncio!', 'error'); return; }
             
@@ -2514,11 +2911,6 @@
                     })
                 });
                 selectedCard.is_sold = true;
-                
-                await supabaseClient
-                    .from('cards')
-                    .update({ is_sold: true })
-                    .eq('id', selectedCard.id);
 
                 pendingPaymentOrderId = null;
                 closeStripeCheckoutModal();
@@ -2530,7 +2922,7 @@
         });
 
         function makeOffer() {
-            if (!currentUser) { showNotification('Accedi prima di fare un\'offerta.', 'error'); openAuthModal(); return; }
+            if (!requireVerifiedUser()) return;
             const offer = prompt("Inserisci la tua offerta in euro (€):");
             if (offer && !isNaN(offer)) {
                 showNotification(`Offerta di €${parseFloat(offer).toFixed(2)} inviata al venditore!`);
@@ -2538,7 +2930,7 @@
         }
 
         function openChatWithSeller() {
-            if (!currentUser) { showNotification('Accedi per chattare.', 'error'); openAuthModal(); return; }
+            if (!requireVerifiedUser()) return;
             if (selectedCard && selectedCard.user_id === currentUser.id) {
                 showNotification('Questo è il tuo annuncio.', 'error');
                 return;
@@ -2547,7 +2939,7 @@
         }
 
         async function openMyMessagesModal() {
-            if (!currentUser) { showNotification('Accedi per vedere i messaggi.', 'error'); openAuthModal(); return; }
+            if (!requireVerifiedUser()) return;
             
             unreadMessagesCount = 0;
             localStorage.setItem('tcg_unread_msg_count', '0');
@@ -2884,17 +3276,18 @@
         }
 
         function checkAuthAndOpenSellModal() { 
-            if(!currentUser){ openAuthModal(); return; } 
-            
+            if (!requireVerifiedUser()) return;
             if (currentUser.address) {
                 document.getElementById('sell-location').value = currentUser.address;
             }
-
             showOverlay('sell-modal');
         }
 
         function closeSellModal() { hideOverlay('sell-modal'); }
-        function openAuthModal() { showOverlay('auth-modal'); }
+        function openAuthModal() {
+            switchAuthPane('login');
+            showOverlay('auth-modal');
+        }
         function closeAuthModal() { hideOverlay('auth-modal'); }
         function selectCategory(cat, el) { selectedCategory = cat; document.querySelectorAll('.category-card').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyFilters(); }
 

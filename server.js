@@ -5,6 +5,10 @@ const path = require('path');
 const crypto = require('crypto');
 const app = express();
 
+const stripe = process.env.STRIPE_SECRET_KEY
+    ? require('stripe')(process.env.STRIPE_SECRET_KEY)
+    : null;
+
 const corsMiddleware = require('cors');
 app.use(corsMiddleware({ origin: true }));
 app.use((req, res, next) => {
@@ -35,7 +39,29 @@ function loadOrdersFromDisk() {
     }
 }
 
-function fulfillPaidOrder(order) {
+async function markCardsSold(cardIds) {
+    const ids = [...new Set((cardIds || []).map(id => Number(id)).filter(n => Number.isFinite(n)))];
+    if (!ids.length) return;
+    try {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/cards?id=in.(' + ids.join(',') + ')', {
+            method: 'PATCH',
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY,
+                'Content-Type': 'application/json',
+                Prefer: 'return=minimal'
+            },
+            body: JSON.stringify({ is_sold: true })
+        });
+        if (!res.ok) {
+            console.error('Marcatura venduto fallita:', res.status, await res.text());
+        }
+    } catch (err) {
+        console.error('Marcatura venduto fallita:', err.message);
+    }
+}
+
+async function fulfillPaidOrder(order) {
     if (!order || order.escrowNotified) return order;
     order.status = 'paid';
     order.paidAt = new Date().toISOString();
@@ -54,10 +80,11 @@ function fulfillPaidOrder(order) {
         persistMessagesToDisk();
     }
     persistOrdersToDisk();
+    await markCardsSold(order.cardIds && order.cardIds.length ? order.cardIds : [order.cardId]);
     return order;
 }
 
-app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     if (!stripe) return res.status(400).json({ error: 'Stripe non configurato.' });
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
     let event = null;
@@ -73,7 +100,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req,
     if (event.type === 'payment_intent.succeeded') {
         const pi = event.data.object;
         const order = ordersDB.find(o => o.paymentIntentId === pi.id);
-        if (order) fulfillPaidOrder(order);
+        if (order) await fulfillPaidOrder(order);
     }
     res.json({ received: true });
 });
@@ -81,10 +108,6 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req,
 app.use(express.json({ limit: '256kb' }));
 
 app.use(express.static(path.join(__dirname, 'public')));
-
-const stripe = process.env.STRIPE_SECRET_KEY
-    ? require('stripe')(process.env.STRIPE_SECRET_KEY)
-    : null;
 
 let messagesDB = [];
 let reviewsDB = [];
@@ -329,6 +352,12 @@ ensureDefaultPromoCodes();
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ahpkmppjtespemkzmkol.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+try {
+    const payload = JSON.parse(Buffer.from(String(SUPABASE_KEY).split('.')[1], 'base64url').toString());
+    if (payload.role === 'anon') {
+        console.warn('Manca SUPABASE_SERVICE_ROLE_KEY: con RLS stretto il server non potrà marcare gli annunci come venduti.');
+    }
+} catch (e) {}
 const CART_MIN_ORDER = 20;
 const authUserCache = new Map();
 const rateBuckets = {};
@@ -364,7 +393,20 @@ async function getAuthUser(req) {
         if (!res.ok) return null;
         const row = await res.json();
         if (!row || !row.id) return null;
-        const user = { id: String(row.id), email: String(row.email || '').toLowerCase() };
+        let payload = {};
+        try {
+            payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString());
+        } catch (e) {}
+        const amr = Array.isArray(payload.amr) ? payload.amr : [];
+        const strong = payload.aal === 'aal2' || amr.some(x => /totp|otp|mfa|webauthn|wna|passkey/i.test(String((x && x.method) || x || '')));
+        const user = {
+            id: String(row.id),
+            email: String(row.email || '').toLowerCase(),
+            aal: payload.aal || 'aal1',
+            strongAuth: !!strong,
+            emailConfirmed: !!(row.email_confirmed_at || row.confirmed_at),
+            phoneConfirmed: !!row.phone_confirmed_at
+        };
         authUserCache.set(token, { user, exp: Date.now() + 15000 });
         if (authUserCache.size > 500) {
             const first = authUserCache.keys().next().value;
@@ -380,6 +422,13 @@ async function requireAuth(req, res) {
     const user = await getAuthUser(req);
     if (!user) {
         res.status(401).json({ success: false, error: 'Accesso richiesto.' });
+        return null;
+    }
+    if (!user.emailConfirmed || !user.phoneConfirmed || !user.strongAuth) {
+        res.status(403).json({
+            success: false,
+            error: 'Completa verifica email, cellulare e 2FA prima di continuare.'
+        });
         return null;
     }
     req.auth = user;
@@ -399,6 +448,10 @@ async function requireAdmin(req, res) {
     if (!user) return null;
     if (!isAdminEmail(user.email)) {
         res.status(403).json({ success: false, error: 'Solo Admin Supremo.' });
+        return null;
+    }
+    if (!user.strongAuth) {
+        res.status(403).json({ success: false, error: 'Completa la verifica 2FA (passkey o codice).' });
         return null;
     }
     return user;
@@ -713,7 +766,7 @@ app.post('/api/payments/confirm', async (req, res) => {
         } else if (!stripe) {
             return res.status(400).json({ success: false, error: 'Impossibile verificare il pagamento.' });
         }
-        fulfillPaidOrder(order);
+        await fulfillPaidOrder(order);
         res.json({ success: true, order });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
@@ -1266,4 +1319,6 @@ app.post('/api/vaultbot', (req, res) => {
 const PORT = process.env.PORT || 4242;
 app.listen(PORT, () => {
     console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
+    console.log('Stripe:', stripe ? 'configurato' : 'manca STRIPE_SECRET_KEY');
+    console.log('Webhook:', process.env.STRIPE_WEBHOOK_SECRET ? 'configurato' : 'manca STRIPE_WEBHOOK_SECRET');
 });

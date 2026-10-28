@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Codici promo negozio - TCG Vault</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0"></script>
     <script src="auth-fetch.js"></script>
     <style>
         :root { --bg:#090d16; --panel:#131b2e; --accent:#00ff88; --text:#f8fafc; --muted:#94a3b8; --border:rgba(255,255,255,.08); --red:#ff4757; }
@@ -56,7 +56,9 @@
         </div>
     </div>
     <script>
-        const supabaseClient = window.supabase.createClient('https://ahpkmppjtespemkzmkol.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk');
+        const supabaseClient = window.supabase.createClient('https://ahpkmppjtespemkzmkol.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk', {
+            auth: { experimental: { passkey: true } }
+        });
         window.__tcgSupabase = supabaseClient;
         const ADMIN_EMAIL = 'francesco_delduca@icloud.com';
         let adminEmail = '';
@@ -65,8 +67,15 @@
             const { data: { session } } = await supabaseClient.auth.getSession();
             const gate = document.getElementById('gate');
             const email = session && session.user && session.user.email ? session.user.email.toLowerCase() : '';
-            if (email !== ADMIN_EMAIL) {
-                gate.innerHTML = '<p class="muted">Pannello riservato all\'Admin Supremo. Accedi con l\'account admin dal marketplace.</p>';
+            function jwtStrong(token) {
+                try {
+                    const p = JSON.parse(atob(String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+                    if (p.aal === 'aal2') return true;
+                    return (p.amr || []).some(x => /totp|otp|mfa|webauthn|passkey/i.test(String((x && x.method) || x || '')));
+                } catch (e) { return false; }
+            }
+            if (email !== ADMIN_EMAIL || !jwtStrong(session.access_token)) {
+                gate.innerHTML = '<p class="muted">Pannello riservato all\'Admin Supremo. Accedi dal marketplace e completa la 2FA (Face ID o codice).</p>';
                 return;
             }
             adminEmail = email;
