@@ -140,6 +140,7 @@ function loadMessagesFromDisk() {
 
 function persistMessagesToDisk() {
     persistJsonFile('messages.json', messagesDB);
+    persistMessagesToSupabase().catch(err => console.error('Salvataggio messaggi Supabase:', err.message));
 }
 
 function idsMatch(a, b) {
@@ -449,6 +450,81 @@ async function loadOrdersFromSupabase() {
         }
     } catch (err) {
         console.error('Lettura orders Supabase:', err.message);
+    }
+}
+
+function messageToRow(m) {
+    return {
+        id: m.id,
+        sender_id: String(m.senderId || ''),
+        receiver_id: String(m.receiverId || ''),
+        text: m.text || null,
+        offer_price: m.offerPrice != null && m.offerPrice !== '' ? Number(m.offerPrice) : null,
+        card_id: m.cardId != null ? String(m.cardId) : null,
+        sender_name: m.senderName || null,
+        is_escrow_alert: !!m.isEscrowAlert,
+        order_id: m.orderId || null,
+        created_at: m.timestamp || new Date().toISOString()
+    };
+}
+
+function rowToMessage(r) {
+    return {
+        id: r.id,
+        senderId: r.sender_id,
+        receiverId: r.receiver_id,
+        text: r.text,
+        offerPrice: r.offer_price != null ? Number(r.offer_price) : null,
+        cardId: r.card_id,
+        senderName: r.sender_name,
+        isEscrowAlert: !!r.is_escrow_alert,
+        orderId: r.order_id,
+        timestamp: r.created_at
+    };
+}
+
+async function persistMessagesToSupabase() {
+    if (!messagesDB.length) return;
+    const res = await fetch(SUPABASE_URL + '/rest/v1/messages', {
+        method: 'POST',
+        headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(messagesDB.map(messageToRow))
+    });
+    if (!res.ok) {
+        console.error('Salvataggio messages Supabase:', res.status, await res.text());
+    }
+}
+
+async function loadMessagesFromSupabase() {
+    try {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/messages?select=*&order=created_at.asc', {
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY
+            }
+        });
+        if (!res.ok) {
+            console.error('Lettura messages Supabase:', res.status, await res.text());
+            return;
+        }
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length) {
+            messagesDB = rows.map(rowToMessage);
+            persistJsonFile('messages.json', messagesDB, true);
+            console.log('Messaggi caricati da Supabase:', messagesDB.length);
+            return;
+        }
+        if (messagesDB.length) {
+            await persistMessagesToSupabase();
+            console.log('Messaggi locali migrati su Supabase:', messagesDB.length);
+        }
+    } catch (err) {
+        console.error('Lettura messages Supabase:', err.message);
     }
 }
 const authUserCache = new Map();
@@ -1398,7 +1474,7 @@ app.post('/api/vaultbot', (req, res) => {
 });
 
 const PORT = process.env.PORT || 4242;
-loadOrdersFromSupabase().finally(() => {
+Promise.all([loadOrdersFromSupabase(), loadMessagesFromSupabase()]).finally(() => {
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
         console.log('Stripe:', stripe ? 'configurato' : 'manca STRIPE_SECRET_KEY');
