@@ -424,13 +424,6 @@ async function requireAuth(req, res) {
         res.status(401).json({ success: false, error: 'Accesso richiesto.' });
         return null;
     }
-    if (!user.emailConfirmed || !user.strongAuth) {
-        res.status(403).json({
-            success: false,
-            error: 'Completa verifica email e 2FA prima di continuare.'
-        });
-        return null;
-    }
     req.auth = user;
     return user;
 }
@@ -448,10 +441,6 @@ async function requireAdmin(req, res) {
     if (!user) return null;
     if (!isAdminEmail(user.email)) {
         res.status(403).json({ success: false, error: 'Solo Admin Supremo.' });
-        return null;
-    }
-    if (!user.strongAuth) {
-        res.status(403).json({ success: false, error: 'Completa la verifica 2FA (passkey o codice).' });
         return null;
     }
     return user;

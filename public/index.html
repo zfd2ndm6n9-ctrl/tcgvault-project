@@ -928,7 +928,7 @@
                 </form>
                 <div id="admin-2fa-box" style="display:none;margin-top:22px;padding:16px;border:1px solid var(--border-color);border-radius:12px;">
                     <h3 style="margin:0 0 8px;color:var(--admin-gold);">Sicurezza account</h3>
-                    <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 12px;">Collega Face ID / passkey. Email e 2FA restano attivi; il cellulare è facoltativo.</p>
+                    <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 12px;">Passkey e 2FA sono facoltative. Puoi collegarle quando vuoi.</p>
                     <button type="button" class="btn-outline" onclick="registerSitePasskey()">Collega Face ID / passkey</button>
                     <p id="admin-2fa-msg" style="font-size:.85rem;margin-top:10px;color:var(--accent-neon);"></p>
                 </div>
@@ -1090,7 +1090,7 @@
                 <div class="auth-brand"><span>TCG Vault</span></div>
                 <button class="close-btn" onclick="closeAuthModal()">&times;</button>
             </div>
-            <p class="auth-lead">Accedi con email e password, poi conferma la mail e la 2FA. Il cellulare è facoltativo.</p>
+            <p class="auth-lead">Accedi con email e password. Passkey, cellulare e 2FA sono facoltativi.</p>
             <div class="auth-tabs">
                 <button type="button" class="auth-tab active" id="tab-login-btn" onclick="switchAuthPane('login')">Accedi</button>
                 <button type="button" class="auth-tab" id="tab-register-btn" onclick="switchAuthPane('register')">Crea account</button>
@@ -1113,9 +1113,9 @@
 
             <form id="auth-register-form" class="auth-pane" onsubmit="handleRegister(event)">
                 <div class="auth-checks">
-                    <div class="auth-check">1. <b>Email</b> — link di conferma</div>
-                    <div class="auth-check">2. <b>2FA</b> — Face ID o app Password</div>
-                    <div class="auth-check">3. <b>Cellulare</b> — facoltativo, SMS in seguito</div>
+                    <div class="auth-check">1. <b>Email e password</b> — per entrare</div>
+                    <div class="auth-check">2. <b>Passkey / 2FA</b> — facoltativa, dal profilo</div>
+                    <div class="auth-check">3. <b>Cellulare</b> — facoltativo</div>
                 </div>
                 <div class="form-group">
                     <label>Nome completo</label>
@@ -1312,11 +1312,11 @@
         }
 
         function isAdmin() {
-            return !!(currentUser && isAdminEmail(currentUser.email) && currentUser.strongAuth);
+            return !!(currentUser && isAdminEmail(currentUser.email));
         }
 
         function accountReady() {
-            return !!(currentUser && currentUser.emailConfirmed && currentUser.strongAuth);
+            return !!currentUser;
         }
 
         function normalizeItPhone(raw) {
@@ -1336,7 +1336,7 @@
             if (!currentUser) { openAuthModal(); return false; }
             if (!accountReady()) {
                 startAccountVerification();
-                showNotification('Completa verifica email e 2FA.', 'error');
+                showNotification('Accedi per continuare.', 'error');
                 return false;
             }
             return true;
@@ -1642,8 +1642,7 @@
                 startUnreadMessagesPolling();
                 const box = document.getElementById('admin-2fa-box');
                 if (box) box.style.display = 'block';
-                if (!accountReady()) startAccountVerification();
-                else hideOverlay('mfa-modal');
+                hideOverlay('mfa-modal');
             } else {
                 hideOverlay('mfa-modal');
             }
@@ -1875,16 +1874,7 @@
         }
 
         async function startAccountVerification() {
-            if (!currentUser) return;
-            showOverlay('mfa-modal');
-            closeAuthModal();
-            if (!currentUser.emailConfirmed) {
-                setVerifyPane('email');
-                setMfaMessage('Apri la casella (e lo spam) e clicca il link di conferma.');
-                return;
-            }
-            setVerifyPane('mfa');
-            await startAdminSecondFactor();
+            hideOverlay('mfa-modal');
         }
 
         async function resendEmailVerify() {

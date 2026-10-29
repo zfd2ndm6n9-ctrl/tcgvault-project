@@ -70,15 +70,8 @@
             const { data: { session } } = await supabaseClient.auth.getSession();
             const gate = document.getElementById('gate');
             const email = session && session.user && session.user.email ? session.user.email.toLowerCase() : '';
-            function jwtStrong(token) {
-                try {
-                    const p = JSON.parse(atob(String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-                    if (p.aal === 'aal2') return true;
-                    return (p.amr || []).some(x => /totp|otp|mfa|webauthn|passkey/i.test(String((x && x.method) || x || '')));
-                } catch (e) { return false; }
-            }
-            if (email !== ADMIN_EMAIL || !jwtStrong(session.access_token)) {
-                gate.innerHTML = '<p class="muted">Pannello riservato all\'Admin Supremo. Accedi dal marketplace e completa la 2FA (Face ID o codice).</p>';
+            if (email !== ADMIN_EMAIL) {
+                gate.innerHTML = '<p class="muted">Pannello riservato all\'Admin Supremo. Accedi con l\'account admin dal marketplace.</p>';
                 return;
             }
             adminEmail = email;
