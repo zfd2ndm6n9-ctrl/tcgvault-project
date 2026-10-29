@@ -139,8 +139,75 @@
                 sel.innerHTML = '';
                 return;
             }
-            box.innerHTML = list.map(t => `<div class="event"><strong>${t.title}</strong><div class="muted">${t.game} · ${t.date || ''} ${t.time || ''} · ${t.players.length}/${t.maxPlayers} iscritti · check-in ${t.players.filter(p=>p.checkedIn).length}</div></div>`).join('');
-            sel.innerHTML = list.map(t => `<option value="${t.id}">${t.title}</option>`).join('');
+            box.innerHTML = list.map(t => renderEvent(t)).join('');
+            sel.innerHTML = list.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.title)}</option>`).join('');
+        }
+
+        function escapeHtml(text) {
+            return String(text || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        function playerName(t, id) {
+            const p = (t.players || []).find(x => String(x.userId) === String(id));
+            return p ? p.name : 'Giocatore';
+        }
+
+        function renderEvent(t) {
+            const players = t.players || [];
+            const rounds = t.rounds || [];
+            const round = rounds[rounds.length - 1];
+            const standings = players.filter(p => p.checkedIn).slice().sort((a, b) =>
+                Number(b.matchPoints || 0) - Number(a.matchPoints || 0)
+            );
+            const standHtml = standings.length
+                ? '<ol style="margin:8px 0 0;padding-left:18px;">' + standings.map(p =>
+                    `<li>${escapeHtml(p.name)} — ${Number(p.matchPoints || 0)} pt (${Number(p.wins || 0)}-${Number(p.losses || 0)}-${Number(p.draws || 0)})</li>`
+                ).join('') + '</ol>'
+                : '<p class="muted">Nessun check-in.</p>';
+            const pairHtml = round
+                ? round.pairings.map(p => {
+                    const a = escapeHtml(playerName(t, p.a));
+                    const b = p.b ? escapeHtml(playerName(t, p.b)) : 'BYE';
+                    const done = p.result
+                        ? (p.result === 'bye' ? 'Bye +3' : p.result === 'draw' ? 'Pareggio' : ('Vince ' + escapeHtml(playerName(t, p.result))))
+                        : '';
+                    const actions = (!p.result && p.b)
+                        ? `<button class="btn" style="padding:6px 10px;margin:4px 4px 0 0;" onclick="reportMatch('${t.id}', ${p.table}, '${p.a}')">${a}</button>
+                           <button class="btn" style="padding:6px 10px;margin:4px 4px 0 0;" onclick="reportMatch('${t.id}', ${p.table}, '${p.b}')">${b}</button>
+                           <button class="btn btn-outline" style="padding:6px 10px;margin:4px 0 0;" onclick="reportMatch('${t.id}', ${p.table}, 'draw')">Pareggio</button>`
+                        : `<span class="muted">${escapeHtml(done)}</span>`;
+                    return `<div style="margin:8px 0;padding:8px 0;border-top:1px solid var(--border);"><strong>Tavolo ${p.table}</strong> · ${a} vs ${b}<div>${actions}</div></div>`;
+                }).join('')
+                : '<p class="muted">Nessun round. Check-in e poi Avvia round Swiss.</p>';
+            return `<div class="event">
+                <strong>${escapeHtml(t.title)}</strong>
+                <div class="muted">${escapeHtml(t.game)} · ${escapeHtml(t.date || '')} ${escapeHtml(t.time || '')} · ${players.length}/${t.maxPlayers} iscritti · check-in ${players.filter(p=>p.checkedIn).length} · ${escapeHtml(t.status || 'open')} · round ${rounds.length}</div>
+                <button class="btn" style="margin-top:10px;" onclick="startRound('${t.id}')">Avvia / prossimo round Swiss</button>
+                <h3 style="margin:14px 0 0;font-size:1rem;">Classifica</h3>
+                ${standHtml}
+                <h3 style="margin:14px 0 0;font-size:1rem;">Abbinamenti</h3>
+                ${pairHtml}
+            </div>`;
+        }
+
+        async function startRound(id) {
+            const data = await fetch('/api/tournaments/' + encodeURIComponent(id) + '/round', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }).then(r => r.json());
+            if (!data.success) alert(data.error || 'Impossibile avviare il round.');
+            loadEvents();
+        }
+
+        async function reportMatch(id, table, result) {
+            const data = await fetch('/api/tournaments/' + encodeURIComponent(id) + '/match', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ table, result })
+            }).then(r => r.json());
+            if (!data.success) alert(data.error || 'Risultato non salvato.');
+            loadEvents();
         }
 
         async function checkIn(token) {

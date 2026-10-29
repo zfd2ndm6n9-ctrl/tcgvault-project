@@ -650,7 +650,10 @@ function tournamentToRow(t) {
         fee: t.fee != null && t.fee !== '' ? Number(t.fee) : null,
         description: t.description || null,
         status: t.status || 'open',
-        players: Array.isArray(t.players) ? t.players : [],
+        players: {
+            enrolled: Array.isArray(t.players) ? t.players : [],
+            rounds: Array.isArray(t.rounds) ? t.rounds : []
+        },
         created_at: t.createdAt || new Date().toISOString()
     };
 }
@@ -669,7 +672,12 @@ function rowToTournament(r) {
         fee: Number(r.fee || 0),
         description: r.description || '',
         status: r.status,
-        players: Array.isArray(r.players) ? r.players : [],
+        players: Array.isArray(r.players)
+            ? r.players
+            : ((r.players && r.players.enrolled) || []),
+        rounds: Array.isArray(r.players)
+            ? []
+            : ((r.players && r.players.rounds) || []),
         createdAt: r.created_at
     };
 }
@@ -1071,9 +1079,12 @@ async function requireAdmin(req, res) {
 }
 
 async function getCardsByIds(ids) {
-    const unique = [...new Set((ids || []).map(id => String(id)).filter(Boolean))].slice(0, 40);
+    const unique = [...new Set((ids || []).map(id => String(id).trim()).filter(Boolean))].slice(0, 40);
     if (!unique.length) return [];
-    const list = unique.map(id => '"' + id.replace(/"/g, '') + '"').join(',');
+    const numeric = unique.every(id => /^\d+$/.test(id));
+    const list = numeric
+        ? unique.join(',')
+        : unique.map(id => '"' + id.replace(/"/g, '') + '"').join(',');
     const res = await fetch(SUPABASE_URL + '/rest/v1/cards?id=in.(' + list + ')&select=id,price,user_id,title,is_sold,description', {
         headers: {
             apikey: SUPABASE_KEY,
@@ -1081,6 +1092,10 @@ async function getCardsByIds(ids) {
         }
     });
     const data = await res.json().catch(() => []);
+    if (!res.ok) {
+        console.error('Lettura cards per pagamento:', res.status, data);
+        return [];
+    }
     return Array.isArray(data) ? data : [];
 }
 
@@ -1879,6 +1894,110 @@ app.post('/api/shops/confirm', async (req, res) => {
     }
 });
 
+function alreadyPlayed(rounds, a, b) {
+    return (rounds || []).some(round => (round.pairings || []).some(p =>
+        (String(p.a) === String(a) && String(p.b) === String(b)) ||
+        (String(p.a) === String(b) && String(p.b) === String(a))
+    ));
+}
+
+function findPlayer(tournament, userId) {
+    return (tournament.players || []).find(p => String(p.userId) === String(userId));
+}
+
+function applyMatchResult(tournament, pairing, result) {
+    const pa = findPlayer(tournament, pairing.a);
+    const pb = pairing.b ? findPlayer(tournament, pairing.b) : null;
+    if (pa) {
+        pa.wins = Number(pa.wins || 0);
+        pa.losses = Number(pa.losses || 0);
+        pa.draws = Number(pa.draws || 0);
+        pa.matchPoints = Number(pa.matchPoints || 0);
+        pa.opponents = pa.opponents || [];
+    }
+    if (pb) {
+        pb.wins = Number(pb.wins || 0);
+        pb.losses = Number(pb.losses || 0);
+        pb.draws = Number(pb.draws || 0);
+        pb.matchPoints = Number(pb.matchPoints || 0);
+        pb.opponents = pb.opponents || [];
+    }
+    if (result === 'bye' && pa) {
+        pa.wins += 1;
+        pa.matchPoints += 3;
+        pairing.result = 'bye';
+        return;
+    }
+    if (!pa || !pb) return;
+    pa.opponents.push(String(pb.userId));
+    pb.opponents.push(String(pa.userId));
+    if (result === 'draw') {
+        pa.draws += 1;
+        pb.draws += 1;
+        pa.matchPoints += 1;
+        pb.matchPoints += 1;
+    } else if (String(result) === String(pa.userId)) {
+        pa.wins += 1;
+        pb.losses += 1;
+        pa.matchPoints += 3;
+    } else {
+        pb.wins += 1;
+        pa.losses += 1;
+        pb.matchPoints += 3;
+    }
+    pairing.result = result;
+}
+
+function pairSwiss(tournament) {
+    const active = (tournament.players || []).filter(p => p.checkedIn && !p.dropped);
+    const sorted = active.slice().sort((a, b) =>
+        Number(b.matchPoints || 0) - Number(a.matchPoints || 0) ||
+        String(a.name || '').localeCompare(String(b.name || ''))
+    );
+    const used = new Set();
+    const pairings = [];
+    let table = 1;
+    sorted.forEach((player, i) => {
+        if (used.has(String(player.userId))) return;
+        let partner = null;
+        for (let j = i + 1; j < sorted.length; j++) {
+            const cand = sorted[j];
+            if (used.has(String(cand.userId))) continue;
+            if (!alreadyPlayed(tournament.rounds, player.userId, cand.userId)) {
+                partner = cand;
+                break;
+            }
+        }
+        if (!partner) {
+            for (let j = i + 1; j < sorted.length; j++) {
+                if (!used.has(String(sorted[j].userId))) {
+                    partner = sorted[j];
+                    break;
+                }
+            }
+        }
+        used.add(String(player.userId));
+        if (!partner) {
+            pairings.push({ table: table++, a: player.userId, b: null, result: null });
+        } else {
+            used.add(String(partner.userId));
+            pairings.push({ table: table++, a: player.userId, b: partner.userId, result: null });
+        }
+    });
+    return pairings;
+}
+
+function requireShopTournament(req, tournament) {
+    if (!tournament) return 'Torneo non trovato.';
+    if (String(tournament.shopId) !== String(req.auth.id) && !isAdminEmail(req.auth.email)) {
+        return 'Operazione non autorizzata.';
+    }
+    if (!isShopActive(req.auth.id) && !isAdminEmail(req.auth.email)) {
+        return 'Abbonamento negozio non attivo.';
+    }
+    return null;
+}
+
 app.get('/api/tournaments', (req, res) => {
     const list = tournamentsDB
         .filter(t => t.status !== 'cancelled')
@@ -1924,6 +2043,7 @@ app.post('/api/tournaments', async (req, res) => {
         description: description || '',
         status: 'open',
         players: [],
+        rounds: [],
         createdAt: new Date().toISOString()
     };
     tournamentsDB.push(tournament);
@@ -2000,6 +2120,62 @@ app.post('/api/tournaments/:id/checkin', async (req, res) => {
     player.checkedInAt = new Date().toISOString();
     persistTournamentsToDisk();
     res.json({ success: true, player: { name: player.name, email: player.email } });
+});
+
+app.post('/api/tournaments/:id/round', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const tournament = tournamentsDB.find(t => t.id === req.params.id);
+    const denied = requireShopTournament(req, tournament);
+    if (denied) {
+        const code = denied === 'Torneo non trovato.' ? 404 : 403;
+        return res.status(code).json({ success: false, error: denied });
+    }
+    tournament.rounds = Array.isArray(tournament.rounds) ? tournament.rounds : [];
+    const current = tournament.rounds[tournament.rounds.length - 1];
+    if (current && (current.pairings || []).some(p => !p.result)) {
+        return res.status(400).json({ success: false, error: 'Chiudi tutti i tavoli del round corrente prima di abbinare il successivo.' });
+    }
+    const ready = (tournament.players || []).filter(p => p.checkedIn && !p.dropped);
+    if (ready.length < 2) {
+        return res.status(400).json({ success: false, error: 'Servono almeno 2 giocatori al check-in per partire.' });
+    }
+    const pairings = pairSwiss(tournament);
+    pairings.forEach(p => {
+        if (!p.b) applyMatchResult(tournament, p, 'bye');
+    });
+    tournament.rounds.push({
+        number: tournament.rounds.length + 1,
+        pairings,
+        startedAt: new Date().toISOString()
+    });
+    tournament.status = 'running';
+    persistTournamentsToDisk();
+    res.json({ success: true, tournament });
+});
+
+app.post('/api/tournaments/:id/match', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const tournament = tournamentsDB.find(t => t.id === req.params.id);
+    const denied = requireShopTournament(req, tournament);
+    if (denied) {
+        const code = denied === 'Torneo non trovato.' ? 404 : 403;
+        return res.status(code).json({ success: false, error: denied });
+    }
+    const table = Number(req.body && req.body.table);
+    const result = req.body && req.body.result;
+    const round = (tournament.rounds || [])[tournament.rounds.length - 1];
+    if (!round) return res.status(400).json({ success: false, error: 'Nessun round attivo.' });
+    const pairing = (round.pairings || []).find(p => Number(p.table) === table);
+    if (!pairing) return res.status(404).json({ success: false, error: 'Tavolo non trovato.' });
+    if (pairing.result) return res.status(400).json({ success: false, error: 'Risultato già registrato.' });
+    if (pairing.b == null) return res.status(400).json({ success: false, error: 'Bye già assegnato.' });
+    const valid = result === 'draw' || String(result) === String(pairing.a) || String(result) === String(pairing.b);
+    if (!valid) return res.status(400).json({ success: false, error: 'Risultato non valido.' });
+    applyMatchResult(tournament, pairing, result);
+    persistTournamentsToDisk();
+    res.json({ success: true, tournament });
 });
 
 app.post('/api/vaultbot', (req, res) => {
