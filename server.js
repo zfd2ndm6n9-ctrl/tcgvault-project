@@ -374,6 +374,8 @@ try {
     }
 } catch (e) {}
 const CART_MIN_ORDER = 20;
+const WALLET_HOLD_DAYS = 7;
+const HOLD_RELEASED_AT = '1970-01-01T00:00:00.000Z';
 
 function orderToRow(o) {
     return {
@@ -392,7 +394,12 @@ function orderToRow(o) {
         tracking_link: o.trackingLink || null,
         paid_at: o.paidAt || null,
         completed_at: o.completedAt || null,
-        created_at: o.createdAt || new Date().toISOString()
+        created_at: o.createdAt || new Date().toISOString(),
+        delivery_method: o.deliveryMethod || 'shipping',
+        hold_until: o.holdUntil || null,
+        meetup_code: o.meetupCode || null,
+        meetup_place: o.meetupPlace || null,
+        meetup_at: o.meetupAt || null
     };
 }
 
@@ -413,7 +420,12 @@ function rowToOrder(r) {
         trackingLink: r.tracking_link,
         paidAt: r.paid_at,
         completedAt: r.completed_at,
-        createdAt: r.created_at
+        createdAt: r.created_at,
+        deliveryMethod: r.delivery_method || 'shipping',
+        holdUntil: r.hold_until || null,
+        meetupCode: r.meetup_code || null,
+        meetupPlace: r.meetup_place || null,
+        meetupAt: r.meetup_at || null
     };
 }
 
@@ -780,10 +792,34 @@ async function loadPromoCodesFromSupabase() {
     }
 }
 
+function syncWalletTotals(user) {
+    if (!user) return;
+    user.heldWallet = Math.max(0, Number(user.heldWallet || 0));
+    user.availableWallet = Math.max(0, Number(user.availableWallet || 0));
+    user.wallet = user.heldWallet + user.availableWallet;
+}
+
+function getOrCreateWalletUser(userId) {
+    let user = usersDB.find(u => String(u.id) === String(userId));
+    if (!user) {
+        user = { id: String(userId), wallet: 0, availableWallet: 0, heldWallet: 0, iban: '' };
+        usersDB.push(user);
+    }
+    if (user.availableWallet == null && user.heldWallet == null) {
+        user.availableWallet = Number(user.wallet || 0);
+        user.heldWallet = 0;
+    }
+    syncWalletTotals(user);
+    return user;
+}
+
 function walletToRow(u) {
+    syncWalletTotals(u);
     return {
         user_id: String(u.id || u.userId || ''),
         balance: Number(u.wallet || 0),
+        held_balance: Number(u.heldWallet || 0),
+        available_balance: Number(u.availableWallet || 0),
         iban: u.iban || null,
         last_payout_id: u.lastPayoutId || null,
         last_payout_at: u.lastPayoutAt || null,
@@ -793,23 +829,60 @@ function walletToRow(u) {
 
 function applyWalletRow(r) {
     if (!r || !r.user_id) return;
-    let user = usersDB.find(u => String(u.id) === String(r.user_id));
-    if (!user) {
-        user = { id: String(r.user_id), wallet: 0, iban: '' };
-        usersDB.push(user);
+    const user = getOrCreateWalletUser(r.user_id);
+    const held = Number(r.held_balance || 0);
+    const available = Number(r.available_balance || 0);
+    const legacy = Number(r.balance || 0);
+    if (held === 0 && available === 0 && legacy !== 0) {
+        user.availableWallet = legacy;
+        user.heldWallet = 0;
+    } else {
+        user.heldWallet = held;
+        user.availableWallet = available;
     }
-    user.wallet = Number(r.balance || 0);
     user.iban = r.iban || '';
     user.lastPayoutId = r.last_payout_id || null;
     user.lastPayoutAt = r.last_payout_at || null;
     user.walletUpdatedAt = r.updated_at || null;
+    syncWalletTotals(user);
+}
+
+function isHoldPending(holdUntil) {
+    if (!holdUntil) return false;
+    const t = new Date(holdUntil).getTime();
+    return Number.isFinite(t) && t >= Date.parse('2000-01-01');
+}
+
+function releaseMatureHolds() {
+    let changed = false;
+    const now = Date.now();
+    ordersDB.forEach(order => {
+        if (order.status !== 'completed' || !isHoldPending(order.holdUntil)) return;
+        if (new Date(order.holdUntil).getTime() > now) return;
+        const amount = Number(order.amount || 0);
+        const seller = getOrCreateWalletUser(order.sellerId);
+        seller.heldWallet = Math.max(0, Number(seller.heldWallet || 0) - amount);
+        seller.availableWallet = Number(seller.availableWallet || 0) + amount;
+        seller.walletUpdatedAt = new Date().toISOString();
+        syncWalletTotals(seller);
+        order.holdUntil = HOLD_RELEASED_AT;
+        changed = true;
+    });
+    if (changed) {
+        persistOrdersToDisk();
+        persistWalletsToDisk();
+    }
+    return changed;
 }
 
 function walletPublic(userId) {
-    const user = usersDB.find(u => String(u.id) === String(userId));
+    releaseMatureHolds();
+    const user = getOrCreateWalletUser(userId);
     return {
-        wallet: Number((user && user.wallet) || 0),
-        iban: (user && user.iban) || ''
+        wallet: Number(user.availableWallet || 0),
+        availableWallet: Number(user.availableWallet || 0),
+        heldWallet: Number(user.heldWallet || 0),
+        iban: user.iban || ''
     };
 }
 
@@ -1222,6 +1295,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
             amount,
             status: 'pending_payment',
             escrowNotified: false,
+            deliveryMethod: 'shipping',
             createdAt: new Date().toISOString()
         };
         ordersDB.push(newOrder);
@@ -1315,18 +1389,24 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
 
     order.status = 'completed';
     order.completedAt = new Date().toISOString();
+    order.deliveryMethod = order.deliveryMethod || 'shipping';
+    order.holdUntil = new Date(Date.now() + WALLET_HOLD_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-    let seller = usersDB.find(u => u.id === order.sellerId);
-    if (!seller) {
-        seller = { id: order.sellerId, wallet: 0 };
-        usersDB.push(seller);
-    }
-    seller.wallet = (seller.wallet || 0) + Number(order.amount);
+    const seller = getOrCreateWalletUser(order.sellerId);
+    const amount = Number(order.amount || 0);
+    seller.heldWallet = Number(seller.heldWallet || 0) + amount;
     seller.walletUpdatedAt = order.completedAt;
+    syncWalletTotals(seller);
     persistOrdersToDisk();
     persistWalletsToDisk();
 
-    res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
+    res.json({
+        success: true,
+        message: 'Ricezione confermata. I fondi restano in hold 7 giorni anti-chargeback, poi diventano prelevabili.',
+        order,
+        sellerWallet: seller.availableWallet,
+        heldWallet: seller.heldWallet
+    });
 });
 
 app.post('/api/wallet/payout', async (req, res) => {
@@ -1334,23 +1414,24 @@ app.post('/api/wallet/payout', async (req, res) => {
     if (!auth) return;
     const { iban } = req.body;
     const userId = auth.id;
-    
-    let user = usersDB.find(u => String(u.id) === String(userId));
-    if (!user) {
-        user = { id: userId, wallet: 0.00, iban: '' };
-        usersDB.push(user);
-    }
+    releaseMatureHolds();
+    const user = getOrCreateWalletUser(userId);
 
     if (!iban || iban.trim().length < 10) {
         return res.status(400).json({ success: false, error: 'Inserisci un codice IBAN valido per il prelievo.' });
     }
 
-    if ((user.wallet || 0) <= 0) {
-        return res.status(400).json({ success: false, error: 'Non hai fondi disponibili da prelevare nel wallet.' });
+    if ((user.availableWallet || 0) <= 0) {
+        const held = Number(user.heldWallet || 0);
+        const msg = held > 0
+            ? 'Hai €' + held.toFixed(2) + ' in hold. Il prelievo è possibile solo dopo 7 giorni dalla conferma di consegna.'
+            : 'Non hai fondi disponibili da prelevare nel wallet.';
+        return res.status(400).json({ success: false, error: msg });
     }
 
     try {
-        const payoutAmount = Math.round((user.wallet || 0) * 100);
+        const withdrawnAmount = Number(user.availableWallet || 0);
+        const payoutAmount = Math.round(withdrawnAmount * 100);
         let payoutResult;
         try {
             payoutResult = await stripe.payouts.create({
@@ -1363,18 +1444,19 @@ app.post('/api/wallet/payout', async (req, res) => {
             payoutResult = { id: 'po_simulated_' + Date.now() };
         }
 
-        const withdrawnAmount = user.wallet || 0;
-        user.wallet = 0.00;
+        user.availableWallet = 0;
         user.iban = iban.trim();
         user.lastPayoutId = payoutResult && payoutResult.id ? String(payoutResult.id) : null;
         user.lastPayoutAt = new Date().toISOString();
         user.walletUpdatedAt = user.lastPayoutAt;
+        syncWalletTotals(user);
         persistWalletsToDisk();
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: `Prelievo di €${withdrawnAmount.toFixed(2)} elaborato con successo!`,
-            newBalance: 0.00 
+            newBalance: 0.00,
+            heldWallet: Number(user.heldWallet || 0)
         });
     } catch (error) {
         res.status(400).send({ success: false, error: { message: error.message } });
@@ -1822,6 +1904,7 @@ Promise.all([
     loadPromoCodesFromSupabase(),
     loadWalletsFromSupabase()
 ]).finally(() => {
+    releaseMatureHolds();
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
         console.log('Stripe:', stripe ? 'configurato' : 'manca STRIPE_SECRET_KEY');

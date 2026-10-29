@@ -952,8 +952,9 @@
             <div id="tab-wallet-escrow" class="tab-content" style="display: none;">
                 <div style="margin-bottom: 25px;">
                     <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
-                    <p style="font-size: 0.9rem; color: var(--text-muted);">Fondi derivanti dalle vendite protette pronti per il prelievo:</p>
-                    <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 15px;">€ <span id="wallet-balance">0.00</span></div>
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">Solo i fondi fuori hold (7 giorni dopo la conferma) si possono prelevare. Il bonifico IBAN resta simulato finché non c'è Stripe Connect.</p>
+                    <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 8px;">€ <span id="wallet-balance">0.00</span></div>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">In hold anti-truffa: € <span id="wallet-held">0.00</span></p>
                     
                     <div class="form-group">
                         <label>Codice IBAN per il bonifico *</label>
@@ -1621,6 +1622,8 @@
                     if (flags && flags.accountType) currentUser.accountType = normalizeAccountType(flags.accountType);
                     if (flags && flags.partner) currentUser.partner = true;
                     if (flags && flags.wallet != null) currentUser.wallet = Number(flags.wallet) || 0;
+                    if (flags && flags.availableWallet != null) currentUser.wallet = Number(flags.availableWallet) || 0;
+                    if (flags && flags.heldWallet != null) currentUser.heldWallet = Number(flags.heldWallet) || 0;
                     if (flags && flags.iban) currentUser.iban = flags.iban;
                     accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
                 } catch (e) {}
@@ -2270,6 +2273,8 @@
                 partner: !!currentUser.partner
             });
             document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
+            const heldEl = document.getElementById('wallet-held');
+            if (heldEl) heldEl.innerText = (currentUser.heldWallet || 0).toFixed(2);
             document.getElementById('payout-iban').value = currentUser.iban || '';
             loadUserReviews();
             loadMyOrders();
@@ -2326,8 +2331,11 @@
                 const data = await res.json();
                 if (data.success) {
                     currentUser.wallet = data.newBalance;
+                    if (data.heldWallet != null) currentUser.heldWallet = Number(data.heldWallet) || 0;
                     currentUser.iban = iban;
                     document.getElementById('wallet-balance').innerText = currentUser.wallet.toFixed(2);
+                    const heldEl = document.getElementById('wallet-held');
+                    if (heldEl) heldEl.innerText = (currentUser.heldWallet || 0).toFixed(2);
                     showNotification(data.message);
                 } else {
                     showNotification(data.error || 'Errore prelievo.', 'error');
