@@ -1430,7 +1430,7 @@ app.post('/api/orders/:orderId/ship', async (req, res) => {
     persistOrdersToDisk();
 
     res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
-}
+});
 
 app.post('/api/orders/:orderId/meetup', async (req, res) => {
     const auth = await requireAuth(req, res);
