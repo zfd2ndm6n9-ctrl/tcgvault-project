@@ -1620,6 +1620,8 @@
                     const flags = await fetch('/api/users/' + encodeURIComponent(currentUser.id)).then(r => r.json());
                     if (flags && flags.accountType) currentUser.accountType = normalizeAccountType(flags.accountType);
                     if (flags && flags.partner) currentUser.partner = true;
+                    if (flags && flags.wallet != null) currentUser.wallet = Number(flags.wallet) || 0;
+                    if (flags && flags.iban) currentUser.iban = flags.iban;
                     accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
                 } catch (e) {}
 

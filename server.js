@@ -205,6 +205,10 @@ function persistPromoCodesToDisk() {
     persistPromoCodesToSupabase().catch(err => console.error('Salvataggio promo Supabase:', err.message));
 }
 function persistAccountsToDisk() { persistJsonFile('accounts.json', accountsDB); }
+function persistWalletsToDisk() {
+    persistJsonFile('wallets.json', usersDB.filter(u => u && u.id).map(walletToRow));
+    persistWalletsToSupabase().catch(err => console.error('Salvataggio wallet Supabase:', err.message));
+}
 
 function normalizeAccountType(raw) {
     const v = String(raw || '').trim().toLowerCase();
@@ -775,6 +779,85 @@ async function loadPromoCodesFromSupabase() {
         ensureDefaultPromoCodes();
     }
 }
+
+function walletToRow(u) {
+    return {
+        user_id: String(u.id || u.userId || ''),
+        balance: Number(u.wallet || 0),
+        iban: u.iban || null,
+        last_payout_id: u.lastPayoutId || null,
+        last_payout_at: u.lastPayoutAt || null,
+        updated_at: u.walletUpdatedAt || new Date().toISOString()
+    };
+}
+
+function applyWalletRow(r) {
+    if (!r || !r.user_id) return;
+    let user = usersDB.find(u => String(u.id) === String(r.user_id));
+    if (!user) {
+        user = { id: String(r.user_id), wallet: 0, iban: '' };
+        usersDB.push(user);
+    }
+    user.wallet = Number(r.balance || 0);
+    user.iban = r.iban || '';
+    user.lastPayoutId = r.last_payout_id || null;
+    user.lastPayoutAt = r.last_payout_at || null;
+    user.walletUpdatedAt = r.updated_at || null;
+}
+
+function walletPublic(userId) {
+    const user = usersDB.find(u => String(u.id) === String(userId));
+    return {
+        wallet: Number((user && user.wallet) || 0),
+        iban: (user && user.iban) || ''
+    };
+}
+
+async function persistWalletsToSupabase() {
+    const rows = usersDB.filter(u => u && u.id).map(walletToRow);
+    if (!rows.length) return;
+    const res = await fetch(SUPABASE_URL + '/rest/v1/wallets', {
+        method: 'POST',
+        headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(rows)
+    });
+    if (!res.ok) {
+        console.error('Salvataggio wallets Supabase:', res.status, await res.text());
+    }
+}
+
+async function loadWalletsFromSupabase() {
+    try {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/wallets?select=*', {
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY
+            }
+        });
+        if (!res.ok) {
+            console.error('Lettura wallets Supabase:', res.status, await res.text());
+            return;
+        }
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length) {
+            rows.forEach(applyWalletRow);
+            persistJsonFile('wallets.json', rows, true);
+            console.log('Wallet caricati da Supabase:', rows.length);
+            return;
+        }
+        if (usersDB.some(u => Number(u.wallet || 0) !== 0 || u.iban)) {
+            await persistWalletsToSupabase();
+            console.log('Wallet locali migrati su Supabase');
+        }
+    } catch (err) {
+        console.error('Lettura wallets Supabase:', err.message);
+    }
+}
 const authUserCache = new Map();
 const rateBuckets = {};
 
@@ -1013,6 +1096,7 @@ app.get('/api/users/:userId', async (req, res) => {
         if (self && String(self.id) === String(userId)) {
             payload.email = remoteProfile.email || self.email;
             payload.address = remoteProfile.address || remoteProfile.city || remoteProfile.location || '';
+            Object.assign(payload, walletPublic(userId));
         }
         return res.json(payload);
     }
@@ -1032,6 +1116,7 @@ app.get('/api/users/:userId', async (req, res) => {
         if (self && String(self.id) === String(userId)) {
             payload.email = user.email || self.email;
             payload.address = user.address || '';
+            Object.assign(payload, walletPublic(userId));
         }
         return res.json(payload);
     }
@@ -1237,7 +1322,9 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
         usersDB.push(seller);
     }
     seller.wallet = (seller.wallet || 0) + Number(order.amount);
+    seller.walletUpdatedAt = order.completedAt;
     persistOrdersToDisk();
+    persistWalletsToDisk();
 
     res.json({ success: true, message: 'Ricezione confermata! Fondi accreditati nel wallet del venditore.', order, sellerWallet: seller.wallet });
 });
@@ -1248,9 +1335,10 @@ app.post('/api/wallet/payout', async (req, res) => {
     const { iban } = req.body;
     const userId = auth.id;
     
-    let user = usersDB.find(u => u.id === userId);
+    let user = usersDB.find(u => String(u.id) === String(userId));
     if (!user) {
-        user = { id: userId, wallet: 0.00 }; 
+        user = { id: userId, wallet: 0.00, iban: '' };
+        usersDB.push(user);
     }
 
     if (!iban || iban.trim().length < 10) {
@@ -1278,6 +1366,10 @@ app.post('/api/wallet/payout', async (req, res) => {
         const withdrawnAmount = user.wallet || 0;
         user.wallet = 0.00;
         user.iban = iban.trim();
+        user.lastPayoutId = payoutResult && payoutResult.id ? String(payoutResult.id) : null;
+        user.lastPayoutAt = new Date().toISOString();
+        user.walletUpdatedAt = user.lastPayoutAt;
+        persistWalletsToDisk();
 
         res.json({ 
             success: true, 
@@ -1727,7 +1819,8 @@ Promise.all([
     loadMessagesFromSupabase(),
     loadShopsFromSupabase(),
     loadTournamentsFromSupabase(),
-    loadPromoCodesFromSupabase()
+    loadPromoCodesFromSupabase(),
+    loadWalletsFromSupabase()
 ]).finally(() => {
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
