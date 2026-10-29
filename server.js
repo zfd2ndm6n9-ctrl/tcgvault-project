@@ -1078,25 +1078,48 @@ async function requireAdmin(req, res) {
     return user;
 }
 
+function normalizeCardIds(raw) {
+    if (raw == null || raw === '') return [];
+    const list = Array.isArray(raw) ? raw : String(raw).split(',');
+    return [...new Set(list
+        .flatMap(v => String(v).split(','))
+        .map(v => String(v).trim())
+        .filter(v => v && v !== 'undefined' && v !== 'null'))].slice(0, 40);
+}
+
 async function getCardsByIds(ids) {
-    const unique = [...new Set((ids || []).map(id => String(id).trim()).filter(Boolean))].slice(0, 40);
+    const unique = normalizeCardIds(ids);
     if (!unique.length) return [];
-    const numeric = unique.every(id => /^\d+$/.test(id));
-    const list = numeric
-        ? unique.join(',')
-        : unique.map(id => '"' + id.replace(/"/g, '') + '"').join(',');
-    const res = await fetch(SUPABASE_URL + '/rest/v1/cards?id=in.(' + list + ')&select=id,price,user_id,title,is_sold,description', {
-        headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: 'Bearer ' + SUPABASE_KEY
+    const keys = [...new Set([SUPABASE_KEY, SUPABASE_ANON_KEY].filter(Boolean))];
+    const orFilter = unique.map(id => /^\d+$/.test(id) ? ('id.eq.' + id) : ('id.eq."' + id.replace(/"/g, '') + '"')).join(',');
+    const queries = [
+        'or=(' + orFilter + ')',
+        unique.every(id => /^\d+$/.test(id)) ? ('id=in.(' + unique.join(',') + ')') : null,
+        'id=in.(' + unique.map(id => '"' + id.replace(/"/g, '') + '"').join(',') + ')'
+    ].filter(Boolean);
+
+    for (const key of keys) {
+        for (const query of queries) {
+            try {
+                const res = await fetch(SUPABASE_URL + '/rest/v1/cards?' + query + '&select=id,price,user_id,title,is_sold,description', {
+                    headers: {
+                        apikey: key,
+                        Authorization: 'Bearer ' + key,
+                        Accept: 'application/json'
+                    }
+                });
+                const data = await res.json().catch(() => []);
+                if (!res.ok) {
+                    console.error('Lettura cards per pagamento:', res.status, query, data);
+                    continue;
+                }
+                if (Array.isArray(data) && data.length) return data;
+            } catch (err) {
+                console.error('Lettura cards per pagamento:', err.message);
+            }
         }
-    });
-    const data = await res.json().catch(() => []);
-    if (!res.ok) {
-        console.error('Lettura cards per pagamento:', res.status, data);
-        return [];
     }
-    return Array.isArray(data) ? data : [];
+    return [];
 }
 
 function upsertUserInMemory(profile) {
@@ -1320,10 +1343,15 @@ app.post('/api/create-payment-intent', async (req, res) => {
             return res.status(500).json({ error: { message: 'STRIPE_SECRET_KEY non configurata.' } });
         }
         const body = req.body || {};
-        const cardIds = Array.isArray(body.cardIds) && body.cardIds.length ? body.cardIds : (body.cardId ? [body.cardId] : []);
+        const cardIds = normalizeCardIds(
+            (body.cardIds && body.cardIds.length ? body.cardIds : null) || body.cardId || body.ids
+        );
+        if (!cardIds.length) {
+            return res.status(400).json({ error: { message: 'Nessun articolo inviato al pagamento. Riapri la scheda e riprova.' } });
+        }
         const cards = await getCardsByIds(cardIds);
         if (!cards.length) {
-            return res.status(400).json({ error: { message: 'Articoli non trovati.' } });
+            return res.status(400).json({ error: { message: 'Articoli non trovati (id ' + cardIds.join(', ') + ').' } });
         }
         const sellerId = String(cards[0].user_id);
         if (cards.some(c => String(c.user_id) !== sellerId)) {

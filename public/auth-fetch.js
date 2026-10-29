@@ -10,6 +10,9 @@
                 if (session && session.access_token && !headers.has('Authorization')) {
                     headers.set('Authorization', 'Bearer ' + session.access_token);
                 }
+                if (init.body && !headers.has('Content-Type')) {
+                    headers.set('Content-Type', 'application/json');
+                }
                 init.headers = headers;
             } catch (e) {}
         }

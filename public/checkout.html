@@ -212,6 +212,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     cardIds: cart.map(c => c.id),
+                    cardId: cart[0] && cart[0].id,
                     deliveryMethod: (document.querySelector('input[name="delivery-method"]:checked') || {}).value || 'shipping'
                 })
             });

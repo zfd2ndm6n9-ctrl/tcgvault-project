@@ -2852,14 +2852,22 @@
             if (tosEl) tosEl.checked = false;
             showOverlay('stripe-checkout-modal');
 
+            const payIds = (cart.length && String(cart[0].user_id) === String(selectedCard.user_id))
+                ? cart.map(c => c.id)
+                : [selectedCard.id];
+            const cleanPayIds = payIds.map(id => String(id).trim()).filter(id => id && id !== 'undefined');
+            if (!cleanPayIds.length) {
+                showNotification('ID articolo mancante. Ricarica la pagina e riprova.', 'error');
+                return;
+            }
+
             try {
                 const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        cardIds: (cart.length && String(cart[0].user_id) === String(selectedCard.user_id))
-                            ? cart.map(c => c.id)
-                            : [selectedCard.id],
+                        cardIds: cleanPayIds,
+                        cardId: cleanPayIds[0],
                         deliveryMethod: (document.querySelector('#stripe-checkout-modal input[name="delivery-method"]:checked') || {}).value || 'shipping'
                     })
                 });
