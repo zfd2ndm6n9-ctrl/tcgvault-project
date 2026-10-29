@@ -62,22 +62,70 @@ async function markCardsSold(cardIds) {
     }
 }
 
+function generateMeetupCode() {
+    return String(100000 + crypto.randomInt(900000));
+}
+
+function accountAgeDays(user) {
+    const t = Date.parse(user && user.createdAt);
+    if (!Number.isFinite(t)) return 0;
+    return (Date.now() - t) / (24 * 60 * 60 * 1000);
+}
+
+function assertMeetupAllowed(auth, amount) {
+    if (accountAgeDays(auth) < MEETUP_MIN_ACCOUNT_DAYS) {
+        return 'L\'incontro di persona è disponibile dopo 7 giorni dalla creazione account. Usa la spedizione tracciata.';
+    }
+    if (Number(amount) > MEETUP_MAX_AMOUNT) {
+        return 'Sopra €' + MEETUP_MAX_AMOUNT + ' l\'incontro non è consentito: solo spedizione tracciata.';
+    }
+    return null;
+}
+
+function publicOrderFor(order, viewerId) {
+    const row = Object.assign({}, order);
+    const isSeller = String(order.sellerId) === String(viewerId);
+    if (!isSeller) delete row.meetupCode;
+    return row;
+}
+
 async function fulfillPaidOrder(order) {
     if (!order || order.escrowNotified) return order;
     order.status = 'paid';
     order.paidAt = new Date().toISOString();
     order.escrowNotified = true;
+    const isMeetup = order.deliveryMethod === 'meetup';
+    if (isMeetup && !order.meetupCode) order.meetupCode = generateMeetupCode();
     if (order.sellerId && order.sellerId !== 'unknown') {
+        const sellerText = isMeetup
+            ? `🤝 VENDITA IN INCONTRO: "${order.cardTitle || 'Articolo TCG'}" per €${Number(order.amount).toFixed(2)}. Proponi un luogo pubblico (mai casa) e un orario. Codice svincolo (mostralo al compratore solo sul posto): ${order.meetupCode}.`
+            : `📦 VENDITA EFFETTUATA! Il tuo prodotto "${order.cardTitle || 'Articolo TCG'}" è stato acquistato per €${Number(order.amount).toFixed(2)}. I fondi sono al sicuro in Escrow. Clicca qui per inserire corriere e tracciamento.`;
         messagesDB.push({
             id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
             senderId: 'SYSTEM_ESCROW',
             receiverId: order.sellerId,
             cardId: order.cardId || null,
-            text: `📦 VENDITA EFFETTUATA! Il tuo prodotto "${order.cardTitle || 'Articolo TCG'}" è stato acquistato per €${Number(order.amount).toFixed(2)}. I fondi sono al sicuro in Escrow. Clicca qui per inserire corriere e tracciamento.`,
+            text: sellerText,
             isEscrowAlert: true,
+            deliveryMethod: order.deliveryMethod || 'shipping',
             orderId: order.id,
             timestamp: new Date().toISOString()
         });
+        if (order.buyerId) {
+            messagesDB.push({
+                id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+                senderId: 'SYSTEM_ESCROW',
+                receiverId: order.buyerId,
+                cardId: order.cardId || null,
+                text: isMeetup
+                    ? `🤝 Incontro prenotato per "${order.cardTitle || 'Articolo TCG'}". Luogo pubblico, ispeziona le carte, poi conferma con il codice a 6 cifre che ti mostra il venditore. I fondi restano 14 giorni in hold.`
+                    : `📦 Pagamento ricevuto per "${order.cardTitle || 'Articolo TCG'}". Quando arriva il pacco tracciato, conferma la ricezione dal tuo profilo ordini.`,
+                isEscrowAlert: true,
+                deliveryMethod: order.deliveryMethod || 'shipping',
+                orderId: order.id,
+                timestamp: new Date().toISOString()
+            });
+        }
         persistMessagesToDisk();
     }
     persistOrdersToDisk();
@@ -375,6 +423,9 @@ try {
 } catch (e) {}
 const CART_MIN_ORDER = 20;
 const WALLET_HOLD_DAYS = 7;
+const WALLET_HOLD_DAYS_MEETUP = 14;
+const MEETUP_MIN_ACCOUNT_DAYS = 7;
+const MEETUP_MAX_AMOUNT = 150;
 const HOLD_RELEASED_AT = '1970-01-01T00:00:00.000Z';
 
 function orderToRow(o) {
@@ -977,7 +1028,8 @@ async function getAuthUser(req) {
             aal: payload.aal || 'aal1',
             strongAuth: !!strong,
             emailConfirmed: !!(row.email_confirmed_at || row.confirmed_at),
-            phoneConfirmed: !!row.phone_confirmed_at
+            phoneConfirmed: !!row.phone_confirmed_at,
+            createdAt: row.created_at || null
         };
         authUserCache.set(token, { user, exp: Date.now() + 15000 });
         if (authUserCache.size > 500) {
@@ -1272,6 +1324,11 @@ app.post('/api/create-payment-intent', async (req, res) => {
         if (amount < CART_MIN_ORDER) {
             return res.status(400).json({ error: { message: 'Ordine minimo €' + CART_MIN_ORDER.toFixed(2) + '.' } });
         }
+        const deliveryMethod = String(body.deliveryMethod || 'shipping').toLowerCase() === 'meetup' ? 'meetup' : 'shipping';
+        if (deliveryMethod === 'meetup') {
+            const meetupErr = assertMeetupAllowed(auth, amount);
+            if (meetupErr) return res.status(400).json({ error: { message: meetupErr } });
+        }
         const baseAmountCents = Math.round(amount * 100);
         const applicationFee = Math.round(baseAmountCents * 0.07);
         const estimatedStripeFee = Math.round(baseAmountCents * 0.015) + 25;
@@ -1281,7 +1338,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
             amount: totalChargedToBuyer,
             currency: 'eur',
             automatic_payment_methods: { enabled: true },
-            metadata: { buyerId: auth.id, sellerId, cardIds: cards.map(c => c.id).join(',') }
+            metadata: { buyerId: auth.id, sellerId, cardIds: cards.map(c => c.id).join(','), deliveryMethod }
         });
 
         const newOrder = {
@@ -1295,7 +1352,8 @@ app.post('/api/create-payment-intent', async (req, res) => {
             amount,
             status: 'pending_payment',
             escrowNotified: false,
-            deliveryMethod: 'shipping',
+            deliveryMethod,
+            meetupCode: deliveryMethod === 'meetup' ? generateMeetupCode() : null,
             createdAt: new Date().toISOString()
         };
         ordersDB.push(newOrder);
@@ -1342,7 +1400,9 @@ app.get('/api/orders/:userId', async (req, res) => {
     if (!auth) return;
     const userId = req.params.userId;
     if (!assertSelf(req, res, userId)) return;
-    const userOrders = ordersDB.filter(o => o.buyerId === userId || o.sellerId === userId);
+    const userOrders = ordersDB
+        .filter(o => o.buyerId === userId || o.sellerId === userId)
+        .map(o => publicOrderFor(o, userId));
     res.json(userOrders);
 });
 
@@ -1359,6 +1419,9 @@ app.post('/api/orders/:orderId/ship', async (req, res) => {
     if (String(order.sellerId) !== auth.id && !isAdminEmail(auth.email)) {
         return res.status(403).json({ success: false, error: 'Operazione non autorizzata.' });
     }
+    if (order.deliveryMethod === 'meetup') {
+        return res.status(400).json({ success: false, error: 'Questo ordine è un incontro: usa la proposta luogo/orario, non il tracking.' });
+    }
 
     order.carrier = String(carrier || '').slice(0, 80);
     order.trackingNumber = String(trackingNumber || '').slice(0, 80);
@@ -1367,6 +1430,44 @@ app.post('/api/orders/:orderId/ship', async (req, res) => {
     persistOrdersToDisk();
 
     res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
+}
+
+app.post('/api/orders/:orderId/meetup', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const order = ordersDB.find(o => o.id === req.params.orderId);
+    if (!order) return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
+    if (String(order.sellerId) !== auth.id && !isAdminEmail(auth.email)) {
+        return res.status(403).json({ success: false, error: 'Operazione non autorizzata.' });
+    }
+    if (order.deliveryMethod !== 'meetup') {
+        return res.status(400).json({ success: false, error: 'Questo ordine non è un incontro.' });
+    }
+    if (order.status !== 'paid' && order.status !== 'meetup_arranged') {
+        return res.status(400).json({ success: false, error: 'Stato ordine non valido per l\'incontro.' });
+    }
+    const place = String((req.body && req.body.place) || '').trim().slice(0, 200);
+    const at = String((req.body && req.body.at) || '').trim().slice(0, 80);
+    if (!place || !at) {
+        return res.status(400).json({ success: false, error: 'Luogo pubblico e orario sono obbligatori.' });
+    }
+    order.meetupPlace = place;
+    order.meetupAt = at;
+    order.status = 'meetup_arranged';
+    persistOrdersToDisk();
+    messagesDB.push({
+        id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        senderId: 'SYSTEM_ESCROW',
+        receiverId: order.buyerId,
+        cardId: order.cardId || null,
+        text: `🤝 Incontro proposto: ${place} — ${at}. Ispeziona le carte sul posto e conferma con il codice a 6 cifre. Mai a casa, solo luogo pubblico.`,
+        isEscrowAlert: true,
+        deliveryMethod: 'meetup',
+        orderId: order.id,
+        timestamp: new Date().toISOString()
+    });
+    persistMessagesToDisk();
+    res.json({ success: true, order: publicOrderFor(order, auth.id) });
 });
 
 app.post('/api/orders/:orderId/complete', async (req, res) => {
@@ -1387,10 +1488,24 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
         return res.json({ success: true, message: 'Ordine già completato.', order });
     }
 
+    const method = order.deliveryMethod || 'shipping';
+    if (method === 'meetup') {
+        const code = String((req.body && req.body.meetupCode) || '').replace(/\s+/g, '');
+        if (order.status !== 'meetup_arranged') {
+            return res.status(400).json({ success: false, error: 'Il venditore deve prima proporre luogo e orario.' });
+        }
+        if (!order.meetupCode || code !== String(order.meetupCode)) {
+            return res.status(400).json({ success: false, error: 'Codice incontro non valido. Chiedilo al venditore sul posto dopo aver ispezionato le carte.' });
+        }
+    } else if (order.status !== 'shipped') {
+        return res.status(400).json({ success: false, error: 'Conferma la ricezione solo dopo la spedizione tracciata.' });
+    }
+
+    const holdDays = method === 'meetup' ? WALLET_HOLD_DAYS_MEETUP : WALLET_HOLD_DAYS;
     order.status = 'completed';
     order.completedAt = new Date().toISOString();
-    order.deliveryMethod = order.deliveryMethod || 'shipping';
-    order.holdUntil = new Date(Date.now() + WALLET_HOLD_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    order.deliveryMethod = method;
+    order.holdUntil = new Date(Date.now() + holdDays * 24 * 60 * 60 * 1000).toISOString();
 
     const seller = getOrCreateWalletUser(order.sellerId);
     const amount = Number(order.amount || 0);
@@ -1402,8 +1517,8 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
 
     res.json({
         success: true,
-        message: 'Ricezione confermata. I fondi restano in hold 7 giorni anti-chargeback, poi diventano prelevabili.',
-        order,
+        message: 'Ricezione confermata. I fondi restano in hold ' + holdDays + ' giorni anti-chargeback, poi diventano prelevabili.',
+        order: publicOrderFor(order, auth.id),
         sellerWallet: seller.availableWallet,
         heldWallet: seller.heldWallet
     });

@@ -60,6 +60,17 @@
             <h2 style="margin-top:0;">Riepilogo ordine</h2>
             <div id="cart-summary"></div>
             <p style="font-size:0.85rem;color:var(--text-muted);">Ordine minimo €20,00 da un singolo venditore.</p>
+            <div class="form-group" style="margin-top:14px;">
+                <label>Consegna *</label>
+                <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;color:var(--text-main);margin:8px 0;">
+                    <input type="radio" name="delivery-method" value="shipping" checked>
+                    <span>Spedizione tracciata (Poste, InPost, BRT, GLS, DHL, UPS)</span>
+                </label>
+                <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;color:var(--text-main);">
+                    <input type="radio" name="delivery-method" value="meetup">
+                    <span>Incontro di persona (luogo pubblico, codice a 6 cifre, hold 14 giorni). Account con almeno 7 giorni, max €150.</span>
+                </label>
+            </div>
             <div style="display:flex;justify-content:space-between;font-weight:800;font-size:1.15rem;">
                 <span>Totale</span>
                 <span style="color:var(--accent-neon);">€ <span id="checkout-total">0.00</span></span>
@@ -200,7 +211,8 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    cardIds: cart.map(c => c.id)
+                    cardIds: cart.map(c => c.id),
+                    deliveryMethod: (document.querySelector('input[name="delivery-method"]:checked') || {}).value || 'shipping'
                 })
             });
             const data = await response.json();

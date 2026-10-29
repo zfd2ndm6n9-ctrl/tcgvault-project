@@ -1031,8 +1031,19 @@
                 <button class="close-btn" onclick="closeStripeCheckoutModal()">&times;</button>
             </div>
             <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 20px;">
-                I tuoi fondi saranno custoditi in modo sicuro in Escrow fino alla conferma della transazione.
+                I fondi restano in Escrow fino a conferma di consegna o incontro.
             </p>
+            <div class="form-group" style="margin-bottom: 14px;">
+                <label>Consegna *</label>
+                <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;margin:8px 0;">
+                    <input type="radio" name="delivery-method" value="shipping" checked>
+                    <span>Spedizione tracciata</span>
+                </label>
+                <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;">
+                    <input type="radio" name="delivery-method" value="meetup">
+                    <span>Incontro di persona (luogo pubblico, codice a 6 cifre, hold 14 giorni; account ≥ 7 giorni, max €150)</span>
+                </label>
+            </div>
             <form id="payment-form" style="margin-bottom: 15px;">
                 <div class="form-group">
                     <label>Nome completo *</label>
@@ -2305,16 +2316,32 @@
                     container.innerHTML = '<p style="color: var(--text-muted);">Nessun ordine effettuato.</p>';
                     return;
                 }
-                container.innerHTML = orders.map(o => `
-                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: gap; gap: 10px;">
+                container.innerHTML = orders.map(o => {
+                    const isBuyer = String(o.buyerId) === String(currentUser.id);
+                    const isMeetup = o.deliveryMethod === 'meetup';
+                    let action = `<button class="btn-outline" onclick="openChatModal('${isBuyer ? o.sellerId : o.buyerId}', 'Gestione Ordine Escrow', '${isBuyer ? o.sellerId : o.buyerId}')">💬 Chat</button>`;
+                    if (isBuyer && o.status === 'shipped') {
+                        action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmOrderReceipt('${o.id}')">Conferma ricezione</button>`;
+                    }
+                    if (isBuyer && isMeetup && o.status === 'meetup_arranged') {
+                        action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmMeetupOrder('${o.id}')">Conferma incontro (codice)</button>`;
+                    }
+                    if (!isBuyer && isMeetup && o.status === 'paid') {
+                        action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="proposeMeetup('${o.id}')">Proponi luogo</button>`;
+                    }
+                    const codeLine = (!isBuyer && o.meetupCode) ? `<div style="font-size: 0.8rem;">Codice svincolo: <b>${escapeHtml(o.meetupCode)}</b></div>` : '';
+                    const meetLine = (o.meetupPlace) ? `<div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(o.meetupPlace)} — ${escapeHtml(o.meetupAt || '')}</div>` : '';
+                    return `
+                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
-                            <div style="font-weight: bold; color: var(--accent-neon); margin-bottom: 4px;">Ordine #${o.id || 'N/D'}</div>
-                            <div style="font-size: 0.9rem; margin-bottom: 2px;">Stato: <b>${o.status || 'Pagato / In Escrow'}</b></div>
+                            <div style="font-weight: bold; color: var(--accent-neon); margin-bottom: 4px;">Ordine #${escapeHtml(o.id || 'N/D')}</div>
+                            <div style="font-size: 0.9rem; margin-bottom: 2px;">Stato: <b>${escapeHtml(o.status || 'Pagato / In Escrow')}</b> · ${isMeetup ? 'Incontro' : 'Spedizione'}</div>
                             <div style="font-size: 0.8rem; color: var(--text-muted);">Totale: € ${Number(o.amount || 0).toFixed(2)}</div>
+                            ${codeLine}${meetLine}
                         </div>
-                        <button class="btn-outline" onclick="openChatModal('${o.sellerId}', 'Gestione Ordine Escrow', '${o.sellerId}')">💬 Apri Chat Venditore</button>
-                    </div>
-                `).join('');
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">${action}</div>
+                    </div>`;
+                }).join('');
             } catch (err) {
                 console.error('Errore ordini:', err);
             }
@@ -2832,7 +2859,8 @@
                     body: JSON.stringify({
                         cardIds: (cart.length && String(cart[0].user_id) === String(selectedCard.user_id))
                             ? cart.map(c => c.id)
-                            : [selectedCard.id]
+                            : [selectedCard.id],
+                        deliveryMethod: (document.querySelector('#stripe-checkout-modal input[name="delivery-method"]:checked') || {}).value || 'shipping'
                     })
                 });
                 const data = await response.json();
@@ -3157,11 +3185,12 @@
 
                 const newHtml = relevant.map(m => {
                     if (m.senderId === 'SYSTEM_ESCROW') {
+                        const isMeet = m.deliveryMethod === 'meetup' || /incontro/i.test(String(m.text || ''));
                         return `
                             <div class="escrow-alert-msg">
                                 <div>${escapeHtml(m.text)}</div>
                                 <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
-                                    <button onclick="openEscrowGuideModal('${m.orderId}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">📦 Guida Spedizione & Tracking</button>
+                                    <button onclick="openEscrowGuideModal('${m.orderId}', '${isMeet ? 'meetup' : 'shipping'}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">${isMeet ? '🤝 Proponi incontro' : '📦 Guida Spedizione & Tracking'}</button>
                                 </div>
                             </div>
                         `;
@@ -3253,7 +3282,11 @@
             unreadCheckInterval = setInterval(pollInbox, 8000);
         }
 
-        function openEscrowGuideModal(orderId) {
+        function openEscrowGuideModal(orderId, mode) {
+            if (mode === 'meetup') {
+                proposeMeetup(orderId);
+                return;
+            }
             const carrier = prompt("Inserisci il corriere utilizzato (es. Poste Italiane, InPost, BRT, GLS):", "Poste Italiane");
             if (!carrier) return;
             const tracking = prompt("Inserisci il numero di tracciamento (Tracking Number):");
@@ -3274,6 +3307,69 @@
                 }
             })
             .catch(() => showNotification('Errore di comunicazione.', 'error'));
+        }
+
+        async function proposeMeetup(orderId) {
+            const place = prompt('Luogo pubblico (stazione, centro commerciale, negozio partner — mai casa):');
+            if (!place) return;
+            const at = prompt('Giorno e orario (es. sabato 16:00):');
+            if (!at) return;
+            try {
+                const res = await fetch('/api/orders/' + encodeURIComponent(orderId) + '/meetup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ place, at })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showNotification('Incontro proposto. Mostra il codice a 6 cifre solo sul posto.');
+                    loadMyOrders();
+                } else {
+                    showNotification(data.error || 'Errore incontro.', 'error');
+                }
+            } catch (e) {
+                showNotification('Errore di comunicazione.', 'error');
+            }
+        }
+
+        async function confirmOrderReceipt(orderId) {
+            try {
+                const res = await fetch('/api/orders/' + encodeURIComponent(orderId) + '/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showNotification(data.message || 'Ricezione confermata.');
+                    loadMyOrders();
+                } else {
+                    showNotification(data.error || 'Errore.', 'error');
+                }
+            } catch (e) {
+                showNotification('Errore di comunicazione.', 'error');
+            }
+        }
+
+        async function confirmMeetupOrder(orderId) {
+            const meetupCode = prompt('Inserisci il codice a 6 cifre mostrato dal venditore, dopo aver ispezionato le carte:');
+            if (!meetupCode) return;
+            try {
+                const res = await fetch('/api/orders/' + encodeURIComponent(orderId) + '/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ meetupCode })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showNotification(data.message || 'Incontro confermato.');
+                    loadMyOrders();
+                } else {
+                    showNotification(data.error || 'Codice non valido.', 'error');
+                }
+            } catch (e) {
+                showNotification('Errore di comunicazione.', 'error');
+            }
         }
 
         function checkAuthAndOpenSellModal() { 
