@@ -192,8 +192,14 @@ function loadJsonArray(fileName) {
     }
 }
 
-function persistShopsToDisk() { persistJsonFile('shops.json', shopSubsDB); }
-function persistTournamentsToDisk() { persistJsonFile('tournaments.json', tournamentsDB); }
+function persistShopsToDisk() {
+    persistJsonFile('shops.json', shopSubsDB);
+    persistShopsToSupabase().catch(err => console.error('Salvataggio shops Supabase:', err.message));
+}
+function persistTournamentsToDisk() {
+    persistJsonFile('tournaments.json', tournamentsDB);
+    persistTournamentsToSupabase().catch(err => console.error('Salvataggio tornei Supabase:', err.message));
+}
 function persistPromoCodesToDisk() { persistJsonFile('promo-codes.json', promoCodesDB); }
 function persistAccountsToDisk() { persistJsonFile('accounts.json', accountsDB); }
 
@@ -525,6 +531,166 @@ async function loadMessagesFromSupabase() {
         }
     } catch (err) {
         console.error('Lettura messages Supabase:', err.message);
+    }
+}
+
+function shopToRow(s) {
+    return {
+        user_id: String(s.userId || ''),
+        shop_name: s.shopName || null,
+        email: s.email || null,
+        status: s.status || 'pending',
+        plan_source: s.planSource || null,
+        promo_code: s.promoCode || null,
+        price_paid: s.pricePaid != null && s.pricePaid !== '' ? Number(s.pricePaid) : null,
+        unlimited: !!s.unlimited,
+        active_until: s.activeUntil || null,
+        pending_payment_intent_id: s.pendingPaymentIntentId || null,
+        created_at: s.createdAt || new Date().toISOString()
+    };
+}
+
+function rowToShop(r) {
+    return {
+        userId: r.user_id,
+        shopName: r.shop_name,
+        email: r.email,
+        status: r.status,
+        planSource: r.plan_source,
+        promoCode: r.promo_code,
+        pricePaid: r.price_paid != null ? Number(r.price_paid) : undefined,
+        unlimited: !!r.unlimited,
+        activeUntil: r.active_until,
+        pendingPaymentIntentId: r.pending_payment_intent_id,
+        createdAt: r.created_at
+    };
+}
+
+function tournamentToRow(t) {
+    return {
+        id: t.id,
+        shop_id: String(t.shopId || ''),
+        shop_name: t.shopName || null,
+        title: t.title || '',
+        game: t.game || null,
+        date: t.date || null,
+        time: t.time || null,
+        location: t.location || null,
+        max_players: t.maxPlayers != null ? Number(t.maxPlayers) : null,
+        fee: t.fee != null && t.fee !== '' ? Number(t.fee) : null,
+        description: t.description || null,
+        status: t.status || 'open',
+        players: Array.isArray(t.players) ? t.players : [],
+        created_at: t.createdAt || new Date().toISOString()
+    };
+}
+
+function rowToTournament(r) {
+    return {
+        id: r.id,
+        shopId: r.shop_id,
+        shopName: r.shop_name,
+        title: r.title,
+        game: r.game,
+        date: r.date,
+        time: r.time,
+        location: r.location,
+        maxPlayers: r.max_players != null ? Number(r.max_players) : 32,
+        fee: Number(r.fee || 0),
+        description: r.description || '',
+        status: r.status,
+        players: Array.isArray(r.players) ? r.players : [],
+        createdAt: r.created_at
+    };
+}
+
+async function persistShopsToSupabase() {
+    if (!shopSubsDB.length) return;
+    const res = await fetch(SUPABASE_URL + '/rest/v1/shops', {
+        method: 'POST',
+        headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(shopSubsDB.map(shopToRow))
+    });
+    if (!res.ok) {
+        console.error('Salvataggio shops Supabase:', res.status, await res.text());
+    }
+}
+
+async function persistTournamentsToSupabase() {
+    if (!tournamentsDB.length) return;
+    const res = await fetch(SUPABASE_URL + '/rest/v1/tournaments', {
+        method: 'POST',
+        headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(tournamentsDB.map(tournamentToRow))
+    });
+    if (!res.ok) {
+        console.error('Salvataggio tournaments Supabase:', res.status, await res.text());
+    }
+}
+
+async function loadShopsFromSupabase() {
+    try {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/shops?select=*', {
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY
+            }
+        });
+        if (!res.ok) {
+            console.error('Lettura shops Supabase:', res.status, await res.text());
+            return;
+        }
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length) {
+            shopSubsDB = rows.map(rowToShop);
+            persistJsonFile('shops.json', shopSubsDB, true);
+            console.log('Negozi caricati da Supabase:', shopSubsDB.length);
+            return;
+        }
+        if (shopSubsDB.length) {
+            await persistShopsToSupabase();
+            console.log('Negozi locali migrati su Supabase:', shopSubsDB.length);
+        }
+    } catch (err) {
+        console.error('Lettura shops Supabase:', err.message);
+    }
+}
+
+async function loadTournamentsFromSupabase() {
+    try {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/tournaments?select=*&order=created_at.asc', {
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY
+            }
+        });
+        if (!res.ok) {
+            console.error('Lettura tournaments Supabase:', res.status, await res.text());
+            return;
+        }
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length) {
+            tournamentsDB = rows.map(rowToTournament);
+            persistJsonFile('tournaments.json', tournamentsDB, true);
+            console.log('Tornei caricati da Supabase:', tournamentsDB.length);
+            return;
+        }
+        if (tournamentsDB.length) {
+            await persistTournamentsToSupabase();
+            console.log('Tornei locali migrati su Supabase:', tournamentsDB.length);
+        }
+    } catch (err) {
+        console.error('Lettura tournaments Supabase:', err.message);
     }
 }
 const authUserCache = new Map();
@@ -1474,7 +1640,12 @@ app.post('/api/vaultbot', (req, res) => {
 });
 
 const PORT = process.env.PORT || 4242;
-Promise.all([loadOrdersFromSupabase(), loadMessagesFromSupabase()]).finally(() => {
+Promise.all([
+    loadOrdersFromSupabase(),
+    loadMessagesFromSupabase(),
+    loadShopsFromSupabase(),
+    loadTournamentsFromSupabase()
+]).finally(() => {
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
         console.log('Stripe:', stripe ? 'configurato' : 'manca STRIPE_SECRET_KEY');
