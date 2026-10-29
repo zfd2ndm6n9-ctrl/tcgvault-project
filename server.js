@@ -200,7 +200,10 @@ function persistTournamentsToDisk() {
     persistJsonFile('tournaments.json', tournamentsDB);
     persistTournamentsToSupabase().catch(err => console.error('Salvataggio tornei Supabase:', err.message));
 }
-function persistPromoCodesToDisk() { persistJsonFile('promo-codes.json', promoCodesDB); }
+function persistPromoCodesToDisk() {
+    persistJsonFile('promo-codes.json', promoCodesDB);
+    persistPromoCodesToSupabase().catch(err => console.error('Salvataggio promo Supabase:', err.message));
+}
 function persistAccountsToDisk() { persistJsonFile('accounts.json', accountsDB); }
 
 function normalizeAccountType(raw) {
@@ -691,6 +694,85 @@ async function loadTournamentsFromSupabase() {
         }
     } catch (err) {
         console.error('Lettura tournaments Supabase:', err.message);
+    }
+}
+
+function promoToRow(p) {
+    return {
+        id: p.id,
+        code: String(p.code || '').toUpperCase(),
+        label: p.label || null,
+        max_uses: p.maxUses != null && p.maxUses !== '' ? Number(p.maxUses) : null,
+        duration_days: p.durationDays != null && p.durationDays !== '' ? Number(p.durationDays) : null,
+        enabled: p.enabled !== false,
+        created_by: p.createdBy || null,
+        valid_until: p.validUntil || null,
+        redemptions: Array.isArray(p.redemptions) ? p.redemptions : [],
+        created_at: p.createdAt || new Date().toISOString()
+    };
+}
+
+function rowToPromo(r) {
+    return {
+        id: r.id,
+        code: r.code,
+        label: r.label || '',
+        maxUses: r.max_uses != null ? Number(r.max_uses) : null,
+        durationDays: r.duration_days != null ? Number(r.duration_days) : null,
+        enabled: r.enabled !== false,
+        createdBy: r.created_by || '',
+        validUntil: r.valid_until || null,
+        redemptions: Array.isArray(r.redemptions) ? r.redemptions : [],
+        createdAt: r.created_at
+    };
+}
+
+async function persistPromoCodesToSupabase() {
+    if (!promoCodesDB.length) return;
+    const res = await fetch(SUPABASE_URL + '/rest/v1/promo_codes', {
+        method: 'POST',
+        headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(promoCodesDB.map(promoToRow))
+    });
+    if (!res.ok) {
+        console.error('Salvataggio promo_codes Supabase:', res.status, await res.text());
+    }
+}
+
+async function loadPromoCodesFromSupabase() {
+    try {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/promo_codes?select=*&order=created_at.asc', {
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY
+            }
+        });
+        if (!res.ok) {
+            console.error('Lettura promo_codes Supabase:', res.status, await res.text());
+            ensureDefaultPromoCodes();
+            return;
+        }
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length) {
+            promoCodesDB = rows.map(rowToPromo);
+            persistJsonFile('promo-codes.json', promoCodesDB, true);
+            console.log('Promo caricate da Supabase:', promoCodesDB.length);
+            ensureDefaultPromoCodes();
+            return;
+        }
+        if (promoCodesDB.length) {
+            await persistPromoCodesToSupabase();
+            console.log('Promo locali migrate su Supabase:', promoCodesDB.length);
+        }
+        ensureDefaultPromoCodes();
+    } catch (err) {
+        console.error('Lettura promo_codes Supabase:', err.message);
+        ensureDefaultPromoCodes();
     }
 }
 const authUserCache = new Map();
@@ -1644,7 +1726,8 @@ Promise.all([
     loadOrdersFromSupabase(),
     loadMessagesFromSupabase(),
     loadShopsFromSupabase(),
-    loadTournamentsFromSupabase()
+    loadTournamentsFromSupabase(),
+    loadPromoCodesFromSupabase()
 ]).finally(() => {
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
