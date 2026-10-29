@@ -4,12 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Negozio - TCG Vault</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="vault.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="auth-fetch.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         :root { --bg:#090d16; --panel:#131b2e; --accent:#00ff88; --text:#f8fafc; --muted:#94a3b8; --border:rgba(255,255,255,.08); --red:#ff4757; }
-        body { margin:0; background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; padding:22px; }
+        body { margin:0; background:var(--bg); color:var(--text); font-family:'Outfit','Segoe UI',sans-serif; padding:22px; }
         .wrap { max-width:920px; margin:0 auto; }
         header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:22px; }
         h1 { color:var(--accent); margin:0; font-size:1.35rem; }
@@ -30,7 +33,7 @@
 </head>
 <body>
     <div class="wrap">
-        <header>
+        <header class="site-header">
             <h1>Dashboard negozio</h1>
             <div><a href="shops.html">Area Negozi</a> · <a href="index.html">Marketplace</a></div>
         </header>

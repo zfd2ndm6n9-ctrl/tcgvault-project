@@ -424,10 +424,10 @@ async function requireAuth(req, res) {
         res.status(401).json({ success: false, error: 'Accesso richiesto.' });
         return null;
     }
-    if (!user.emailConfirmed || !user.phoneConfirmed || !user.strongAuth) {
+    if (!user.emailConfirmed || !user.strongAuth) {
         res.status(403).json({
             success: false,
-            error: 'Completa verifica email, cellulare e 2FA prima di continuare.'
+            error: 'Completa verifica email e 2FA prima di continuare.'
         });
         return null;
     }

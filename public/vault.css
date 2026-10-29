@@ -1,0 +1,131 @@
+:root {
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --radius: 16px;
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Outfit', var(--font-main, 'Segoe UI'), sans-serif;
+    letter-spacing: -0.011em;
+    background-image:
+        radial-gradient(1200px 600px at 8% -10%, rgba(0, 255, 136, 0.09), transparent 55%),
+        radial-gradient(900px 500px at 110% 0%, rgba(99, 91, 255, 0.14), transparent 50%),
+        radial-gradient(700px 400px at 50% 120%, rgba(0, 255, 136, 0.05), transparent 45%);
+    background-attachment: fixed;
+}
+
+::selection {
+    background: rgba(0, 255, 136, 0.28);
+    color: inherit;
+}
+
+*:focus-visible {
+    outline: 2px solid var(--accent-neon, #00ff88);
+    outline-offset: 2px;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.35);
+    border-radius: 99px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+
+a {
+    transition: color 0.2s var(--ease-out), opacity 0.2s var(--ease-out);
+}
+
+button, .btn, .btn-submit, .btn-sell, .btn-outline, .btn-filters, .icon-btn, .hamburger-btn, .category-card {
+    transition: transform 0.2s var(--ease-out), border-color 0.2s var(--ease-out), background 0.2s var(--ease-out), color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), opacity 0.2s var(--ease-out);
+}
+
+button:active, .btn:active, .btn-submit:active, .btn-sell:active {
+    transform: translateY(1px) scale(0.98);
+}
+
+input, select, textarea {
+    transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+}
+
+input:focus, select:focus, textarea:focus, .filter-input:focus, .filter-select:focus, .search-row input:focus {
+    box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.12);
+}
+
+.vault-hero {
+    margin: -8px 0 26px;
+    padding: 8px 2px 4px;
+}
+
+.vault-kicker {
+    margin: 0 0 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-neon, #00ff88);
+}
+
+.vault-sub {
+    margin: 0;
+    max-width: 38rem;
+    color: var(--text-muted, #94a3b8);
+    font-size: 1.02rem;
+    line-height: 1.5;
+    font-weight: 500;
+}
+
+.site-header {
+    position: sticky;
+    top: 10px;
+    z-index: 50;
+    background: color-mix(in srgb, var(--panel-solid, #131b2e) 78%, transparent);
+    backdrop-filter: blur(18px) saturate(1.2);
+    border: 1px solid var(--border-color, rgba(255,255,255,.08));
+    border-radius: 18px;
+    padding: 12px 16px;
+    margin-bottom: 26px;
+    box-shadow: var(--shadow);
+}
+
+h1 {
+    letter-spacing: -0.04em;
+}
+
+.tcg-card {
+    animation: vaultRise 0.45s var(--ease-out) both;
+}
+
+.tcg-card:nth-child(1) { animation-delay: 0.02s; }
+.tcg-card:nth-child(2) { animation-delay: 0.05s; }
+.tcg-card:nth-child(3) { animation-delay: 0.08s; }
+.tcg-card:nth-child(4) { animation-delay: 0.11s; }
+.tcg-card:nth-child(5) { animation-delay: 0.14s; }
+.tcg-card:nth-child(6) { animation-delay: 0.17s; }
+
+@keyframes vaultRise {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; }
+}
+
+.card, .pill, .event, .code-row {
+    transition: transform 0.25s var(--ease-out), border-color 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+}
+
+.card:hover, .pill:hover {
+    transform: translateY(-2px);
+    border-color: rgba(0, 255, 136, 0.28);
+}
+
+.btn, .btn-submit, .btn-sell {
+    box-shadow: 0 8px 22px rgba(0, 255, 136, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    body { background-attachment: scroll; }
+    .tcg-card, .card, .pill { animation: none !important; transition: none !important; }
+}

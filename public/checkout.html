@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Checkout - TCG Vault</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="vault.css">
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="auth-fetch.js"></script>
@@ -17,7 +20,7 @@
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
             --border-color: rgba(255, 255, 255, 0.08);
-            --font-main: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-main: 'Outfit', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
         }
         body { background: var(--bg-color); color: var(--text-main); font-family: var(--font-main); margin: 0; padding: 20px; }
         .wrap { max-width: 720px; margin: 0 auto; }
@@ -48,7 +51,7 @@
 </head>
 <body>
     <div class="wrap">
-        <header>
+        <header class="site-header">
             <h1>Checkout TCG Vault</h1>
             <a href="index.html">← Torna al marketplace</a>
         </header>

@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TCG Vault - Marketplace Ufficiale & Portafoglio Interno</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="vault.css">
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0"></script>
     <script src="auth-fetch.js"></script>
@@ -19,7 +23,7 @@
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
             --border-color: rgba(255, 255, 255, 0.08);
-            --font-main: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-main: 'Outfit', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
         }
 
         body.light-theme {
@@ -55,9 +59,6 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 22px;
-            margin-bottom: 30px;
             flex-wrap: wrap;
             gap: 15px;
         }
@@ -336,11 +337,11 @@
         
         .categories-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
         .category-card {
-            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 12px;
-            padding: 14px 10px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 0.9rem; font-weight: 700;
+            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 14px;
+            padding: 14px 10px; text-align: center; cursor: pointer; font-size: 0.9rem; font-weight: 700;
             box-shadow: 0 4px 12px rgba(0,0,0,0.03);
         }
-        .category-card:hover, .category-card.active { border-color: var(--accent-neon); background: rgba(0, 255, 136, 0.06); color: var(--accent-neon); transform: translateY(-2px); }
+        .category-card:hover, .category-card.active { border-color: var(--accent-neon); background: rgba(0, 255, 136, 0.08); color: var(--accent-neon); transform: translateY(-3px); }
 
         .filter-bar {
             background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 16px;
@@ -370,12 +371,13 @@
 
         .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px; }
         .tcg-card {
-            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 16px;
-            overflow: hidden; backdrop-filter: blur(10px); transition: all 0.25s ease;
+            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 18px;
+            overflow: hidden; backdrop-filter: blur(14px);
+            transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.28s ease, box-shadow 0.28s ease;
             display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; position: relative;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.04);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.12);
         }
-        .tcg-card:hover { transform: translateY(-5px); border-color: var(--accent-neon); box-shadow: 0 15px 35px rgba(0,255,136,0.08); }
+        .tcg-card:hover { transform: translateY(-6px); border-color: var(--accent-neon); box-shadow: 0 18px 40px rgba(0,255,136,0.12); }
         .card-img { width: 100%; height: 210px; object-fit: contain; background: rgba(0, 0, 0, 0.03); padding: 12px; box-sizing: border-box; }
         
         .card-body { padding: 18px; }
@@ -420,8 +422,9 @@
         .status-sold { background: rgba(255, 71, 87, 0.1); color: var(--heart-red); border: 1px solid rgba(255, 71, 87, 0.3); }
         .status-pending { background: rgba(245, 158, 11, 0.12); color: var(--admin-gold); border: 1px solid rgba(245, 158, 11, 0.35); }
         .rules-banner {
-            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 14px;
-            padding: 14px 16px; margin-bottom: 20px; font-size: 0.86rem; color: var(--text-muted); line-height: 1.5;
+            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 16px;
+            padding: 16px 18px; margin-bottom: 22px; font-size: 0.86rem; color: var(--text-muted); line-height: 1.55;
+            backdrop-filter: blur(10px);
         }
         .rules-banner strong { color: var(--accent-neon); }
 
@@ -484,8 +487,8 @@
         .form-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
         .form-group input, .form-group select, .form-group textarea { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 11px; color: var(--text-main); outline: none; font-family: inherit; font-size: 16px; }
         .form-group textarea { resize: vertical; min-height: 80px; }
-        .btn-submit { background: var(--accent-neon); color: #000; border: none; width: 100%; padding: 13px; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
-        .btn-submit:hover { opacity: 0.9; }
+        .btn-submit { background: var(--accent-neon); color: #04140c; border: none; width: 100%; padding: 13px; border-radius: 12px; font-weight: 800; font-size: 1rem; cursor: pointer; }
+        .btn-submit:hover { opacity: 0.92; filter: brightness(1.05); }
 
         @keyframes blink { 0% { opacity: .2; } 20% { opacity: 1; } 100% { opacity: .2; } }
         .typing-dots span { animation: blink 1.4s infinite both; font-weight: bold; font-size: 1.2rem; }
@@ -681,7 +684,7 @@
     </div>
 
     <div class="container">
-        <header>
+        <header class="site-header">
             <h1>TCG VAULT</h1>
             <div class="header-actions">
                 <button class="icon-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Cambia Tema">🌙</button>
@@ -695,6 +698,11 @@
                 </button>
             </div>
         </header>
+
+        <section class="vault-hero">
+            <p class="vault-kicker">Marketplace ufficiale</p>
+            <p class="vault-sub">Carte, mazzetti e sealed con pagamento Escrow. Vendi in pochi tap, compra in sicurezza.</p>
+        </section>
 
         <div class="categories-section">
             <div class="section-title">Scegli la Categoria TCG</div>
@@ -920,7 +928,7 @@
                 </form>
                 <div id="admin-2fa-box" style="display:none;margin-top:22px;padding:16px;border:1px solid var(--border-color);border-radius:12px;">
                     <h3 style="margin:0 0 8px;color:var(--admin-gold);">Sicurezza account</h3>
-                    <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 12px;">Collega Face ID / passkey. Email, cellulare e 2FA sono obbligatori per tutti.</p>
+                    <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 12px;">Collega Face ID / passkey. Email e 2FA restano attivi; il cellulare è facoltativo.</p>
                     <button type="button" class="btn-outline" onclick="registerSitePasskey()">Collega Face ID / passkey</button>
                     <p id="admin-2fa-msg" style="font-size:.85rem;margin-top:10px;color:var(--accent-neon);"></p>
                 </div>
@@ -1082,7 +1090,7 @@
                 <div class="auth-brand"><span>TCG Vault</span></div>
                 <button class="close-btn" onclick="closeAuthModal()">&times;</button>
             </div>
-            <p class="auth-lead">Account verificato: email, cellulare e 2FA. Così il marketplace resta protetto.</p>
+            <p class="auth-lead">Accedi con email e password, poi conferma la mail e la 2FA. Il cellulare è facoltativo.</p>
             <div class="auth-tabs">
                 <button type="button" class="auth-tab active" id="tab-login-btn" onclick="switchAuthPane('login')">Accedi</button>
                 <button type="button" class="auth-tab" id="tab-register-btn" onclick="switchAuthPane('register')">Crea account</button>
@@ -1105,9 +1113,9 @@
 
             <form id="auth-register-form" class="auth-pane" onsubmit="handleRegister(event)">
                 <div class="auth-checks">
-                    <div class="auth-check">1. <b>Email</b> — link di conferma obbligatorio</div>
-                    <div class="auth-check">2. <b>Cellulare</b> — codice SMS obbligatorio</div>
-                    <div class="auth-check">3. <b>2FA</b> — Face ID o app Password</div>
+                    <div class="auth-check">1. <b>Email</b> — link di conferma</div>
+                    <div class="auth-check">2. <b>2FA</b> — Face ID o app Password</div>
+                    <div class="auth-check">3. <b>Cellulare</b> — facoltativo, SMS in seguito</div>
                 </div>
                 <div class="form-group">
                     <label>Nome completo</label>
@@ -1118,8 +1126,8 @@
                     <input type="email" id="register-email" placeholder="nome@email.com" required autocomplete="email">
                 </div>
                 <div class="form-group">
-                    <label>Cellulare (Italia)</label>
-                    <input type="tel" id="register-phone" placeholder="340 123 4567" required autocomplete="tel">
+                    <label>Cellulare (facoltativo)</label>
+                    <input type="tel" id="register-phone" placeholder="340 123 4567" autocomplete="tel">
                 </div>
                 <div class="form-group">
                     <label>Password (min. 8 caratteri)</label>
@@ -1146,7 +1154,7 @@
                 <div class="verify-step" id="vstep-phone"></div>
                 <div class="verify-step" id="vstep-mfa"></div>
             </div>
-            <p class="auth-lead" id="verify-lead">Completa i tre passaggi per usare TCG Vault.</p>
+            <p class="auth-lead" id="verify-lead">Conferma email e 2FA per usare TCG Vault. Il cellulare lo colleghi dopo.</p>
 
             <div id="verify-email-pane" style="display:none;">
                 <p class="auth-hint">Ti abbiamo inviato un link. Apri la mail e conferma, poi torna qui.</p>
@@ -1308,7 +1316,7 @@
         }
 
         function accountReady() {
-            return !!(currentUser && currentUser.emailConfirmed && currentUser.phoneConfirmed && currentUser.strongAuth);
+            return !!(currentUser && currentUser.emailConfirmed && currentUser.strongAuth);
         }
 
         function normalizeItPhone(raw) {
@@ -1328,7 +1336,7 @@
             if (!currentUser) { openAuthModal(); return false; }
             if (!accountReady()) {
                 startAccountVerification();
-                showNotification('Completa verifica email, cellulare e 2FA.', 'error');
+                showNotification('Completa verifica email e 2FA.', 'error');
                 return false;
             }
             return true;
@@ -1812,15 +1820,16 @@
             e.preventDefault();
             const name = document.getElementById('register-name').value.trim();
             const email = document.getElementById('register-email').value.trim();
-            const phone = normalizeItPhone(document.getElementById('register-phone').value);
+            const phoneRaw = document.getElementById('register-phone').value.trim();
+            const phone = phoneRaw ? normalizeItPhone(phoneRaw) : '';
             const password = document.getElementById('register-password').value;
             const password2 = document.getElementById('register-password-2').value;
             if (password !== password2) {
                 setAuthMsg('register-message', 'Le password non coincidono.', true);
                 return;
             }
-            if (!isValidE164(phone)) {
-                setAuthMsg('register-message', 'Inserisci un cellulare italiano valido.', true);
+            if (phone && !isValidE164(phone)) {
+                setAuthMsg('register-message', 'Cellulare non valido. Lascia vuoto oppure usa +39…', true);
                 return;
             }
             setAuthMsg('register-message', 'Creazione account...');
@@ -1828,7 +1837,7 @@
                 email,
                 password,
                 options: {
-                    data: { full_name: name, phone },
+                    data: { full_name: name, phone: phone || undefined },
                     emailRedirectTo: window.location.origin
                 }
             });
@@ -1837,7 +1846,7 @@
                 return;
             }
             try {
-                localStorage.setItem('tcg_pending_phone', phone);
+                if (phone) localStorage.setItem('tcg_pending_phone', phone);
                 localStorage.setItem(`tcg_vault_profile_${data.user && data.user.id || email}`, JSON.stringify({ name, phone }));
             } catch (err) {}
             setAuthMsg('register-message', 'Account creato. Conferma la email dal link che ti abbiamo inviato, poi accedi.');
@@ -1872,14 +1881,6 @@
             if (!currentUser.emailConfirmed) {
                 setVerifyPane('email');
                 setMfaMessage('Apri la casella (e lo spam) e clicca il link di conferma.');
-                return;
-            }
-            if (!currentUser.phoneConfirmed) {
-                setVerifyPane('phone');
-                const pending = currentUser.phone || localStorage.getItem('tcg_pending_phone') || '';
-                const input = document.getElementById('verify-phone-input');
-                if (input && pending) input.value = pending;
-                setMfaMessage('Invia il codice SMS e inseriscilo qui.');
                 return;
             }
             setVerifyPane('mfa');
@@ -1963,7 +1964,7 @@
         async function finishAdminVerified() {
             hideOverlay('mfa-modal');
             await initAuth();
-            showNotification('Account verificato: email, telefono e 2FA attivi.');
+            showNotification('Account verificato: email e 2FA attivi.');
         }
 
         async function verifyAdminPasskey() {
