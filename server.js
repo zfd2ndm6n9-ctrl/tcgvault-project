@@ -26,6 +26,7 @@ function persistOrdersToDisk() {
     } catch (err) {
         console.error('Salvataggio ordini fallito:', err.message);
     }
+    persistOrdersToSupabase().catch(err => console.error('Salvataggio ordini Supabase:', err.message));
 }
 
 function loadOrdersFromDisk() {
@@ -359,6 +360,97 @@ try {
     }
 } catch (e) {}
 const CART_MIN_ORDER = 20;
+
+function orderToRow(o) {
+    return {
+        id: o.id,
+        payment_intent_id: o.paymentIntentId || null,
+        buyer_id: o.buyerId || null,
+        seller_id: o.sellerId || null,
+        card_id: o.cardId != null ? String(o.cardId) : null,
+        card_ids: Array.isArray(o.cardIds) ? o.cardIds : [],
+        card_title: o.cardTitle || null,
+        amount: o.amount != null ? Number(o.amount) : null,
+        status: o.status || 'pending_payment',
+        escrow_notified: !!o.escrowNotified,
+        carrier: o.carrier || null,
+        tracking_number: o.trackingNumber || null,
+        tracking_link: o.trackingLink || null,
+        paid_at: o.paidAt || null,
+        completed_at: o.completedAt || null,
+        created_at: o.createdAt || new Date().toISOString()
+    };
+}
+
+function rowToOrder(r) {
+    return {
+        id: r.id,
+        paymentIntentId: r.payment_intent_id,
+        buyerId: r.buyer_id,
+        sellerId: r.seller_id,
+        cardId: r.card_id,
+        cardIds: r.card_ids || [],
+        cardTitle: r.card_title,
+        amount: Number(r.amount || 0),
+        status: r.status,
+        escrowNotified: !!r.escrow_notified,
+        carrier: r.carrier,
+        trackingNumber: r.tracking_number,
+        trackingLink: r.tracking_link,
+        paidAt: r.paid_at,
+        completedAt: r.completed_at,
+        createdAt: r.created_at
+    };
+}
+
+async function persistOrdersToSupabase() {
+    if (!ordersDB.length) return;
+    const res = await fetch(SUPABASE_URL + '/rest/v1/orders', {
+        method: 'POST',
+        headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(ordersDB.map(orderToRow))
+    });
+    if (!res.ok) {
+        console.error('Salvataggio orders Supabase:', res.status, await res.text());
+    }
+}
+
+async function loadOrdersFromSupabase() {
+    try {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/orders?select=*&order=created_at.desc', {
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY
+            }
+        });
+        if (!res.ok) {
+            console.error('Lettura orders Supabase:', res.status, await res.text());
+            return;
+        }
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length) {
+            ordersDB = rows.map(rowToOrder);
+            try {
+                const file = path.join(__dirname, 'data', 'orders.json');
+                fs.mkdirSync(path.dirname(file), { recursive: true });
+                fs.writeFileSync(file, JSON.stringify(ordersDB, null, 2));
+            } catch (err) {}
+            console.log('Ordini caricati da Supabase:', ordersDB.length);
+            return;
+        }
+        if (ordersDB.length) {
+            await persistOrdersToSupabase();
+            console.log('Ordini locali migrati su Supabase:', ordersDB.length);
+        }
+    } catch (err) {
+        console.error('Lettura orders Supabase:', err.message);
+    }
+}
 const authUserCache = new Map();
 const rateBuckets = {};
 
@@ -1306,8 +1398,10 @@ app.post('/api/vaultbot', (req, res) => {
 });
 
 const PORT = process.env.PORT || 4242;
-app.listen(PORT, () => {
-    console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
-    console.log('Stripe:', stripe ? 'configurato' : 'manca STRIPE_SECRET_KEY');
-    console.log('Webhook:', process.env.STRIPE_WEBHOOK_SECRET ? 'configurato' : 'manca STRIPE_WEBHOOK_SECRET');
+loadOrdersFromSupabase().finally(() => {
+    app.listen(PORT, () => {
+        console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
+        console.log('Stripe:', stripe ? 'configurato' : 'manca STRIPE_SECRET_KEY');
+        console.log('Webhook:', process.env.STRIPE_WEBHOOK_SECRET ? 'configurato' : 'manca STRIPE_WEBHOOK_SECRET');
+    });
 });
