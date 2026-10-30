@@ -632,8 +632,8 @@
             <form id="edit-listing-form" onsubmit="handleEditListingSubmit(event)">
                 <input type="hidden" id="edit-card-id">
                 <div class="form-group">
-                    <label>Titolo del Prodotto *</label>
-                    <input type="text" id="edit-title" required>
+                    <label>Titolo (non modificabile: deve restare la carta ufficiale)</label>
+                    <input type="text" id="edit-title" readonly>
                 </div>
                 <div class="form-group">
                     <label>Prezzo (€) *</label>
@@ -1218,7 +1218,7 @@
             <form id="sell-form" onsubmit="handleSellSubmit(event)">
                 <div class="form-group">
                     <label>Categoria TCG *</label>
-                    <select id="sell-category" required>
+                    <select id="sell-category" required onchange="onSellCatalogFieldsChange()">
                         <option value="Pokemon">Pokémon</option>
                         <option value="Yugioh">Yu-Gi-Oh!</option>
                         <option value="Magic">Magic</option>
@@ -1229,13 +1229,20 @@
                 </div>
                 <div class="form-group">
                     <label>Tipo di Prodotto *</label>
-                    <select id="sell-type" required>
+                    <select id="sell-type" required onchange="onSellCatalogFieldsChange()">
                         <option value="Carta Singola">Carta Singola</option>
                         <option value="Mazzo Completo">Mazzo Completo</option>
                         <option value="Box / Bustina">Box / Bustina Sigillata</option>
                         <option value="Lotto / Stock">Lotto / Stock</option>
                         <option value="Accessori">Accessori</option>
                     </select>
+                </div>
+                <div class="form-group" id="catalog-search-wrap">
+                    <label>Cerca carta ufficiale *</label>
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Per le carte singole scegli un risultato reale (Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana). I nomi inventati vengono rifiutati.</p>
+                    <input type="text" id="sell-catalog-q" placeholder="Es. Charizard, Lightning Bolt, Blue-Eyes" autocomplete="off" oninput="onCatalogQueryInput()">
+                    <div id="catalog-results" style="max-height:220px;overflow:auto;margin-top:6px;"></div>
+                    <p id="catalog-picked" style="font-size:0.85rem;color:var(--accent-neon);margin:8px 0 0;"></p>
                 </div>
                 <div class="form-group">
                     <label>Titolo del Prodotto *</label>
@@ -1296,6 +1303,8 @@
         let selectedCategory = '';
         let currentUser = null;
         let selectedCard = null;
+        let selectedCatalog = null;
+        let catalogSearchTimer = null;
         let pendingPaymentOrderId = null;
         let elements = null;
         let clientSecret = null;
@@ -2099,6 +2108,70 @@
             updateCartCounter();
         }
 
+        function onSellCatalogFieldsChange() {
+            selectedCatalog = null;
+            const type = (document.getElementById('sell-type') || {}).value;
+            const wrap = document.getElementById('catalog-search-wrap');
+            const title = document.getElementById('sell-title');
+            const picked = document.getElementById('catalog-picked');
+            const results = document.getElementById('catalog-results');
+            if (picked) picked.textContent = '';
+            if (results) results.innerHTML = '';
+            const singles = type === 'Carta Singola';
+            if (wrap) wrap.style.display = singles ? 'block' : 'none';
+            if (title) {
+                title.readOnly = singles;
+                if (singles) title.value = '';
+            }
+        }
+
+        function onCatalogQueryInput() {
+            clearTimeout(catalogSearchTimer);
+            catalogSearchTimer = setTimeout(searchOfficialCards, 350);
+        }
+
+        async function searchOfficialCards() {
+            const box = document.getElementById('catalog-results');
+            const q = ((document.getElementById('sell-catalog-q') || {}).value || '').trim();
+            const category = (document.getElementById('sell-category') || {}).value;
+            if (!box) return;
+            if (q.length < 2) { box.innerHTML = ''; return; }
+            box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Ricerca nel catalogo ufficiale…</p>';
+            try {
+                const res = await fetch(`${window.location.origin}/api/catalog/search?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                if (!data.success) {
+                    box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">' + (data.error || 'Catalogo non disponibile.') + '</p>';
+                    return;
+                }
+                if (!data.cards.length) {
+                    box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Nessuna carta ufficiale trovata. Cambia gioco o nome.</p>';
+                    return;
+                }
+                box.innerHTML = data.cards.map((c, i) => `
+                    <button type="button" class="btn-outline" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin-bottom:6px;padding:8px;" onclick="pickCatalogCard(${i})">
+                        ${c.image ? `<img src="${escapeHtml(c.image)}" alt="" style="width:36px;height:50px;object-fit:cover;border-radius:4px;">` : ''}
+                        <span><b>${escapeHtml(c.name)}</b><br><small>${escapeHtml(c.set || '')} ${c.number ? '#' + escapeHtml(c.number) : ''}</small></span>
+                    </button>
+                `).join('');
+                window.__catalogHits = data.cards;
+            } catch (err) {
+                box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Errore ricerca catalogo.</p>';
+            }
+        }
+
+        function pickCatalogCard(index) {
+            const card = (window.__catalogHits || [])[index];
+            if (!card) return;
+            selectedCatalog = card;
+            const title = document.getElementById('sell-title');
+            const picked = document.getElementById('catalog-picked');
+            const results = document.getElementById('catalog-results');
+            if (title) title.value = card.name + (card.set ? (' · ' + card.set) : '') + (card.number ? (' #' + card.number) : '');
+            if (picked) picked.textContent = 'Selezionata: ' + title.value;
+            if (results) results.innerHTML = '';
+        }
+
         async function handleSellSubmit(event) {
             event.preventDefault();
             if (!currentUser) { 
@@ -2142,28 +2215,39 @@
             }
 
             const pending = getSellerCatalogCents(currentUser.id, price) < SELLER_MIN_CATALOG_CENTS;
-            const newCard = {
-                user_id: currentUser.id,
-                seller_name: sellerRealName,
-                category: document.getElementById('sell-category').value,
-                type: document.getElementById('sell-type').value,
-                title: document.getElementById('sell-title').value,
-                price,
-                location: document.getElementById('sell-location').value,
-                condition: document.getElementById('sell-condition').value,
-                image_url: imageUrl,
-                description: withPendingMarker(document.getElementById('sell-description').value, pending),
-                is_sold: false
-            };
-
-            const { error } = await supabaseClient
-                .from('cards')
-                .insert([newCard]);
-
-            if (error) {
-                showNotification('Errore Supabase: ' + error.message, 'error');
+            const type = document.getElementById('sell-type').value;
+            if (type === 'Carta Singola' && !(selectedCatalog && selectedCatalog.id)) {
+                showNotification('Seleziona la carta dal catalogo ufficiale. I nomi inventati non sono ammessi.', 'error');
+                return;
+            }
+            const listingRes = await fetch(`${window.location.origin}/api/listings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    seller_name: sellerRealName,
+                    category: document.getElementById('sell-category').value,
+                    type,
+                    title: document.getElementById('sell-title').value,
+                    price,
+                    location: document.getElementById('sell-location').value,
+                    condition: document.getElementById('sell-condition').value,
+                    image_url: imageUrl,
+                    description: document.getElementById('sell-description').value,
+                    pending,
+                    catalogId: selectedCatalog && selectedCatalog.id,
+                    catalogSource: selectedCatalog && selectedCatalog.source
+                })
+            });
+            const listingData = await listingRes.json();
+            if (!listingData.success) {
+                showNotification(listingData.error || 'Errore pubblicazione.', 'error');
             } else {
                 document.getElementById('sell-form').reset();
+                selectedCatalog = null;
+                const picked = document.getElementById('catalog-picked');
+                const results = document.getElementById('catalog-results');
+                if (picked) picked.textContent = '';
+                if (results) results.innerHTML = '';
                 closeSellModal();
                 await loadCardsFromSupabase();
                 const sync = await syncSellerListingStatuses(currentUser.id);
@@ -3433,6 +3517,7 @@
             if (currentUser.address) {
                 document.getElementById('sell-location').value = currentUser.address;
             }
+            onSellCatalogFieldsChange();
             showOverlay('sell-modal');
         }
 

@@ -433,6 +433,9 @@ function platformChargeCents(listedEuro) {
 const MEETUP_MIN_ACCOUNT_DAYS = 7;
 const MEETUP_MAX_AMOUNT = 150;
 const HOLD_RELEASED_AT = '1970-01-01T00:00:00.000Z';
+const SINGLE_CARD_TYPE = 'Carta Singola';
+const LISTING_BLOCK_RE = /\b(iphone|ipad|samsung|xiaomi|huawei|airpods?|nike|adidas|affitto|monolocale|bitcoin|crypto|onlyfans|seguaci|followers|playstation|xbox series|cocaina)\b/i;
+const CATALOG_UA = 'TCGVault/1.0 (https://tcg-vault.it; catalog-match)';
 
 function orderToRow(o) {
     return {
@@ -1120,6 +1123,175 @@ async function requireAdmin(req, res) {
     return user;
 }
 
+function listingOffTopic(text) {
+    return LISTING_BLOCK_RE.test(String(text || ''));
+}
+
+function mapCatalogHit(source, id, name, setName, number, image) {
+    return {
+        source,
+        id: String(id),
+        name: String(name || '').trim(),
+        set: String(setName || '').trim(),
+        number: String(number || '').trim(),
+        image: image || ''
+    };
+}
+
+async function catalogFetchJson(url) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    try {
+        const res = await fetch(url, {
+            signal: ctrl.signal,
+            headers: { 'User-Agent': CATALOG_UA, Accept: 'application/json' }
+        });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (err) {
+        return null;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+async function searchOfficialCatalog(category, query) {
+    const q = String(query || '').trim();
+    if (q.length < 2) return [];
+    const enc = encodeURIComponent(q);
+    if (category === 'Pokemon') {
+        const json = await catalogFetchJson('https://api.pokemontcg.io/v2/cards?q=name:' + enc + '*&pageSize=12&orderBy=name');
+        return ((json && json.data) || []).map(c => mapCatalogHit(
+            'pokemon',
+            c.id,
+            c.name,
+            c.set && c.set.name,
+            c.number,
+            c.images && (c.images.small || c.images.large)
+        ));
+    }
+    if (category === 'Magic') {
+        const json = await catalogFetchJson('https://api.scryfall.com/cards/search?q=' + enc + '&unique=cards');
+        if (!json || json.object === 'error') return [];
+        return (json.data || []).slice(0, 12).map(c => mapCatalogHit(
+            'scryfall',
+            c.id,
+            c.name,
+            c.set_name || c.set,
+            c.collector_number,
+            c.image_uris && c.image_uris.small
+        ));
+    }
+    if (category === 'Yugioh') {
+        const json = await catalogFetchJson('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=' + enc + '&num=12&offset=0');
+        return ((json && json.data) || []).map(c => mapCatalogHit(
+            'ygoprodeck',
+            c.id,
+            c.name,
+            (c.typeline && c.typeline.join(' ')) || c.type || 'Yu-Gi-Oh!',
+            c.id,
+            c.card_images && c.card_images[0] && c.card_images[0].image_url_small
+        ));
+    }
+    if (category === 'Lorcana') {
+        const json = await catalogFetchJson('https://api.lorcana-api.com/cards/fetch?search=' + enc);
+        const rows = Array.isArray(json) ? json : (json && json.cards) || [];
+        return rows.slice(0, 12).map(c => mapCatalogHit(
+            'lorcana',
+            c.Set_ID || c.id || c.Name,
+            c.Name || c.name,
+            c.Set_Name || c.set,
+            c.Card_Num || c.number,
+            c.Image || c.image
+        ));
+    }
+    if (category === 'OnePiece') {
+        const json = await catalogFetchJson('https://apitcg.com/api/one-piece/cards?name=' + enc + '&limit=12');
+        const rows = (json && (json.data || json.cards || json)) || [];
+        const list = Array.isArray(rows) ? rows : [];
+        return list.slice(0, 12).map(c => mapCatalogHit(
+            'onepiece',
+            c.id || c.code || c.setId,
+            c.name || c.n || c.title,
+            c.set || c.setName || 'One Piece',
+            c.code || c.number || '',
+            c.images && (c.images.small || c.images.large) || c.image
+        )).filter(c => c.id && c.name);
+    }
+    return [];
+}
+
+async function verifyOfficialCard(category, source, id) {
+    const cardId = String(id || '').trim();
+    if (!cardId) return null;
+    if (category === 'Pokemon' && source === 'pokemon') {
+        const json = await catalogFetchJson('https://api.pokemontcg.io/v2/cards/' + encodeURIComponent(cardId));
+        const c = json && json.data;
+        if (!c) return null;
+        return mapCatalogHit('pokemon', c.id, c.name, c.set && c.set.name, c.number, c.images && c.images.small);
+    }
+    if (category === 'Magic' && source === 'scryfall') {
+        const c = await catalogFetchJson('https://api.scryfall.com/cards/' + encodeURIComponent(cardId));
+        if (!c || c.object === 'error') return null;
+        return mapCatalogHit('scryfall', c.id, c.name, c.set_name, c.collector_number, c.image_uris && c.image_uris.small);
+    }
+    if (category === 'Yugioh' && source === 'ygoprodeck') {
+        const json = await catalogFetchJson('https://db.ygoprodeck.com/api/v7/cardinfo.php?id=' + encodeURIComponent(cardId));
+        const c = json && json.data && json.data[0];
+        if (!c) return null;
+        return mapCatalogHit('ygoprodeck', c.id, c.name, c.type, c.id, c.card_images && c.card_images[0] && c.card_images[0].image_url_small);
+    }
+    if (category === 'Lorcana' && source === 'lorcana') {
+        const json = await catalogFetchJson('https://api.lorcana-api.com/cards/fetch?search=' + encodeURIComponent(cardId));
+        const rows = Array.isArray(json) ? json : (json && json.cards) || [];
+        const c = rows.find(row => String(row.Set_ID || row.id || row.Name) === cardId) || rows[0];
+        if (!c || !(c.Name || c.name)) return null;
+        return mapCatalogHit('lorcana', c.Set_ID || c.Name, c.Name || c.name, c.Set_Name, c.Card_Num, c.Image);
+    }
+    if (category === 'OnePiece' && source === 'onepiece') {
+        const json = await catalogFetchJson('https://apitcg.com/api/one-piece/cards?id=' + encodeURIComponent(cardId));
+        const rows = (json && (json.data || json.cards || json)) || [];
+        const list = Array.isArray(rows) ? rows : [rows];
+        const c = list.find(row => String(row.id || row.code) === cardId) || list[0];
+        if (!c || !(c.name || c.title)) return null;
+        return mapCatalogHit('onepiece', c.id || c.code, c.name || c.title, c.set || c.setName, c.code, c.image || (c.images && c.images.small));
+    }
+    return null;
+}
+
+async function insertListingRow(row) {
+    const headers = {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
+    };
+    let res = await fetch(SUPABASE_URL + '/rest/v1/cards', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(row)
+    });
+    if (!res.ok) {
+        const errText = await res.text();
+        if (/catalog_/i.test(errText) || res.status === 400) {
+            const slim = { ...row };
+            delete slim.catalog_id;
+            delete slim.catalog_source;
+            delete slim.catalog_set;
+            res = await fetch(SUPABASE_URL + '/rest/v1/cards', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(slim)
+            });
+            if (!res.ok) return { error: await res.text() };
+            return { row: (await res.json())[0] };
+        }
+        return { error: errText };
+    }
+    const data = await res.json();
+    return { row: Array.isArray(data) ? data[0] : data };
+}
+
 function normalizeCardIds(raw) {
     if (raw == null || raw === '') return [];
     const list = Array.isArray(raw) ? raw : String(raw).split(',');
@@ -1255,6 +1427,102 @@ app.post('/api/auth/login', async (req, res) => {
     const { name } = req.body || {};
     const user = upsertUserInMemory({ id: auth.id, email: auth.email, name: name || auth.email.split('@')[0] });
     res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
+});
+
+app.get('/api/catalog/search', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    if (!rateLimit('catalog:' + auth.id, 30, 60000)) {
+        return res.status(429).json({ success: false, error: 'Troppe ricerche. Riprova tra poco.' });
+    }
+    const category = String(req.query.category || '');
+    const q = String(req.query.q || '');
+    if (q.trim().length < 2) {
+        return res.json({ success: true, cards: [] });
+    }
+    if (!['Pokemon', 'Yugioh', 'Magic', 'OnePiece', 'Lorcana'].includes(category)) {
+        return res.status(400).json({ success: false, error: 'Per le carte singole scegli un gioco (non Altro TCG).' });
+    }
+    try {
+        const cards = await searchOfficialCatalog(category, q);
+        res.json({ success: true, cards });
+    } catch (err) {
+        res.status(502).json({ success: false, error: 'Catalogo ufficiale non raggiungibile. Riprova.' });
+    }
+});
+
+app.post('/api/listings', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    if (!rateLimit('list:' + auth.id, 12, 60000)) {
+        return res.status(429).json({ success: false, error: 'Troppi annunci. Riprova tra poco.' });
+    }
+    const body = req.body || {};
+    const category = String(body.category || '');
+    const type = String(body.type || '');
+    const price = Number(String(body.price || '').replace(',', '.'));
+    const location = String(body.location || '').trim();
+    const condition = String(body.condition || '').trim();
+    const imageUrl = String(body.image_url || '').trim();
+    const rawDesc = String(body.description || '').trim().slice(0, 2000);
+    const pending = !!body.pending;
+    if (!['Pokemon', 'Yugioh', 'Magic', 'OnePiece', 'Lorcana', 'Altro'].includes(category)) {
+        return res.status(400).json({ success: false, error: 'Categoria non valida.' });
+    }
+    if (!type || !location || !condition || !imageUrl || !(price > 0)) {
+        return res.status(400).json({ success: false, error: 'Compila prezzo, località, condizione e foto.' });
+    }
+    if (listingOffTopic(type + ' ' + rawDesc + ' ' + String(body.title || ''))) {
+        return res.status(400).json({ success: false, error: 'Annuncio fuori tema: qui si vendono solo TCG e accessori.' });
+    }
+
+    let title = String(body.title || '').trim().slice(0, 180);
+    let catalogId = null;
+    let catalogSource = null;
+    let catalogSet = null;
+
+    if (type === SINGLE_CARD_TYPE) {
+        if (category === 'Altro') {
+            return res.status(400).json({ success: false, error: 'Le carte singole devono appartenere a un gioco ufficiale (Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana).' });
+        }
+        const verified = await verifyOfficialCard(category, body.catalogSource, body.catalogId);
+        if (!verified) {
+            return res.status(400).json({ success: false, error: 'Questa carta non esiste nei cataloghi ufficiali. Cercala e selezionala dalla lista.' });
+        }
+        title = verified.name + (verified.set ? (' · ' + verified.set) : '') + (verified.number ? (' #' + verified.number) : '');
+        catalogId = verified.id;
+        catalogSource = verified.source;
+        catalogSet = verified.set || null;
+    } else {
+        if (title.length < 3) {
+            return res.status(400).json({ success: false, error: 'Inserisci un titolo.' });
+        }
+        if (listingOffTopic(title)) {
+            return res.status(400).json({ success: false, error: 'Annuncio fuori tema: qui si vendono solo TCG e accessori.' });
+        }
+    }
+
+    const description = pending ? ('[[PENDING]]' + rawDesc) : rawDesc;
+    const inserted = await insertListingRow({
+        user_id: auth.id,
+        seller_name: String(body.seller_name || auth.email || 'Venditore').slice(0, 80),
+        category,
+        type,
+        title,
+        price,
+        location,
+        condition,
+        image_url: imageUrl,
+        description,
+        is_sold: false,
+        catalog_id: catalogId,
+        catalog_source: catalogSource,
+        catalog_set: catalogSet
+    });
+    if (inserted.error) {
+        return res.status(400).json({ success: false, error: 'Salvataggio annuncio fallito.' });
+    }
+    res.json({ success: true, card: inserted.row, title });
 });
 
 app.post('/api/users/profile', async (req, res) => {
