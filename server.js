@@ -118,7 +118,7 @@ async function fulfillPaidOrder(order) {
                 receiverId: order.buyerId,
                 cardId: order.cardId || null,
                 text: isMeetup
-                    ? `🤝 Incontro prenotato per "${order.cardTitle || 'Articolo TCG'}". Luogo pubblico, ispeziona le carte, poi conferma con il codice a 6 cifre che ti mostra il venditore. I fondi restano 14 giorni in hold.`
+                    ? `🤝 Incontro prenotato per "${order.cardTitle || 'Articolo TCG'}". Luogo pubblico, ispeziona le carte, poi conferma con il codice a 6 cifre che ti mostra il venditore. I fondi restano 7 giorni in hold.`
                     : `📦 Pagamento ricevuto per "${order.cardTitle || 'Articolo TCG'}". Quando arriva il pacco tracciato, conferma la ricezione dal tuo profilo ordini.`,
                 isEscrowAlert: true,
                 deliveryMethod: order.deliveryMethod || 'shipping',
@@ -423,7 +423,6 @@ try {
 } catch (e) {}
 const CART_MIN_ORDER = 20;
 const WALLET_HOLD_DAYS = 7;
-const WALLET_HOLD_DAYS_MEETUP = 14;
 const PLATFORM_FEE_RATE = 0.05;
 
 function platformChargeCents(listedEuro) {
@@ -1584,7 +1583,7 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Conferma la ricezione solo dopo la spedizione tracciata.' });
     }
 
-    const holdDays = method === 'meetup' ? WALLET_HOLD_DAYS_MEETUP : WALLET_HOLD_DAYS;
+    const holdDays = WALLET_HOLD_DAYS;
     order.status = 'completed';
     order.completedAt = new Date().toISOString();
     order.deliveryMethod = method;
