@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="vault.css">
+    <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="auth-fetch.js"></script>
     <style>
@@ -30,15 +31,22 @@
             <a href="index.html">← Marketplace</a>
         </header>
         <div class="card">
-            <p class="muted">Eventi organizzati dai negozi partner. Iscriviti con un click: ricevi un QR personale da mostrare in store al check-in.</p>
+            <p class="muted">Eventi dei negozi partner. Iscriviti e mostra il QR al check-in. Se c'è una quota, la paghi qui.</p>
         </div>
         <div id="list"></div>
         <div class="card" id="qr-box" style="display:none;"></div>
     </div>
     <script>
+        const stripe = Stripe('pk_live_51URVxbB5CcM9bCL44GCB7XIP7NX3ofDkHfnTf0pXzL0T0w0ggdve6GQI9bGvsRgW08uheTInau2mFFBZG4CTkLXl00CqE2fp40');
         const supabaseClient = window.supabase.createClient('https://ahpkmppjtespemkzmkol.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk');
         window.__tcgSupabase = supabaseClient;
         let currentUser = null;
+        let payElements = null;
+        let pendingPay = null;
+
+        function escapeHtml(text) {
+            return String(text || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
 
         async function init() {
             const { data: { session } } = await supabaseClient.auth.getSession();
@@ -49,42 +57,103 @@
                 box.innerHTML = '<div class="card"><p class="muted">Nessun torneo pubblicato al momento.</p></div>';
                 return;
             }
-            box.innerHTML = list.map(t => `
+            box.innerHTML = list.map(t => {
+                const fee = Number(t.fee || 0);
+                const cta = fee > 0 ? ('Paga €' + fee.toFixed(2) + ' e iscriviti') : 'Iscriviti';
+                return `
                 <div class="card">
-                    <strong>${t.title}</strong>
-                    <div class="muted">${t.shopName || 'Negozio'} · ${t.game} · ${t.date || ''} ${t.time || ''}</div>
-                    <div class="muted">${t.location || ''} · ${t.playersCount}/${t.maxPlayers} iscritti · quota €${Number(t.fee||0).toFixed(2)}</div>
-                    <p class="muted">${t.description || ''}</p>
-                    <button class="btn" onclick="register('${t.id}')">Iscriviti</button>
+                    <strong>${escapeHtml(t.title)}</strong>
+                    <div class="muted">${escapeHtml(t.shopName || 'Negozio')} · ${escapeHtml(t.game)} · ${escapeHtml(t.date || '')} ${escapeHtml(t.time || '')}</div>
+                    <div class="muted">${escapeHtml(t.location || '')} · ${t.playersCount}/${t.maxPlayers} iscritti · quota €${fee.toFixed(2)}</div>
+                    <p class="muted">${escapeHtml(t.description || '')}</p>
+                    <button class="btn" onclick="register('${escapeHtml(t.id)}')">${cta}</button>
+                </div>`;
+            }).join('');
+        }
+
+        function showQr(data) {
+            const qrBox = document.getElementById('qr-box');
+            qrBox.style.display = 'block';
+            qrBox.innerHTML = `
+                <h2 style="margin-top:0;">Il tuo QR di check-in</h2>
+                <p class="muted">${escapeHtml(data.message || '')}</p>
+                <div class="qr">
+                    <img src="${escapeHtml(data.qrImageUrl)}" alt="QR iscrizione">
+                    <div class="muted" style="margin-top:8px;">${escapeHtml(data.qrToken)}</div>
                 </div>
-            `).join('');
+            `;
+        }
+
+        async function finishRegister(id, paymentIntentId) {
+            const data = await fetch('/api/tournaments/' + encodeURIComponent(id) + '/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: currentUser.name,
+                    email: currentUser.email,
+                    paymentIntentId: paymentIntentId || undefined
+                })
+            }).then(r => r.json());
+            const qrBox = document.getElementById('qr-box');
+            qrBox.style.display = 'block';
+            if (!data.success) {
+                qrBox.innerHTML = '<p class="muted">' + escapeHtml(data.error || 'Iscrizione non riuscita.') + '</p>';
+                return;
+            }
+            showQr(data);
         }
 
         async function register(id) {
             const qrBox = document.getElementById('qr-box');
+            qrBox.style.display = 'block';
             if (!currentUser) {
-                qrBox.style.display = 'block';
                 qrBox.innerHTML = '<p class="muted">Accedi dal marketplace per iscriverti e ricevere il QR.</p>';
                 return;
             }
-            const data = await fetch('/api/tournaments/' + encodeURIComponent(id) + '/register', {
+            const intent = await fetch('/api/tournaments/' + encodeURIComponent(id) + '/register-intent', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: currentUser.id, name: currentUser.name, email: currentUser.email })
+                body: JSON.stringify({})
             }).then(r => r.json());
-            qrBox.style.display = 'block';
-            if (!data.success) {
-                qrBox.innerHTML = '<p class="muted">' + (data.error || 'Iscrizione non riuscita.') + '</p>';
+            if (!intent.success && intent.error) {
+                qrBox.innerHTML = '<p class="muted">' + escapeHtml(intent.error) + '</p>';
                 return;
             }
+            if (!intent.requiresPayment) {
+                await finishRegister(id);
+                return;
+            }
+            pendingPay = { id, paymentIntentId: intent.paymentIntentId };
             qrBox.innerHTML = `
-                <h2 style="margin-top:0;">Il tuo QR di check-in</h2>
-                <p class="muted">${data.message}</p>
-                <div class="qr">
-                    <img src="${data.qrImageUrl}" alt="QR iscrizione">
-                    <div class="muted" style="margin-top:8px;">${data.qrToken}</div>
-                </div>
+                <h2 style="margin-top:0;">Quota iscrizione €${Number(intent.fee).toFixed(2)}</h2>
+                <p class="muted">Paga per sbloccare il QR di check-in.</p>
+                <div id="t-pay-element" style="margin:12px 0;"></div>
+                <button class="btn" id="t-pay-btn" onclick="payAndRegister()">Paga e iscriviti</button>
+                <p class="muted" id="t-pay-msg"></p>
             `;
+            payElements = stripe.elements({
+                appearance: { theme: 'night', variables: { colorPrimary: '#00ff88', colorBackground: '#131b2e', colorText: '#f8fafc', borderRadius: '10px' } },
+                clientSecret: intent.clientSecret
+            });
+            payElements.create('payment', { layout: 'auto' }).mount('#t-pay-element');
+        }
+
+        async function payAndRegister() {
+            const msg = document.getElementById('t-pay-msg');
+            const btn = document.getElementById('t-pay-btn');
+            if (!payElements || !pendingPay) return;
+            btn.disabled = true;
+            const { error } = await stripe.confirmPayment({
+                elements: payElements,
+                confirmParams: { return_url: window.location.href },
+                redirect: 'if_required'
+            });
+            if (error) {
+                msg.innerText = error.message;
+                btn.disabled = false;
+                return;
+            }
+            await finishRegister(pendingPay.id, pendingPay.paymentIntentId);
         }
 
         init();

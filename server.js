@@ -424,6 +424,7 @@ try {
 const CART_MIN_ORDER = 20;
 const WALLET_HOLD_DAYS = 7;
 const WALLET_HOLD_DAYS_MEETUP = 14;
+const TOURNAMENT_PLATFORM_RATE = 0.10;
 const MEETUP_MIN_ACCOUNT_DAYS = 7;
 const MEETUP_MAX_AMOUNT = 150;
 const HOLD_RELEASED_AT = '1970-01-01T00:00:00.000Z';
@@ -2015,6 +2016,48 @@ function pairSwiss(tournament) {
     return pairings;
 }
 
+function enrollTournamentPlayer(tournament, opts) {
+    const qrToken = 'TCG-' + tournament.id + '-' + crypto.randomBytes(6).toString('hex');
+    const player = {
+        userId: String(opts.userId),
+        name: opts.name || 'Giocatore',
+        email: String(opts.email || '').trim(),
+        qrToken,
+        checkedIn: false,
+        registeredAt: new Date().toISOString(),
+        feePaid: Number(opts.fee || 0),
+        paymentIntentId: opts.paymentIntentId || null
+    };
+    tournament.players = tournament.players || [];
+    tournament.players.push(player);
+    return player;
+}
+
+function creditShopTournamentFee(tournament, fee) {
+    const gross = Number(fee || 0);
+    if (gross <= 0) return;
+    const net = Math.round(gross * (1 - TOURNAMENT_PLATFORM_RATE) * 100) / 100;
+    const shop = getOrCreateWalletUser(tournament.shopId);
+    shop.heldWallet = Number(shop.heldWallet || 0) + net;
+    shop.walletUpdatedAt = new Date().toISOString();
+    syncWalletTotals(shop);
+    const holdUntil = new Date(Date.now() + WALLET_HOLD_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    ordersDB.push({
+        id: 'tfee-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex'),
+        buyerId: 'tournament-fee',
+        sellerId: String(tournament.shopId),
+        cardTitle: 'Iscrizione: ' + (tournament.title || 'Torneo'),
+        amount: net,
+        status: 'completed',
+        deliveryMethod: 'shipping',
+        completedAt: new Date().toISOString(),
+        holdUntil,
+        createdAt: new Date().toISOString()
+    });
+    persistOrdersToDisk();
+    persistWalletsToDisk();
+}
+
 function requireShopTournament(req, tournament) {
     if (!tournament) return 'Torneo non trovato.';
     if (String(tournament.shopId) !== String(req.auth.id) && !isAdminEmail(req.auth.email)) {
@@ -2107,25 +2150,87 @@ app.post('/api/tournaments/:id/register', async (req, res) => {
     if ((tournament.players || []).length >= Number(tournament.maxPlayers || 32)) {
         return res.status(400).json({ success: false, error: 'Torneo al completo.' });
     }
-    const qrToken = 'TCG-' + tournament.id + '-' + crypto.randomBytes(6).toString('hex');
-    const player = {
-        userId: String(userId),
-        name: name || 'Giocatore',
-        email: String(email).trim(),
-        qrToken,
-        checkedIn: false,
-        registeredAt: new Date().toISOString()
-    };
-    tournament.players.push(player);
+    const fee = Number(tournament.fee || 0);
+    if (fee > 0) {
+        const paymentIntentId = req.body && req.body.paymentIntentId;
+        if (!stripe) {
+            return res.status(500).json({ success: false, error: 'Pagamenti non configurati.' });
+        }
+        if (!paymentIntentId) {
+            return res.status(400).json({ success: false, error: 'Questa iscrizione è a pagamento.', requiresPayment: true, fee });
+        }
+        try {
+            const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+            if (pi.status !== 'succeeded') {
+                return res.status(400).json({ success: false, error: 'Pagamento iscrizione non confermato.' });
+            }
+            if (String(pi.metadata.tournamentId) !== String(tournament.id) || String(pi.metadata.userId) !== String(userId)) {
+                return res.status(400).json({ success: false, error: 'Pagamento non valido per questa iscrizione.' });
+            }
+            if ((tournament.players || []).some(p => p.paymentIntentId && String(p.paymentIntentId) === String(paymentIntentId))) {
+                return res.status(400).json({ success: false, error: 'Questo pagamento è già stato usato.' });
+            }
+        } catch (err) {
+            return res.status(400).json({ success: false, error: err.message });
+        }
+    }
+    const enrolled = enrollTournamentPlayer(tournament, { userId, name, email, fee, paymentIntentId: (req.body && req.body.paymentIntentId) || null });
     persistTournamentsToDisk();
-    const qrImageUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(qrToken);
+    if (fee > 0) creditShopTournamentFee(tournament, fee);
     res.json({
         success: true,
-        qrToken,
-        qrImageUrl,
+        qrToken: enrolled.qrToken,
+        qrImageUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(enrolled.qrToken),
         emailSent: false,
-        message: 'Iscrizione confermata. Il QR è pronto: salvalo e usalo al check-in. L\'invio email parte quando SMTP è configurato sul server.'
+        message: fee > 0
+            ? 'Iscrizione pagata. Mostra questo QR al check-in. La quota del negozio resta in hold 7 giorni.'
+            : 'Iscrizione confermata. Il QR è pronto: salvalo e usalo al check-in.'
     });
+});
+
+app.post('/api/tournaments/:id/register-intent', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    if (!rateLimit('tpay:' + auth.id, 8, 60000)) {
+        return res.status(429).json({ success: false, error: 'Troppe richieste di pagamento. Riprova tra poco.' });
+    }
+    const tournament = tournamentsDB.find(t => t.id === req.params.id);
+    if (!tournament) return res.status(404).json({ success: false, error: 'Torneo non trovato.' });
+    if (tournament.status !== 'open') {
+        return res.status(400).json({ success: false, error: 'Iscrizioni chiuse.' });
+    }
+    if ((tournament.players || []).some(p => String(p.userId) === String(auth.id))) {
+        return res.json({ success: true, requiresPayment: false, alreadyRegistered: true });
+    }
+    const fee = Number(tournament.fee || 0);
+    if (fee <= 0) {
+        return res.json({ success: true, requiresPayment: false, fee: 0 });
+    }
+    if (!stripe) {
+        return res.status(500).json({ success: false, error: 'Pagamenti non configurati.' });
+    }
+    try {
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: Math.round(fee * 100),
+            currency: 'eur',
+            automatic_payment_methods: { enabled: true },
+            metadata: {
+                type: 'tournament_entry',
+                tournamentId: String(tournament.id),
+                userId: String(auth.id),
+                shopId: String(tournament.shopId)
+            }
+        });
+        res.json({
+            success: true,
+            requiresPayment: true,
+            fee,
+            clientSecret: paymentIntent.client_secret,
+            paymentIntentId: paymentIntent.id
+        });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
 });
 
 app.post('/api/tournaments/:id/checkin', async (req, res) => {
