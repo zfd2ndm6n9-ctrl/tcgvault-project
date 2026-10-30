@@ -424,7 +424,13 @@ try {
 const CART_MIN_ORDER = 20;
 const WALLET_HOLD_DAYS = 7;
 const WALLET_HOLD_DAYS_MEETUP = 14;
-const TOURNAMENT_PLATFORM_RATE = 0.10;
+const PLATFORM_FEE_RATE = 0.05;
+
+function platformChargeCents(listedEuro) {
+    const base = Math.round(Number(listedEuro || 0) * 100);
+    const wantNet = base + Math.round(base * PLATFORM_FEE_RATE);
+    return Math.ceil((wantNet + 25) / 0.985);
+}
 const MEETUP_MIN_ACCOUNT_DAYS = 7;
 const MEETUP_MAX_AMOUNT = 150;
 const HOLD_RELEASED_AT = '1970-01-01T00:00:00.000Z';
@@ -1373,10 +1379,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
             const meetupErr = assertMeetupAllowed(auth, amount);
             if (meetupErr) return res.status(400).json({ error: { message: meetupErr } });
         }
-        const baseAmountCents = Math.round(amount * 100);
-        const applicationFee = Math.round(baseAmountCents * 0.07);
-        const estimatedStripeFee = Math.round(baseAmountCents * 0.015) + 25;
-        const totalChargedToBuyer = baseAmountCents + applicationFee + estimatedStripeFee;
+        const totalChargedToBuyer = platformChargeCents(amount);
 
         const paymentIntent = await stripe.paymentIntents.create({
             amount: totalChargedToBuyer,
@@ -2036,9 +2039,8 @@ function enrollTournamentPlayer(tournament, opts) {
 function creditShopTournamentFee(tournament, fee) {
     const gross = Number(fee || 0);
     if (gross <= 0) return;
-    const net = Math.round(gross * (1 - TOURNAMENT_PLATFORM_RATE) * 100) / 100;
     const shop = getOrCreateWalletUser(tournament.shopId);
-    shop.heldWallet = Number(shop.heldWallet || 0) + net;
+    shop.heldWallet = Number(shop.heldWallet || 0) + gross;
     shop.walletUpdatedAt = new Date().toISOString();
     syncWalletTotals(shop);
     const holdUntil = new Date(Date.now() + WALLET_HOLD_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -2047,7 +2049,7 @@ function creditShopTournamentFee(tournament, fee) {
         buyerId: 'tournament-fee',
         sellerId: String(tournament.shopId),
         cardTitle: 'Iscrizione: ' + (tournament.title || 'Torneo'),
-        amount: net,
+        amount: gross,
         status: 'completed',
         deliveryMethod: 'shipping',
         completedAt: new Date().toISOString(),
@@ -2167,6 +2169,9 @@ app.post('/api/tournaments/:id/register', async (req, res) => {
             if (String(pi.metadata.tournamentId) !== String(tournament.id) || String(pi.metadata.userId) !== String(userId)) {
                 return res.status(400).json({ success: false, error: 'Pagamento non valido per questa iscrizione.' });
             }
+            if (Number(pi.amount) < platformChargeCents(fee) - 1) {
+                return res.status(400).json({ success: false, error: 'Importo pagamento non corrispondente.' });
+            }
             if ((tournament.players || []).some(p => p.paymentIntentId && String(p.paymentIntentId) === String(paymentIntentId))) {
                 return res.status(400).json({ success: false, error: 'Questo pagamento è già stato usato.' });
             }
@@ -2183,7 +2188,7 @@ app.post('/api/tournaments/:id/register', async (req, res) => {
         qrImageUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(enrolled.qrToken),
         emailSent: false,
         message: fee > 0
-            ? 'Iscrizione pagata. Mostra questo QR al check-in. La quota del negozio resta in hold 7 giorni.'
+            ? 'Iscrizione pagata. Mostra questo QR al check-in. Il negozio riceve l\'intera quota, in hold 7 giorni.'
             : 'Iscrizione confermata. Il QR è pronto: salvalo e usalo al check-in.'
     });
 });
@@ -2210,8 +2215,9 @@ app.post('/api/tournaments/:id/register-intent', async (req, res) => {
         return res.status(500).json({ success: false, error: 'Pagamenti non configurati.' });
     }
     try {
+        const chargedCents = platformChargeCents(fee);
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: Math.round(fee * 100),
+            amount: chargedCents,
             currency: 'eur',
             automatic_payment_methods: { enabled: true },
             metadata: {
@@ -2225,6 +2231,7 @@ app.post('/api/tournaments/:id/register-intent', async (req, res) => {
             success: true,
             requiresPayment: true,
             fee,
+            charged: chargedCents / 100,
             clientSecret: paymentIntent.client_secret,
             paymentIntentId: paymentIntent.id
         });

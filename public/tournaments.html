@@ -59,7 +59,9 @@
             }
             box.innerHTML = list.map(t => {
                 const fee = Number(t.fee || 0);
-                const cta = fee > 0 ? ('Paga €' + fee.toFixed(2) + ' e iscriviti') : 'Iscriviti';
+                const baseCents = Math.round(fee * 100);
+                const charged = fee > 0 ? (Math.ceil((baseCents + Math.round(baseCents * 0.05) + 25) / 0.985) / 100) : 0;
+                const cta = fee > 0 ? ('Paga €' + charged.toFixed(2) + ' e iscriviti') : 'Iscriviti';
                 return `
                 <div class="card">
                     <strong>${escapeHtml(t.title)}</strong>
@@ -125,8 +127,8 @@
             }
             pendingPay = { id, paymentIntentId: intent.paymentIntentId };
             qrBox.innerHTML = `
-                <h2 style="margin-top:0;">Quota iscrizione €${Number(intent.fee).toFixed(2)}</h2>
-                <p class="muted">Paga per sbloccare il QR di check-in.</p>
+                <h2 style="margin-top:0;">Quota iscrizione €${Number(intent.charged != null ? intent.charged : intent.fee).toFixed(2)}</h2>
+                <p class="muted">Include 5% piattaforma e commissioni Stripe. Il negozio riceve la quota intera (€${Number(intent.fee).toFixed(2)}).</p>
                 <div id="t-pay-element" style="margin:12px 0;"></div>
                 <button class="btn" id="t-pay-btn" onclick="payAndRegister()">Paga e iscriviti</button>
                 <p class="muted" id="t-pay-msg"></p>
