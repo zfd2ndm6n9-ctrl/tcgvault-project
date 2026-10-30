@@ -42,6 +42,12 @@
         </div>
         <div id="app" style="display:none;">
             <div class="card">
+                <h2 style="margin-top:0;">Payout Stripe</h2>
+                <p class="muted" id="connect-status">Stato conto Stripe: …</p>
+                <button class="btn" type="button" onclick="startStripeConnect()">Collega / verifica conto Stripe</button>
+                <p class="muted">L'IBAN lo inserisci su Stripe. I prelievi dal portafoglio sul marketplace usano questo stesso conto.</p>
+            </div>
+            <div class="card">
                 <h2 style="margin-top:0;">Crea torneo / evento</h2>
                 <label>Titolo</label>
                 <input id="t-title" placeholder="Es. FNM Modern">
@@ -108,6 +114,40 @@
             gate.style.display = 'none';
             document.getElementById('app').style.display = 'block';
             loadEvents();
+            refreshConnectStatus();
+        }
+
+        async function refreshConnectStatus() {
+            const el = document.getElementById('connect-status');
+            if (!el) return;
+            try {
+                const res = await fetch('/api/connect/status');
+                const data = await res.json();
+                if (data.payoutsEnabled) el.textContent = 'Conto Stripe pronto: i prelievi dal wallet vanno su questo conto.';
+                else if (data.connected) el.textContent = 'Conto collegato: completa la verifica su Stripe.';
+                else el.textContent = 'Nessun conto Stripe collegato.';
+            } catch (err) {
+                el.textContent = 'Stato conto Stripe non disponibile.';
+            }
+        }
+
+        async function startStripeConnect() {
+            const el = document.getElementById('connect-status');
+            try {
+                const res = await fetch('/api/connect/onboard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from: 'shop' })
+                });
+                const data = await res.json();
+                if (data.success && data.url) {
+                    window.location.href = data.url;
+                    return;
+                }
+                if (el) el.textContent = data.error || 'Impossibile aprire Stripe Connect.';
+            } catch (err) {
+                if (el) el.textContent = 'Errore di comunicazione.';
+            }
         }
 
         async function createTournament() {

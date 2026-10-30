@@ -952,15 +952,12 @@
             <div id="tab-wallet-escrow" class="tab-content" style="display: none;">
                 <div style="margin-bottom: 25px;">
                     <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
-                    <p style="font-size: 0.9rem; color: var(--text-muted);">Solo i fondi fuori hold (7 giorni dopo la conferma) si possono prelevare. Il bonifico IBAN resta simulato finché non c'è Stripe Connect.</p>
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">Solo i fondi fuori hold si possono prelevare. Il bonifico va sul conto Stripe Express collegato (IBAN e KYC li gestisce Stripe).</p>
                     <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 8px;">€ <span id="wallet-balance">0.00</span></div>
                     <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">In hold anti-truffa: € <span id="wallet-held">0.00</span></p>
-                    
-                    <div class="form-group">
-                        <label>Codice IBAN per il bonifico *</label>
-                        <input type="text" id="payout-iban" placeholder="IT05X0303203203000001234567">
-                    </div>
-                    <button class="btn-submit" onclick="requestWalletPayout()">Preleva Ora (Bonifico IBAN)</button>
+                    <p id="connect-status" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 12px;">Stato conto Stripe: …</p>
+                    <button type="button" class="btn-submit" onclick="startStripeConnect()">Collega / verifica conto Stripe</button>
+                    <button type="button" class="btn-submit" style="margin-top:10px;" onclick="requestWalletPayout()">Preleva sul conto Stripe</button>
                 </div>
             </div>
 
@@ -2283,7 +2280,7 @@
             document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
             const heldEl = document.getElementById('wallet-held');
             if (heldEl) heldEl.innerText = (currentUser.heldWallet || 0).toFixed(2);
-            document.getElementById('payout-iban').value = currentUser.iban || '';
+            refreshConnectStatus();
             loadUserReviews();
             loadMyOrders();
             showOverlay('profile-modal');
@@ -2301,6 +2298,7 @@
             if (tabName === 'reviews-tab') loadUserReviews();
             if (tabName === 'tos-faq') renderLegalContent('legal-accordion-profile');
             if (tabName === 'bot-support') openVaultBot();
+            if (tabName === 'wallet-escrow') refreshConnectStatus();
         }
 
         async function loadMyOrders() {
@@ -2344,19 +2342,49 @@
             }
         }
 
+        async function refreshConnectStatus() {
+            const el = document.getElementById('connect-status');
+            if (!el) return;
+            try {
+                const res = await fetch(`${window.location.origin}/api/connect/status`);
+                const data = await res.json();
+                if (data.payoutsEnabled) el.textContent = 'Conto Stripe pronto: puoi prelevare.';
+                else if (data.connected) el.textContent = 'Conto Stripe collegato: completa la verifica su Stripe.';
+                else el.textContent = 'Nessun conto Stripe collegato.';
+            } catch (err) {
+                el.textContent = 'Stato conto Stripe non disponibile.';
+            }
+        }
+
+        async function startStripeConnect() {
+            try {
+                const res = await fetch(`${window.location.origin}/api/connect/onboard`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success && data.url) {
+                    window.location.href = data.url;
+                    return;
+                }
+                showNotification(data.error || 'Impossibile aprire Stripe Connect.', 'error');
+            } catch (err) {
+                showNotification('Errore di comunicazione.', 'error');
+            }
+        }
+
         async function requestWalletPayout() {
-            const iban = document.getElementById('payout-iban').value;
             try {
                 const res = await fetch(`${window.location.origin}/api/wallet/payout`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: currentUser.id, iban })
+                    body: JSON.stringify({})
                 });
                 const data = await res.json();
                 if (data.success) {
                     currentUser.wallet = data.newBalance;
                     if (data.heldWallet != null) currentUser.heldWallet = Number(data.heldWallet) || 0;
-                    currentUser.iban = iban;
                     document.getElementById('wallet-balance').innerText = currentUser.wallet.toFixed(2);
                     const heldEl = document.getElementById('wallet-held');
                     if (heldEl) heldEl.innerText = (currentUser.heldWallet || 0).toFixed(2);
@@ -2436,7 +2464,7 @@
                     <details class="acc-item"><summary>1. Natura della Piattaforma e Accettazione</summary><p class="tos-body faq-text">TCG Vault è un marketplace digitale focalizzato sulla compravendita e sullo scambio di carte collezionabili (TCG) e prodotti correlati. L'utilizzo della Piattaforma, la creazione di un account o l'esecuzione di transazioni implicano l'accettazione integrale dei presenti Termini e Condizioni di Servizio.</p></details>
                     <details class="acc-item"><summary>2. Account utente e Sicurezza</summary><p class="tos-body faq-text"><strong>Registrazione:</strong> l'utente è tenuto a inserire dati identificativi accurati e aggiornati (inclusi nome, cognome e indirizzo) necessari per la corretta gestione delle transazioni e delle spedizioni.<br><br><strong>Responsabilità:</strong> l'utente è l'unico responsabile della custodia delle proprie credenziali di accesso e di ogni attività condotta tramite il proprio account.</p></details>
                     <details class="acc-item"><summary>3. Regole per gli Acquirenti</summary><p class="tos-body faq-text"><strong>Ordine Minimo:</strong> ciascun ordine inoltrato a un singolo venditore deve raggiungere un importo minimo di 20,00€ (al netto delle spese di spedizione). Non è consentito il cumulo di carrelli appartenenti a venditori differenti in un'unica transazione.<br><br><strong>Transazioni e Deposito (Escrow):</strong> i pagamenti sono gestiti tramite i gateway autorizzati integrati nella Piattaforma. I fondi versati vengono trattenuti in modalità Escrow (deposito a garanzia) e svincolati a favore del venditore in conformità con lo stato della consegna e le regole di conferma della transazione.</p></details>
-                    <details class="acc-item"><summary>4. Spedizione, incontro e hold</summary><p class="tos-body faq-text"><strong>Spedizione:</strong> corrieri tracciati (Poste Italiane/SDA, InPost, BRT, GLS, DHL, UPS). Senza tracking decade la protezione Escrow. Dopo la conferma di ricezione i fondi restano in hold 7 giorni prima del prelievo.<br><br><strong>Incontro di persona:</strong> solo in luogo pubblico, mai a domicilio. Serve un account con almeno 7 giorni di anzianità. Importo massimo 150,00€: oltre quella soglia è obbligatoria la spedizione tracciata. Il venditore mostra un codice a 6 cifre sul posto; il compratore ispeziona le carte e conferma con quel codice. I fondi restano in hold 14 giorni. La Piattaforma non è presente all'incontro e non risponde di danni personali.<br><br><strong>Prelievo:</strong> solo dal saldo disponibile, dopo la scadenza dell'hold. Il bonifico IBAN sul sito è provvisorio finché non è attivo Stripe Connect.</p></details>
+                    <details class="acc-item"><summary>4. Spedizione, incontro e hold</summary><p class="tos-body faq-text"><strong>Spedizione:</strong> corrieri tracciati (Poste Italiane/SDA, InPost, BRT, GLS, DHL, UPS). Senza tracking decade la protezione Escrow. Dopo la conferma di ricezione i fondi restano in hold 7 giorni prima del prelievo.<br><br><strong>Incontro di persona:</strong> solo in luogo pubblico, mai a domicilio. Serve un account con almeno 7 giorni di anzianità. Importo massimo 150,00€: oltre quella soglia è obbligatoria la spedizione tracciata. Il venditore mostra un codice a 6 cifre sul posto; il compratore ispeziona le carte e conferma con quel codice. I fondi restano in hold 14 giorni. La Piattaforma non è presente all'incontro e non risponde di danni personali.<br><br><strong>Prelievo:</strong> solo dal saldo disponibile, dopo la scadenza dell'hold. Il venditore collega un conto Stripe Express (KYC e IBAN su Stripe); la piattaforma trasferisce i fondi sul conto collegato.</p></details>
                     <details class="acc-item"><summary>5. Regole per i Venditori e Gestione Annunci</summary><p class="tos-body faq-text"><strong>Soglia di Pubblicazione:</strong> gli annunci inseriti da un venditore il cui valore di catalogo complessivo (articoli non ancora venduti) risulti inferiore a 50,00€ vengono mantenuti in stato di attesa e pubblicati contestualmente sul marketplace al raggiungimento o superamento della predetta soglia.<br><br><strong>Conformità degli Articoli:</strong> il venditore garantisce che i prodotti offerti corrispondano in modo veritiero alle descrizioni, alle specifiche e alle condizioni dichiarate nell'annuncio.</p></details>
                     <details class="acc-item"><summary>6. Limitazione di Responsabilità</summary><p class="tos-body faq-text">TCG Vault opera esclusivamente in qualità di fornitore dell'infrastruttura tecnologica e di intermediario di marketplace. La Piattaforma non assume la proprietà dei beni oggetto di scambio tra gli utenti e non è direttamente responsabile della qualità o della spedizione autonoma dei prodotti, pur mettendo a disposizione strumenti di supporto, tracciamento e gestione delle controversie.</p></details>
                     <details class="acc-item"><summary>7. Aggiornamenti dei Termini</summary><p class="tos-body faq-text">TCG Vault si riserva il diritto di aggiornare o modificare i presenti Termini e Condizioni. Le variazioni assumono efficacia immediata a partire dalla loro pubblicazione sulla Piattaforma. L'uso continuato dei servizi costituisce accettazione tacita delle nuove condizioni.</p></details>

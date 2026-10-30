@@ -887,6 +887,7 @@ function walletToRow(u) {
         held_balance: Number(u.heldWallet || 0),
         available_balance: Number(u.availableWallet || 0),
         iban: u.iban || null,
+        stripe_account_id: u.stripeAccountId || null,
         last_payout_id: u.lastPayoutId || null,
         last_payout_at: u.lastPayoutAt || null,
         updated_at: u.walletUpdatedAt || new Date().toISOString()
@@ -907,6 +908,7 @@ function applyWalletRow(r) {
         user.availableWallet = available;
     }
     user.iban = r.iban || '';
+    user.stripeAccountId = r.stripe_account_id || user.stripeAccountId || null;
     user.lastPayoutId = r.last_payout_id || null;
     user.lastPayoutAt = r.last_payout_at || null;
     user.walletUpdatedAt = r.updated_at || null;
@@ -948,8 +950,16 @@ function walletPublic(userId) {
         wallet: Number(user.availableWallet || 0),
         availableWallet: Number(user.availableWallet || 0),
         heldWallet: Number(user.heldWallet || 0),
-        iban: user.iban || ''
+        iban: user.iban || '',
+        stripeAccountId: user.stripeAccountId || null
     };
+}
+
+function publicSiteUrl(req) {
+    const envUrl = String(process.env.PUBLIC_SITE_URL || 'https://tcg-vault.it').replace(/\/$/, '');
+    const origin = String(req.headers.origin || '').replace(/\/$/, '');
+    if (origin && /^https?:\/\//i.test(origin)) return origin;
+    return envUrl;
 }
 
 async function persistWalletsToSupabase() {
@@ -1571,17 +1581,73 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
     });
 });
 
+async function stripeConnectStatus(user) {
+    if (!stripe || !user.stripeAccountId) {
+        return { connected: false, payoutsEnabled: false, detailsSubmitted: false };
+    }
+    try {
+        const acct = await stripe.accounts.retrieve(user.stripeAccountId);
+        return {
+            connected: true,
+            payoutsEnabled: !!(acct.payouts_enabled),
+            detailsSubmitted: !!(acct.details_submitted)
+        };
+    } catch (err) {
+        return { connected: false, payoutsEnabled: false, detailsSubmitted: false, error: err.message };
+    }
+}
+
+app.get('/api/connect/status', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const user = getOrCreateWalletUser(auth.id);
+    const st = await stripeConnectStatus(user);
+    res.json({ success: true, stripeAccountId: user.stripeAccountId || null, ...st });
+});
+
+app.post('/api/connect/onboard', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    if (!stripe) {
+        return res.status(500).json({ success: false, error: 'Stripe non configurato.' });
+    }
+    if (!rateLimit('connect:' + auth.id, 8, 60000)) {
+        return res.status(429).json({ success: false, error: 'Troppe richieste. Riprova tra poco.' });
+    }
+    const user = getOrCreateWalletUser(auth.id);
+    try {
+        if (!user.stripeAccountId) {
+            const account = await stripe.accounts.create({
+                type: 'express',
+                country: 'IT',
+                email: auth.email || undefined,
+                capabilities: { transfers: { requested: true } },
+                business_profile: { url: publicSiteUrl(req) }
+            });
+            user.stripeAccountId = account.id;
+            persistWalletsToDisk();
+        }
+        const fromShop = req.body && req.body.from === 'shop';
+        const site = publicSiteUrl(req);
+        const path = fromShop ? '/shop-dashboard.html' : '/index.html';
+        const link = await stripe.accountLinks.create({
+            account: user.stripeAccountId,
+            refresh_url: site + path + '?connect=refresh',
+            return_url: site + path + '?connect=return',
+            type: 'account_onboarding'
+        });
+        res.json({ success: true, url: link.url, stripeAccountId: user.stripeAccountId });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
 app.post('/api/wallet/payout', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    const { iban } = req.body;
     const userId = auth.id;
     releaseMatureHolds();
     const user = getOrCreateWalletUser(userId);
-
-    if (!iban || iban.trim().length < 10) {
-        return res.status(400).json({ success: false, error: 'Inserisci un codice IBAN valido per il prelievo.' });
-    }
 
     if ((user.availableWallet || 0) <= 0) {
         const held = Number(user.heldWallet || 0);
@@ -1591,24 +1657,25 @@ app.post('/api/wallet/payout', async (req, res) => {
         return res.status(400).json({ success: false, error: msg });
     }
 
+    if (!stripe) {
+        return res.status(500).json({ success: false, error: 'Stripe non configurato.' });
+    }
+    const st = await stripeConnectStatus(user);
+    if (!st.payoutsEnabled) {
+        return res.status(400).json({ success: false, error: 'Collega e verifica il conto Stripe (Connect) prima di prelevare.' });
+    }
+
     try {
         const withdrawnAmount = Number(user.availableWallet || 0);
         const payoutAmount = Math.round(withdrawnAmount * 100);
-        let payoutResult;
-        try {
-            payoutResult = await stripe.payouts.create({
-                amount: payoutAmount,
-                currency: 'eur',
-                method: 'standard',
-                destination: iban.trim()
-            });
-        } catch (stripeErr) {
-            payoutResult = { id: 'po_simulated_' + Date.now() };
-        }
+        const transfer = await stripe.transfers.create({
+            amount: payoutAmount,
+            currency: 'eur',
+            destination: user.stripeAccountId
+        });
 
         user.availableWallet = 0;
-        user.iban = iban.trim();
-        user.lastPayoutId = payoutResult && payoutResult.id ? String(payoutResult.id) : null;
+        user.lastPayoutId = transfer && transfer.id ? String(transfer.id) : null;
         user.lastPayoutAt = new Date().toISOString();
         user.walletUpdatedAt = user.lastPayoutAt;
         syncWalletTotals(user);
@@ -1616,12 +1683,12 @@ app.post('/api/wallet/payout', async (req, res) => {
 
         res.json({
             success: true,
-            message: `Prelievo di €${withdrawnAmount.toFixed(2)} elaborato con successo!`,
+            message: `Prelievo di €${withdrawnAmount.toFixed(2)} inviato sul tuo conto Stripe.`,
             newBalance: 0.00,
             heldWallet: Number(user.heldWallet || 0)
         });
     } catch (error) {
-        res.status(400).send({ success: false, error: { message: error.message } });
+        res.status(400).json({ success: false, error: error.message });
     }
 });
 
