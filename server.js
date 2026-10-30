@@ -434,8 +434,15 @@ const MEETUP_MIN_ACCOUNT_DAYS = 7;
 const MEETUP_MAX_AMOUNT = 150;
 const HOLD_RELEASED_AT = '1970-01-01T00:00:00.000Z';
 const SINGLE_CARD_TYPE = 'Carta Singola';
+const BOX_PRODUCT_TYPE = 'Box / Bustina';
+const DECK_PRODUCT_TYPE = 'Mazzo Completo';
+const TCGCSV_CAT = { Pokemon: 3, Magic: 1, Yugioh: 2, OnePiece: 68, Lorcana: 71 };
+const SEALED_NAME_RE = /booster|elite trainer|\betb\b|\btin\b|bundle|display|blister|collection box|ultra-premium|\bupc\b|premium collection|booster box|booster pack|\bcase\b/i;
+const PRECON_NAME_RE = /\bdeck\b|precon|commander|starter|structure|theme deck|battle deck|challenge deck|planeswalker deck|intro pack|challenger deck|starter deck/i;
+const SKIP_PRODUCT_RE = /code card|online code|digital code/i;
 const LISTING_BLOCK_RE = /\b(iphone|ipad|samsung|xiaomi|huawei|airpods?|nike|adidas|affitto|monolocale|bitcoin|crypto|onlyfans|seguaci|followers|playstation|xbox series|cocaina)\b/i;
 const CATALOG_UA = 'TCGVault/1.0 (https://tcg-vault.it; catalog-match)';
+const tcgcsvCache = { groups: {}, products: {} };
 
 function orderToRow(o) {
     return {
@@ -1155,7 +1162,88 @@ async function catalogFetchJson(url) {
     }
 }
 
-async function searchOfficialCatalog(category, query) {
+function listingNeedsCatalog(type) {
+    return type === SINGLE_CARD_TYPE || type === BOX_PRODUCT_TYPE || type === DECK_PRODUCT_TYPE;
+}
+
+async function tcgcsvGroups(catId) {
+    const cached = tcgcsvCache.groups[catId];
+    if (cached && cached.exp > Date.now()) return cached.rows;
+    const json = await catalogFetchJson('https://tcgcsv.com/tcgplayer/' + catId + '/groups');
+    const rows = (json && json.results) || [];
+    tcgcsvCache.groups[catId] = { exp: Date.now() + 12 * 60 * 60 * 1000, rows };
+    return rows;
+}
+
+async function tcgcsvProducts(catId, groupId) {
+    const key = catId + ':' + groupId;
+    const cached = tcgcsvCache.products[key];
+    if (cached && cached.exp > Date.now()) return cached.rows;
+    const json = await catalogFetchJson('https://tcgcsv.com/tcgplayer/' + catId + '/' + groupId + '/products');
+    const rows = (json && json.results) || [];
+    tcgcsvCache.products[key] = { exp: Date.now() + 6 * 60 * 60 * 1000, rows };
+    return rows;
+}
+
+function productKindOk(name, type) {
+    if (SKIP_PRODUCT_RE.test(name)) return false;
+    if (type === BOX_PRODUCT_TYPE) return SEALED_NAME_RE.test(name);
+    if (type === DECK_PRODUCT_TYPE) return PRECON_NAME_RE.test(name);
+    return false;
+}
+
+async function searchTcgcsvProducts(category, query, type) {
+    const catId = TCGCSV_CAT[category];
+    const q = String(query || '').trim().toLowerCase();
+    if (!catId || q.length < 3) return [];
+    const words = q.split(/\s+/).filter(w => w.length > 1);
+    const groups = await tcgcsvGroups(catId);
+    const matchedGroups = groups.filter(g => {
+        const n = String(g.name || '').toLowerCase();
+        return words.some(w => n.includes(w));
+    }).slice(0, 4);
+    if (!matchedGroups.length) return [];
+    const lists = await Promise.all(matchedGroups.map(g => tcgcsvProducts(catId, g.groupId)));
+    const hits = [];
+    lists.forEach((products, i) => {
+        const group = matchedGroups[i];
+        products.forEach(p => {
+            const name = String(p.name || '');
+            const lower = name.toLowerCase();
+            if (!productKindOk(name, type)) return;
+            if (!words.every(w => lower.includes(w) || String(group.name || '').toLowerCase().includes(w))) return;
+            hits.push(mapCatalogHit(
+                'tcgcsv',
+                group.groupId + ':' + p.productId,
+                name,
+                group.name,
+                String(p.productId),
+                p.imageUrl || ''
+            ));
+        });
+    });
+    return hits.slice(0, 15);
+}
+
+async function verifyTcgcsvProduct(category, id) {
+    const catId = TCGCSV_CAT[category];
+    const parts = String(id || '').split(':');
+    if (!catId || parts.length !== 2) return null;
+    const groupId = parts[0];
+    const productId = parts[1];
+    const products = await tcgcsvProducts(catId, groupId);
+    const p = products.find(row => String(row.productId) === String(productId));
+    if (!p) return null;
+    const groups = await tcgcsvGroups(catId);
+    const group = groups.find(g => String(g.groupId) === String(groupId));
+    return mapCatalogHit('tcgcsv', groupId + ':' + productId, p.name, group && group.name, productId, p.imageUrl || '');
+}
+
+async function searchOfficialCatalog(category, query, type) {
+    const listingType = String(type || SINGLE_CARD_TYPE);
+    if (listingType === BOX_PRODUCT_TYPE || listingType === DECK_PRODUCT_TYPE) {
+        return searchTcgcsvProducts(category, query, listingType);
+    }
     const q = String(query || '').trim();
     if (q.length < 2) return [];
     const enc = encodeURIComponent(q);
@@ -1444,7 +1532,8 @@ app.get('/api/catalog/search', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Per le carte singole scegli un gioco (non Altro TCG).' });
     }
     try {
-        const cards = await searchOfficialCatalog(category, q);
+        const listingType = String(req.query.type || SINGLE_CARD_TYPE);
+    const cards = await searchOfficialCatalog(category, q, listingType);
         res.json({ success: true, cards });
     } catch (err) {
         res.status(502).json({ success: false, error: 'Catalogo ufficiale non raggiungibile. Riprova.' });
@@ -1481,15 +1570,21 @@ app.post('/api/listings', async (req, res) => {
     let catalogSource = null;
     let catalogSet = null;
 
-    if (type === SINGLE_CARD_TYPE) {
+    if (listingNeedsCatalog(type)) {
         if (category === 'Altro') {
-            return res.status(400).json({ success: false, error: 'Le carte singole devono appartenere a un gioco ufficiale (Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana).' });
+            return res.status(400).json({ success: false, error: 'Carte, box e mazzi precon devono appartenere a un gioco ufficiale (Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana).' });
         }
-        const verified = await verifyOfficialCard(category, body.catalogSource, body.catalogId);
+        let verified = null;
+        if (type === SINGLE_CARD_TYPE) {
+            verified = await verifyOfficialCard(category, body.catalogSource, body.catalogId);
+        } else {
+            verified = await verifyTcgcsvProduct(category, body.catalogId);
+            if (verified && !productKindOk(verified.name, type)) verified = null;
+        }
         if (!verified) {
-            return res.status(400).json({ success: false, error: 'Questa carta non esiste nei cataloghi ufficiali. Cercala e selezionala dalla lista.' });
+            return res.status(400).json({ success: false, error: 'Questo prodotto non è nel catalogo ufficiale. Cercalo e selezionalo dalla lista (box/mazzi precon: nome set + booster box, ETB, deck…).' });
         }
-        title = verified.name + (verified.set ? (' · ' + verified.set) : '') + (verified.number ? (' #' + verified.number) : '');
+        title = verified.name + (verified.set ? (' · ' + verified.set) : '');
         catalogId = verified.id;
         catalogSource = verified.source;
         catalogSet = verified.set || null;

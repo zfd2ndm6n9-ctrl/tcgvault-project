@@ -1238,9 +1238,9 @@
                     </select>
                 </div>
                 <div class="form-group" id="catalog-search-wrap">
-                    <label>Cerca carta ufficiale *</label>
-                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Per le carte singole scegli un risultato reale (Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana). I nomi inventati vengono rifiutati.</p>
-                    <input type="text" id="sell-catalog-q" placeholder="Es. Charizard, Lightning Bolt, Blue-Eyes" autocomplete="off" oninput="onCatalogQueryInput()">
+                    <label>Cerca nel catalogo ufficiale *</label>
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Carte singole, box/bustine e mazzi precon: scegli un prodotto reale. I lotti misti e i mazzi costruiti da te vanno in «Lotto / Stock».</p>
+                    <input type="text" id="sell-catalog-q" placeholder="Es. Charizard, Obsidian Flames Booster Box, Commander deck" autocomplete="off" oninput="onCatalogQueryInput()">
                     <div id="catalog-results" style="max-height:220px;overflow:auto;margin-top:6px;"></div>
                     <p id="catalog-picked" style="font-size:0.85rem;color:var(--accent-neon);margin:8px 0 0;"></p>
                 </div>
@@ -2117,11 +2117,11 @@
             const results = document.getElementById('catalog-results');
             if (picked) picked.textContent = '';
             if (results) results.innerHTML = '';
-            const singles = type === 'Carta Singola';
-            if (wrap) wrap.style.display = singles ? 'block' : 'none';
+            const needsCatalog = type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo';
+            if (wrap) wrap.style.display = needsCatalog ? 'block' : 'none';
             if (title) {
-                title.readOnly = singles;
-                if (singles) title.value = '';
+                title.readOnly = needsCatalog;
+                if (needsCatalog) title.value = '';
             }
         }
 
@@ -2138,14 +2138,15 @@
             if (q.length < 2) { box.innerHTML = ''; return; }
             box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Ricerca nel catalogo ufficiale…</p>';
             try {
-                const res = await fetch(`${window.location.origin}/api/catalog/search?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}`);
+                const type = (document.getElementById('sell-type') || {}).value || 'Carta Singola';
+                const res = await fetch(`${window.location.origin}/api/catalog/search?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}`);
                 const data = await res.json();
                 if (!data.success) {
                     box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">' + (data.error || 'Catalogo non disponibile.') + '</p>';
                     return;
                 }
                 if (!data.cards.length) {
-                    box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Nessuna carta ufficiale trovata. Cambia gioco o nome.</p>';
+                    box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Nessun prodotto ufficiale trovato. Prova il nome del set (es. Obsidian Flames Booster Box). Mazzo custom: usa Lotto / Stock.</p>';
                     return;
                 }
                 box.innerHTML = data.cards.map((c, i) => `
@@ -2216,8 +2217,8 @@
 
             const pending = getSellerCatalogCents(currentUser.id, price) < SELLER_MIN_CATALOG_CENTS;
             const type = document.getElementById('sell-type').value;
-            if (type === 'Carta Singola' && !(selectedCatalog && selectedCatalog.id)) {
-                showNotification('Seleziona la carta dal catalogo ufficiale. I nomi inventati non sono ammessi.', 'error');
+            if ((type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo') && !(selectedCatalog && selectedCatalog.id)) {
+                showNotification('Seleziona il prodotto dal catalogo ufficiale. I nomi inventati non sono ammessi.', 'error');
                 return;
             }
             const listingRes = await fetch(`${window.location.origin}/api/listings`, {
