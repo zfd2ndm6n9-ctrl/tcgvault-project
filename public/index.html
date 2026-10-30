@@ -998,7 +998,7 @@
             </div>
             <div class="detail-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
                 <div>
-                    <img id="detail-img" src="" alt="Foto Prodotto" style="width:100%; max-height:350px; object-fit:contain; background:rgba(0,0,0,0.03); border-radius:12px;">
+                    <img id="detail-img" src="" alt="Foto Prodotto" referrerpolicy="no-referrer" style="width:100%; max-height:350px; object-fit:contain; background:rgba(0,0,0,0.03); border-radius:12px;">
                 </div>
                 <div>
                     <span id="detail-category" class="card-category"></span>
@@ -1268,7 +1268,7 @@
                 </div>
                 <div class="form-group">
                     <label>📷 Foto della Carta *</label>
-                    <input type="file" id="sell-image-file" accept="image/*" required style="padding: 8px;">
+                    <input type="file" id="sell-image-file" accept="image/jpeg,image/png,image/webp,image/gif" required style="padding: 8px;">
                 </div>
                 <div class="form-group">
                     <label>Descrizione</label>
@@ -2157,7 +2157,7 @@
                 }
                 box.innerHTML = data.cards.map((c, i) => `
                     <button type="button" class="btn-outline" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin-bottom:6px;padding:8px;" onclick="pickCatalogCard(${i})">
-                        ${c.image ? `<img src="${escapeHtml(c.image)}" alt="" style="width:36px;height:50px;object-fit:cover;border-radius:4px;">` : ''}
+                        ${c.image ? productImgHtml(c.image, '', 'width:36px;height:50px;object-fit:cover;border-radius:4px;') : ''}
                         <span><b>${escapeHtml(c.name)}</b><br><small>${escapeHtml(c.set || '')} ${c.number ? '#' + escapeHtml(c.number) : ''}</small></span>
                     </button>
                 `).join('');
@@ -2195,7 +2195,16 @@
             }
 
             const file = fileInput.files[0];
-            const fileExt = file.name.split('.').pop();
+            const fileType = String(file.type || '').toLowerCase();
+            const fileExt = String(file.name.split('.').pop() || '').toLowerCase();
+            if (fileExt === 'heic' || fileExt === 'heif' || fileType === 'image/heic' || fileType === 'image/heif') {
+                showNotification('Usa una foto JPG o PNG. Le foto iPhone HEIC non si vedono nel browser.', 'error');
+                return;
+            }
+            if (!['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(fileExt) && !/^image\/(jpeg|png|webp|gif)$/.test(fileType)) {
+                showNotification('Formato foto non valido. Usa JPG, PNG o WebP.', 'error');
+                return;
+            }
             const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
             const filePath = `${fileName}`;
 
@@ -2571,6 +2580,23 @@
             return String(text || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
         }
 
+        function listingImgSrc(url) {
+            const u = String(url || '').trim();
+            if (u.startsWith('/api/img?')) return u;
+            if (!/^https?:\/\//i.test(u)) return '';
+            return u.replace(/^http:\/\//i, 'https://');
+        }
+
+        function productImgHtml(url, className, extraStyle) {
+            const s = listingImgSrc(url);
+            const cls = className ? ` class="${className}"` : '';
+            const st = extraStyle ? ` style="${extraStyle}"` : '';
+            if (!s) {
+                return `<div${cls}${st} style="${extraStyle || ''}display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.75rem;background:rgba(0,0,0,0.08);">Nessuna foto</div>`;
+            }
+            return `<img src="${escapeHtml(s)}"${cls}${st} alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.onerror=null;this.src='data:image/svg+xml,${encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"160\"><rect fill=\"#1e293b\" width=\"100%\" height=\"100%\"/><text x=\"50%\" y=\"50%\" fill=\"#94a3b8\" font-size=\"12\" text-anchor=\"middle\">Foto</text></svg>')}';">`;
+        }
+
         function legalAccordionHtml() {
             return `
                 <div class="accordion" id="tos">
@@ -2646,7 +2672,7 @@
                 const status = listingStatusMeta(card);
                 return `
                 <div class="tcg-card">
-                    <img src="${card.image_url}" class="card-img">
+                    ${productImgHtml(card.image_url, 'card-img')}
                     <div class="card-body">
                         <span class="card-category">${card.category} • ${card.type}</span>
                         <h3 class="card-title">${card.title}</h3>
@@ -2707,11 +2733,10 @@
             container.innerHTML = cards.map(card => {
                 const isSaved = savedProductIds.some(id => String(id) === String(card.id));
                 const status = listingStatusMeta(card);
-                const img = /^https?:\/\//i.test(String(card.image_url || '')) ? card.image_url : '';
                 return `
                     <div class="tcg-card" onclick="openDetailModal('${escapeHtml(String(card.id))}')">
                         <div class="heart-btn ${isSaved ? 'saved' : ''}" onclick="toggleSaveProduct(event, '${escapeHtml(String(card.id))}')">${isSaved ? '❤️' : '🤍'}</div>
-                        <img src="${escapeHtml(img)}" class="card-img">
+                        ${productImgHtml(card.image_url, 'card-img')}
                         <div class="card-body">
                             <span class="card-category">${escapeHtml(card.category)} • ${escapeHtml(card.type)}</span>
                             <h3 class="card-title">${escapeHtml(card.title)}</h3>
@@ -2805,7 +2830,7 @@
             } else {
                 sellerCardsContainer.innerHTML = sellerCards.map(card => `
                     <div class="tcg-card" onclick="closeSellerProfileModal(); openDetailModal('${card.id}')" style="cursor: pointer;">
-                        <img src="${card.image_url}" class="card-img" style="height: 120px;">
+                        ${productImgHtml(card.image_url, 'card-img', 'height: 120px;')}
                         <div class="card-body" style="padding: 10px;">
                             <h4 class="card-title" style="font-size: 0.9rem; margin: 0 0 4px 0;">${card.title}</h4>
                             <div class="price" style="font-size: 1rem;">€ ${Number(card.price).toFixed(2)}</div>
@@ -2887,7 +2912,7 @@
                 total += Number(item.price);
                 return `
                     <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; gap: 12px;">
-                        <img src="${item.image_url}" style="width: 50px; height: 50px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px;">
+                        ${productImgHtml(item.image_url, '', 'width: 50px; height: 50px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px;')}
                         <div style="flex: 1;">
                             <div style="font-weight: bold; font-size: 0.95rem;">${item.title}</div>
                             <div style="color: var(--accent-neon); font-weight: bold; font-size: 0.9rem;">€ ${Number(item.price).toFixed(2)}</div>
@@ -2934,7 +2959,11 @@
                 return;
             }
 
-            document.getElementById('detail-img').src = selectedCard.image_url;
+            const detailImg = document.getElementById('detail-img');
+            if (detailImg) {
+                detailImg.referrerPolicy = 'no-referrer';
+                detailImg.src = listingImgSrc(selectedCard.image_url);
+            }
             document.getElementById('detail-name').innerText = selectedCard.title;
             document.getElementById('detail-category').innerText = (selectedCard.category || 'TCG') + ' • ' + (selectedCard.type || 'Articolo');
             document.getElementById('detail-condition').innerText = 'Condizione: ' + (selectedCard.condition || 'N/D');
@@ -3230,7 +3259,7 @@
             } else {
                 sellerCardsContainer.innerHTML = sellerCards.map(card => `
                     <div class="tcg-card" onclick="closeSellerProfileModal(); openDetailModal('${card.id}')" style="cursor: pointer;">
-                        <img src="${card.image_url}" class="card-img" style="height: 120px;">
+                        ${productImgHtml(card.image_url, 'card-img', 'height: 120px;')}
                         <div class="card-body" style="padding: 10px;">
                             <h4 class="card-title" style="font-size: 0.9rem; margin: 0 0 4px 0;">${card.title}</h4>
                             <div class="price" style="font-size: 1rem;">€ ${Number(card.price).toFixed(2)}</div>

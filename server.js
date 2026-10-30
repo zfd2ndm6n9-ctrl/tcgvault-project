@@ -443,6 +443,28 @@ const SKIP_PRODUCT_RE = /code card|online code|digital code/i;
 const LISTING_BLOCK_RE = /\b(iphone|ipad|samsung|xiaomi|huawei|airpods?|nike|adidas|affitto|monolocale|bitcoin|crypto|onlyfans|seguaci|followers|playstation|xbox series|cocaina)\b/i;
 const CATALOG_UA = 'TCGVault/1.0 (https://tcg-vault.it; catalog-match)';
 const tcgcsvCache = { groups: {}, products: {} };
+const CATALOG_IMG_HOSTS = [
+    'images.pokemontcg.io',
+    'cards.scryfall.io',
+    'c1.scryfall.com',
+    'images.ygoprodeck.com',
+    'images2.ygoprodeck.com',
+    'productimages.tcgplayer.com',
+    'product-images.tcgplayer.com',
+    'tcgplayer-cdn.tcgplayer.com',
+    'cdn.tcgplayer.com',
+    'static.tcgplayer.com',
+    'lorcana-api.com',
+    'api.lorcana-api.com',
+    'images.lorcana-api.com',
+    'apitcg.com',
+    'images.apitcg.com',
+    'cdn.apitcg.com',
+    'en.onepiece-cardgame.com',
+    'www.onepiece-cardgame.com',
+    'limitlesstcg.nyc3.cdn.digitaloceanspaces.com',
+    'cdn.dreamborn.ink'
+];
 
 function orderToRow(o) {
     return {
@@ -1134,6 +1156,40 @@ function listingOffTopic(text) {
     return LISTING_BLOCK_RE.test(String(text || ''));
 }
 
+function normalizeCatalogImage(image) {
+    let u = String(image || '').trim();
+    if (!u) return '';
+    if (u.startsWith('//')) u = 'https:' + u;
+    if (/^http:\/\//i.test(u)) u = 'https://' + u.slice(7);
+    if (!/^https:\/\//i.test(u)) return '';
+    return u;
+}
+
+function proxiedCatalogImage(image) {
+    const u = normalizeCatalogImage(image);
+    if (!u) return '';
+    return '/api/img?u=' + encodeURIComponent(u);
+}
+
+function catalogImgHostOk(hostname) {
+    const h = String(hostname || '').toLowerCase();
+    return CATALOG_IMG_HOSTS.some(ok => h === ok || h.endsWith('.' + ok));
+}
+
+function scryfallImage(c) {
+    if (!c) return '';
+    if (c.image_uris && (c.image_uris.small || c.image_uris.normal)) {
+        return c.image_uris.small || c.image_uris.normal;
+    }
+    const face = c.card_faces && c.card_faces[0] && c.card_faces[0].image_uris;
+    return (face && (face.small || face.normal)) || '';
+}
+
+function ygoImage(c) {
+    if (c && c.id) return 'https://images.ygoprodeck.com/images/cards_small/' + c.id + '.jpg';
+    return c && c.card_images && c.card_images[0] && (c.card_images[0].image_url_small || c.card_images[0].image_url) || '';
+}
+
 function mapCatalogHit(source, id, name, setName, number, image) {
     return {
         source,
@@ -1141,7 +1197,7 @@ function mapCatalogHit(source, id, name, setName, number, image) {
         name: String(name || '').trim(),
         set: String(setName || '').trim(),
         number: String(number || '').trim(),
-        image: image || ''
+        image: proxiedCatalogImage(image)
     };
 }
 
@@ -1223,7 +1279,7 @@ async function searchTcgcsvProducts(category, query, type) {
                 name,
                 group.name,
                 String(p.productId),
-                p.imageUrl || ''
+                p.imageUrl || (p.productId ? ('https://tcgplayer-cdn.tcgplayer.com/product/' + p.productId + '_in_400x400.jpg') : '')
             ));
         });
     });
@@ -1241,7 +1297,7 @@ async function verifyTcgcsvProduct(category, id) {
     if (!p) return null;
     const groups = await tcgcsvGroups(catId);
     const group = groups.find(g => String(g.groupId) === String(groupId));
-    return mapCatalogHit('tcgcsv', groupId + ':' + productId, p.name, group && group.name, productId, p.imageUrl || '');
+    return mapCatalogHit('tcgcsv', groupId + ':' + productId, p.name, group && group.name, productId, p.imageUrl || (p.productId ? ('https://tcgplayer-cdn.tcgplayer.com/product/' + p.productId + '_in_400x400.jpg') : ''));
 }
 
 async function searchPokemonCards(q) {
@@ -1325,7 +1381,7 @@ async function searchOfficialCatalog(category, query, type) {
             c.name,
             c.set_name || c.set,
             c.collector_number,
-            c.image_uris && c.image_uris.small
+            scryfallImage(c)
         ));
     }
     if (category === 'Yugioh') {
@@ -1336,7 +1392,7 @@ async function searchOfficialCatalog(category, query, type) {
             c.name,
             (c.typeline && c.typeline.join(' ')) || c.type || 'Yu-Gi-Oh!',
             c.id,
-            c.card_images && c.card_images[0] && c.card_images[0].image_url_small
+            ygoImage(c)
         ));
     }
     if (category === 'Lorcana') {
@@ -1379,13 +1435,13 @@ async function verifyOfficialCard(category, source, id) {
     if (category === 'Magic' && source === 'scryfall') {
         const c = await catalogFetchJson('https://api.scryfall.com/cards/' + encodeURIComponent(cardId));
         if (!c || c.object === 'error') return null;
-        return mapCatalogHit('scryfall', c.id, c.name, c.set_name, c.collector_number, c.image_uris && c.image_uris.small);
+        return mapCatalogHit('scryfall', c.id, c.name, c.set_name, c.collector_number, scryfallImage(c));
     }
     if (category === 'Yugioh' && source === 'ygoprodeck') {
         const json = await catalogFetchJson('https://db.ygoprodeck.com/api/v7/cardinfo.php?id=' + encodeURIComponent(cardId));
         const c = json && json.data && json.data[0];
         if (!c) return null;
-        return mapCatalogHit('ygoprodeck', c.id, c.name, c.type, c.id, c.card_images && c.card_images[0] && c.card_images[0].image_url_small);
+        return mapCatalogHit('ygoprodeck', c.id, c.name, c.type, c.id, ygoImage(c));
     }
     if (category === 'Lorcana' && source === 'lorcana') {
         const json = await catalogFetchJson('https://api.lorcana-api.com/cards/fetch?search=' + encodeURIComponent(cardId));
@@ -1595,6 +1651,43 @@ app.get('/api/catalog/search', async (req, res) => {
         res.json({ success: true, cards });
     } catch (err) {
         res.status(502).json({ success: false, error: 'Catalogo ufficiale non raggiungibile. Riprova.' });
+    }
+});
+
+app.get('/api/img', async (req, res) => {
+    if (!rateLimit('img:' + clientIp(req), 180, 60000)) {
+        return res.status(429).end();
+    }
+    let parsed;
+    try {
+        parsed = new URL(String(req.query.u || ''));
+    } catch (err) {
+        return res.status(400).end();
+    }
+    if (parsed.protocol === 'http:') parsed.protocol = 'https:';
+    if (parsed.protocol !== 'https:' || !catalogImgHostOk(parsed.hostname)) {
+        return res.status(400).end();
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15000);
+    try {
+        const upstream = await fetch(parsed.href, {
+            signal: ctrl.signal,
+            headers: { 'User-Agent': CATALOG_UA, Accept: 'image/*,*/*;q=0.8', Referer: '' },
+            redirect: 'follow'
+        });
+        if (!upstream.ok) return res.status(404).end();
+        const type = String(upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+        if (!type.startsWith('image/')) return res.status(404).end();
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        if (!buf.length || buf.length > 2.5 * 1024 * 1024) return res.status(404).end();
+        res.setHeader('Content-Type', type);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.send(buf);
+    } catch (err) {
+        res.status(404).end();
+    } finally {
+        clearTimeout(t);
     }
 });
 
