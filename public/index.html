@@ -2140,13 +2140,19 @@
             try {
                 const type = (document.getElementById('sell-type') || {}).value || 'Carta Singola';
                 const res = await fetch(`${window.location.origin}/api/catalog/search?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}`);
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
+                if (res.status === 401 || data.error === 'Accesso richiesto.') {
+                    box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Accedi di nuovo, poi cerca la carta.</p>';
+                    return;
+                }
                 if (!data.success) {
                     box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">' + (data.error || 'Catalogo non disponibile.') + '</p>';
                     return;
                 }
                 if (!data.cards.length) {
-                    box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Nessun prodotto ufficiale trovato. Prova il nome del set (es. Obsidian Flames Booster Box). Mazzo custom: usa Lotto / Stock.</p>';
+                    box.innerHTML = type === 'Carta Singola'
+                        ? '<p style="color:var(--text-muted);font-size:0.85rem;">Nessuna carta trovata. Usa il nome inglese (es. Charizard, non Dracofiamma).</p>'
+                        : '<p style="color:var(--text-muted);font-size:0.85rem;">Nessun box/mazzo precon. Cerca il set in inglese (es. Obsidian Flames). Per una carta singola cambia tipo. Mazzo custom: Lotto / Stock.</p>';
                     return;
                 }
                 box.innerHTML = data.cards.map((c, i) => `

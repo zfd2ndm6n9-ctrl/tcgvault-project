@@ -1147,15 +1147,20 @@ function mapCatalogHit(source, id, name, setName, number, image) {
 
 async function catalogFetchJson(url) {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
+    const t = setTimeout(() => ctrl.abort(), 20000);
     try {
-        const res = await fetch(url, {
-            signal: ctrl.signal,
-            headers: { 'User-Agent': CATALOG_UA, Accept: 'application/json' }
-        });
-        if (!res.ok) return null;
+        const headers = { 'User-Agent': CATALOG_UA, Accept: 'application/json' };
+        if (process.env.POKEMONTCG_API_KEY && /pokemontcg\.io/.test(url)) {
+            headers['X-Api-Key'] = process.env.POKEMONTCG_API_KEY;
+        }
+        const res = await fetch(url, { signal: ctrl.signal, headers });
+        if (!res.ok) {
+            console.error('Catalog HTTP', res.status, url.slice(0, 140));
+            return null;
+        }
         return await res.json();
     } catch (err) {
+        console.error('Catalog fetch', err.message, url.slice(0, 140));
         return null;
     } finally {
         clearTimeout(t);
@@ -1171,7 +1176,7 @@ async function tcgcsvGroups(catId) {
     if (cached && cached.exp > Date.now()) return cached.rows;
     const json = await catalogFetchJson('https://tcgcsv.com/tcgplayer/' + catId + '/groups');
     const rows = (json && json.results) || [];
-    tcgcsvCache.groups[catId] = { exp: Date.now() + 12 * 60 * 60 * 1000, rows };
+    if (rows.length) tcgcsvCache.groups[catId] = { exp: Date.now() + 12 * 60 * 60 * 1000, rows };
     return rows;
 }
 
@@ -1181,7 +1186,7 @@ async function tcgcsvProducts(catId, groupId) {
     if (cached && cached.exp > Date.now()) return cached.rows;
     const json = await catalogFetchJson('https://tcgcsv.com/tcgplayer/' + catId + '/' + groupId + '/products');
     const rows = (json && json.results) || [];
-    tcgcsvCache.products[key] = { exp: Date.now() + 6 * 60 * 60 * 1000, rows };
+    if (rows.length) tcgcsvCache.products[key] = { exp: Date.now() + 6 * 60 * 60 * 1000, rows };
     return rows;
 }
 
@@ -1239,24 +1244,77 @@ async function verifyTcgcsvProduct(category, id) {
     return mapCatalogHit('tcgcsv', groupId + ':' + productId, p.name, group && group.name, productId, p.imageUrl || '');
 }
 
+async function searchPokemonCards(q) {
+    const lucene = [
+        'name:' + q + '*',
+        'name:"' + q + '*"',
+        'name:"' + q + '"'
+    ];
+    for (const clause of lucene) {
+        const json = await catalogFetchJson('https://api.pokemontcg.io/v2/cards?q=' + encodeURIComponent(clause) + '&pageSize=12');
+        const rows = (json && json.data) || [];
+        if (rows.length) {
+            return rows.map(c => mapCatalogHit(
+                'pokemon',
+                c.id,
+                c.name,
+                c.set && c.set.name,
+                c.number,
+                c.images && (c.images.small || c.images.large)
+            ));
+        }
+    }
+    return [];
+}
+
+async function searchPokemonSealed(q, type) {
+    const json = await catalogFetchJson('https://api.pokemontcg.io/v2/sets?q=' + encodeURIComponent('name:' + q.split(/\s+/)[0] + '*') + '&pageSize=10');
+    const sets = (json && json.data) || [];
+    const kinds = type === DECK_PRODUCT_TYPE
+        ? [['theme', 'Theme Deck / Starter']]
+        : [['pack', 'Booster Pack'], ['box', 'Booster Box'], ['etb', 'Elite Trainer Box']];
+    const hits = [];
+    const needle = q.toLowerCase();
+    sets.filter(s => String(s.name || '').toLowerCase().includes(needle) || needle.includes(String(s.name || '').toLowerCase()) || String(s.name || '').toLowerCase().split(/\s+/).some(w => needle.includes(w.toLowerCase()) && w.length > 3)).forEach(s => {
+        kinds.forEach(([id, label]) => {
+            hits.push(mapCatalogHit('pokeset', s.id + ':' + id, s.name + ' — ' + label, s.name, s.ptcgoCode || '', s.images && (s.images.logo || s.images.symbol)));
+        });
+    });
+    if (hits.length) return hits;
+    return sets.slice(0, 6).flatMap(s => kinds.map(([id, label]) => mapCatalogHit('pokeset', s.id + ':' + id, s.name + ' — ' + label, s.name, s.ptcgoCode || '', s.images && (s.images.logo || s.images.symbol))));
+}
+
+async function verifyPokeSet(id) {
+    const parts = String(id || '').split(':');
+    if (parts.length !== 2) return null;
+    const json = await catalogFetchJson('https://api.pokemontcg.io/v2/sets/' + encodeURIComponent(parts[0]));
+    const s = json && json.data;
+    if (!s) return null;
+    const labels = { pack: 'Booster Pack', box: 'Booster Box', etb: 'Elite Trainer Box', theme: 'Theme Deck / Starter' };
+    const label = labels[parts[1]];
+    if (!label) return null;
+    return mapCatalogHit('pokeset', s.id + ':' + parts[1], s.name + ' — ' + label, s.name, s.ptcgoCode || '', s.images && s.images.logo);
+}
+
 async function searchOfficialCatalog(category, query, type) {
     const listingType = String(type || SINGLE_CARD_TYPE);
-    if (listingType === BOX_PRODUCT_TYPE || listingType === DECK_PRODUCT_TYPE) {
-        return searchTcgcsvProducts(category, query, listingType);
-    }
     const q = String(query || '').trim();
+    if (listingType === BOX_PRODUCT_TYPE || listingType === DECK_PRODUCT_TYPE) {
+        let hits = [];
+        if (category === 'Pokemon') hits = await searchPokemonSealed(q, listingType);
+        const extra = await searchTcgcsvProducts(category, q, listingType);
+        const seen = {};
+        return hits.concat(extra).filter(h => {
+            const k = h.source + ':' + h.id;
+            if (seen[k]) return false;
+            seen[k] = true;
+            return true;
+        }).slice(0, 15);
+    }
     if (q.length < 2) return [];
     const enc = encodeURIComponent(q);
     if (category === 'Pokemon') {
-        const json = await catalogFetchJson('https://api.pokemontcg.io/v2/cards?q=name:' + enc + '*&pageSize=12&orderBy=name');
-        return ((json && json.data) || []).map(c => mapCatalogHit(
-            'pokemon',
-            c.id,
-            c.name,
-            c.set && c.set.name,
-            c.number,
-            c.images && (c.images.small || c.images.large)
-        ));
+        return searchPokemonCards(q);
     }
     if (category === 'Magic') {
         const json = await catalogFetchJson('https://api.scryfall.com/cards/search?q=' + enc + '&unique=cards');
@@ -1520,7 +1578,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/catalog/search', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    if (!rateLimit('catalog:' + auth.id, 30, 60000)) {
+    if (!rateLimit('catalog:' + auth.id, 80, 60000)) {
         return res.status(429).json({ success: false, error: 'Troppe ricerche. Riprova tra poco.' });
     }
     const category = String(req.query.category || '');
@@ -1577,6 +1635,8 @@ app.post('/api/listings', async (req, res) => {
         let verified = null;
         if (type === SINGLE_CARD_TYPE) {
             verified = await verifyOfficialCard(category, body.catalogSource, body.catalogId);
+        } else if (String(body.catalogSource) === 'pokeset') {
+            verified = await verifyPokeSet(body.catalogId);
         } else {
             verified = await verifyTcgcsvProduct(category, body.catalogId);
             if (verified && !productKindOk(verified.name, type)) verified = null;
