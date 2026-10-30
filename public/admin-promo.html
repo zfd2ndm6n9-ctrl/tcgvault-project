@@ -33,7 +33,7 @@
 <body>
     <div class="wrap">
         <header class="site-header">
-            <h1>Codici promo SaaS</h1>
+            <h1>Admin: promo e bonifici</h1>
             <a href="index.html">← Marketplace</a>
         </header>
         <div class="card" id="gate"><p class="muted">Verifica accesso Admin Supremo...</p></div>
@@ -55,6 +55,11 @@
             <div class="card">
                 <h2 style="margin-top:0;">Codici attivi e storico</h2>
                 <div id="list"></div>
+            </div>
+            <div class="card">
+                <h2 style="margin-top:0;">Bonifici IBAN da fare</h2>
+                <p class="muted">Dopo il bonifico SEPA dal tuo conto, segna come pagato. Rifiuta per rimettere i soldi nel wallet del venditore.</p>
+                <div id="payout-list"></div>
             </div>
         </div>
     </div>
@@ -78,6 +83,7 @@
             gate.style.display = 'none';
             document.getElementById('app').style.display = 'block';
             loadCodes();
+            loadPayouts();
         }
 
         async function loadCodes() {
@@ -118,6 +124,33 @@
                 document.getElementById('p-code').value = '';
                 loadCodes();
             }
+        }
+
+        async function loadPayouts() {
+            const box = document.getElementById('payout-list');
+            const data = await fetch('/api/admin/payouts').then(r => r.json());
+            if (!data.success) { box.innerHTML = '<p class="err">' + (data.error || 'Accesso negato.') + '</p>'; return; }
+            if (!data.payouts.length) { box.innerHTML = '<p class="muted">Nessun bonifico in attesa.</p>'; return; }
+            box.innerHTML = data.payouts.map(p => `<div class="code-row">
+                <div>
+                    <strong>€ ${Number(p.amount).toFixed(2)}</strong>
+                    <div class="muted">${p.holder || p.name || '—'} · ${p.email || p.userId}</div>
+                    <div class="muted">${p.iban}</div>
+                </div>
+                <div>
+                    <button class="btn" onclick="settlePayout('${p.userId}','complete')">Pagato</button>
+                    <button class="btn-outline" onclick="settlePayout('${p.userId}','reject')">Rifiuta</button>
+                </div>
+            </div>`).join('');
+        }
+
+        async function settlePayout(userId, action) {
+            await fetch('/api/admin/payouts/' + encodeURIComponent(userId) + '/' + action, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            loadPayouts();
         }
 
         async function disableCode(id) {

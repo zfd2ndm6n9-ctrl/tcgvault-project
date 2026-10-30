@@ -42,10 +42,10 @@
         </div>
         <div id="app" style="display:none;">
             <div class="card">
-                <h2 style="margin-top:0;">Payout Stripe</h2>
-                <p class="muted" id="connect-status">Stato conto Stripe: …</p>
-                <button class="btn" type="button" onclick="startStripeConnect()">Collega / verifica conto Stripe</button>
-                <p class="muted">L'IBAN lo inserisci su Stripe. I prelievi dal portafoglio sul marketplace usano questo stesso conto.</p>
+                <h2 style="margin-top:0;">Payout</h2>
+                <p class="muted">Il modo semplice è il bonifico IBAN dal portafoglio sul marketplace (nome + IBAN). Stripe Express è facoltativo, e per un negozio chiede i dati aziendali / P.IVA.</p>
+                <p class="muted" id="connect-status">Stripe automatico (facoltativo): …</p>
+                <button class="btn-outline" type="button" onclick="startStripeConnect()">Collega Stripe Express (facoltativo)</button>
             </div>
             <div class="card">
                 <h2 style="margin-top:0;">Crea torneo / evento</h2>

@@ -943,15 +943,41 @@ function releaseMatureHolds() {
     return changed;
 }
 
+function pendingIbanInfo(user) {
+    const id = String((user && user.lastPayoutId) || '');
+    if (!id.startsWith('pending_iban|')) return null;
+    const rest = id.slice('pending_iban|'.length);
+    const pipe = rest.indexOf('|');
+    const amount = Number(pipe === -1 ? rest : rest.slice(0, pipe));
+    const holder = pipe === -1 ? '' : decodeURIComponent(rest.slice(pipe + 1));
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    return { amount, holder };
+}
+
+function setPendingIbanPayout(user, amount, holder) {
+    user.lastPayoutId = 'pending_iban|' + Number(amount).toFixed(2) + '|' + encodeURIComponent(String(holder || '').slice(0, 80));
+}
+
+function normalizeIban(value) {
+    return String(value || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function isPlausibleIban(value) {
+    return /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/.test(normalizeIban(value));
+}
+
 function walletPublic(userId) {
     releaseMatureHolds();
     const user = getOrCreateWalletUser(userId);
+    const pending = pendingIbanInfo(user);
     return {
         wallet: Number(user.availableWallet || 0),
         availableWallet: Number(user.availableWallet || 0),
         heldWallet: Number(user.heldWallet || 0),
         iban: user.iban || '',
-        stripeAccountId: user.stripeAccountId || null
+        stripeAccountId: user.stripeAccountId || null,
+        payoutPending: !!pending,
+        payoutPendingAmount: pending ? pending.amount : 0
     };
 }
 
@@ -1617,10 +1643,12 @@ app.post('/api/connect/onboard', async (req, res) => {
     const user = getOrCreateWalletUser(auth.id);
     try {
         if (!user.stripeAccountId) {
+            const fromShop = req.body && req.body.from === 'shop';
             const account = await stripe.accounts.create({
                 type: 'express',
                 country: 'IT',
                 email: auth.email || undefined,
+                business_type: fromShop ? undefined : 'individual',
                 capabilities: { transfers: { requested: true } },
                 business_profile: { url: publicSiteUrl(req) }
             });
@@ -1648,6 +1676,11 @@ app.post('/api/wallet/payout', async (req, res) => {
     const userId = auth.id;
     releaseMatureHolds();
     const user = getOrCreateWalletUser(userId);
+    const method = String((req.body && req.body.method) || 'iban').toLowerCase();
+
+    if (pendingIbanInfo(user)) {
+        return res.status(400).json({ success: false, error: 'Hai già un bonifico in lavorazione. Attendi l\'accredito o scrivi al supporto.' });
+    }
 
     if ((user.availableWallet || 0) <= 0) {
         const held = Number(user.heldWallet || 0);
@@ -1657,39 +1690,113 @@ app.post('/api/wallet/payout', async (req, res) => {
         return res.status(400).json({ success: false, error: msg });
     }
 
-    if (!stripe) {
-        return res.status(500).json({ success: false, error: 'Stripe non configurato.' });
-    }
-    const st = await stripeConnectStatus(user);
-    if (!st.payoutsEnabled) {
-        return res.status(400).json({ success: false, error: 'Collega e verifica il conto Stripe (Connect) prima di prelevare.' });
+    const withdrawnAmount = Number(user.availableWallet || 0);
+
+    if (method === 'stripe') {
+        if (!stripe) {
+            return res.status(500).json({ success: false, error: 'Stripe non configurato.' });
+        }
+        const st = await stripeConnectStatus(user);
+        if (!st.payoutsEnabled) {
+            return res.status(400).json({ success: false, error: 'Per l\'accredito automatico completa Stripe Express, oppure usa il bonifico IBAN.' });
+        }
+        try {
+            const transfer = await stripe.transfers.create({
+                amount: Math.round(withdrawnAmount * 100),
+                currency: 'eur',
+                destination: user.stripeAccountId
+            });
+            user.availableWallet = 0;
+            user.lastPayoutId = transfer && transfer.id ? String(transfer.id) : null;
+            user.lastPayoutAt = new Date().toISOString();
+            user.walletUpdatedAt = user.lastPayoutAt;
+            syncWalletTotals(user);
+            persistWalletsToDisk();
+            return res.json({
+                success: true,
+                message: `Prelievo di €${withdrawnAmount.toFixed(2)} inviato sul tuo conto Stripe.`,
+                newBalance: 0.00,
+                heldWallet: Number(user.heldWallet || 0),
+                payoutPending: false
+            });
+        } catch (error) {
+            return res.status(400).json({ success: false, error: error.message });
+        }
     }
 
-    try {
-        const withdrawnAmount = Number(user.availableWallet || 0);
-        const payoutAmount = Math.round(withdrawnAmount * 100);
-        const transfer = await stripe.transfers.create({
-            amount: payoutAmount,
-            currency: 'eur',
-            destination: user.stripeAccountId
-        });
-
-        user.availableWallet = 0;
-        user.lastPayoutId = transfer && transfer.id ? String(transfer.id) : null;
-        user.lastPayoutAt = new Date().toISOString();
-        user.walletUpdatedAt = user.lastPayoutAt;
-        syncWalletTotals(user);
-        persistWalletsToDisk();
-
-        res.json({
-            success: true,
-            message: `Prelievo di €${withdrawnAmount.toFixed(2)} inviato sul tuo conto Stripe.`,
-            newBalance: 0.00,
-            heldWallet: Number(user.heldWallet || 0)
-        });
-    } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
+    const iban = normalizeIban(req.body && req.body.iban);
+    const holder = String((req.body && req.body.holder) || '').trim();
+    if (!isPlausibleIban(iban)) {
+        return res.status(400).json({ success: false, error: 'Inserisci un IBAN valido.' });
     }
+    if (holder.length < 3) {
+        return res.status(400).json({ success: false, error: 'Inserisci nome e cognome dell\'intestatario del conto.' });
+    }
+
+    user.availableWallet = 0;
+    user.iban = iban;
+    setPendingIbanPayout(user, withdrawnAmount, holder);
+    user.lastPayoutAt = new Date().toISOString();
+    user.walletUpdatedAt = user.lastPayoutAt;
+    syncWalletTotals(user);
+    persistWalletsToDisk();
+
+    res.json({
+        success: true,
+        message: `Richiesta di bonifico di €${withdrawnAmount.toFixed(2)} registrata. Arriva in 1-3 giorni lavorativi.`,
+        newBalance: 0.00,
+        heldWallet: Number(user.heldWallet || 0),
+        payoutPending: true,
+        payoutPendingAmount: withdrawnAmount
+    });
+});
+
+app.get('/api/admin/payouts', async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const items = usersDB.map(u => {
+        const pending = pendingIbanInfo(u);
+        if (!pending) return null;
+        return {
+            userId: String(u.id),
+            email: u.email || '',
+            name: u.name || '',
+            iban: u.iban || '',
+            holder: pending.holder,
+            amount: pending.amount,
+            requestedAt: u.lastPayoutAt || null
+        };
+    }).filter(Boolean);
+    res.json({ success: true, payouts: items });
+});
+
+app.post('/api/admin/payouts/:userId/complete', async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const user = getOrCreateWalletUser(req.params.userId);
+    const pending = pendingIbanInfo(user);
+    if (!pending) {
+        return res.status(400).json({ success: false, error: 'Nessun bonifico in attesa per questo utente.' });
+    }
+    user.lastPayoutId = 'sepa_' + Date.now();
+    user.lastPayoutAt = new Date().toISOString();
+    user.walletUpdatedAt = user.lastPayoutAt;
+    persistWalletsToDisk();
+    res.json({ success: true });
+});
+
+app.post('/api/admin/payouts/:userId/reject', async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const user = getOrCreateWalletUser(req.params.userId);
+    const pending = pendingIbanInfo(user);
+    if (!pending) {
+        return res.status(400).json({ success: false, error: 'Nessun bonifico in attesa per questo utente.' });
+    }
+    user.availableWallet = Number(user.availableWallet || 0) + pending.amount;
+    user.lastPayoutId = null;
+    user.lastPayoutAt = new Date().toISOString();
+    user.walletUpdatedAt = user.lastPayoutAt;
+    syncWalletTotals(user);
+    persistWalletsToDisk();
+    res.json({ success: true, restored: pending.amount });
 });
 
 app.post('/api/messages', async (req, res) => {
