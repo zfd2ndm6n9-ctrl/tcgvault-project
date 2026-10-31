@@ -442,7 +442,7 @@ const PRECON_NAME_RE = /\bdeck\b|precon|commander|starter|structure|theme deck|b
 const SKIP_PRODUCT_RE = /code card|online code|digital code/i;
 const LISTING_BLOCK_RE = /\b(iphone|ipad|samsung|xiaomi|huawei|airpods?|nike|adidas|affitto|monolocale|bitcoin|crypto|onlyfans|seguaci|followers|playstation|xbox series|cocaina)\b/i;
 const CATALOG_UA = 'TCGVault/1.0 (https://tcg-vault.it; catalog-match)';
-const tcgcsvCache = { groups: {}, products: {} };
+const tcgcsvCache = { groups: {}, products: {}, index: {} };
 const CATALOG_ALIASES = {
     Pokemon: {
         dracofiamma: 'Charizard',
@@ -1287,24 +1287,37 @@ async function searchTcgcsvByName(category, query, type) {
     const words = raw.split(/\s+/).filter(w => w.length > 1);
     if (!words.length) return [];
     const groups = await tcgcsvGroups(catId);
+    const indexed = tcgcsvCache.index[catId];
+    const sourceRows = indexed && indexed.exp > Date.now() ? indexed.rows : null;
     const hits = [];
-    for (let i = 0; i < groups.length && hits.length < 20; i += 8) {
-        const batch = groups.slice(i, i + 8);
+    const consider = (name, groupId, productId, groupName) => {
+        if (hits.length >= 20) return;
+        const lower = String(name || '').toLowerCase();
+        if (SKIP_PRODUCT_RE.test(name)) return;
+        if (type === SINGLE_CARD_TYPE) {
+            if (SEALED_NAME_RE.test(name) || PRECON_NAME_RE.test(name)) return;
+        } else if (!productKindOk(name, type)) return;
+        if (!words.every(w => lower.includes(w))) return;
+        hits.push(mapCatalogHit('tcgcsv', groupId + ':' + productId, name, groupName, String(productId)));
+    };
+    if (sourceRows) {
+        sourceRows.forEach(row => consider(row.name, row.groupId, row.productId, row.groupName));
+        return hits.slice(0, 20);
+    }
+    const built = [];
+    for (let i = 0; i < groups.length && hits.length < 20; i += 12) {
+        const batch = groups.slice(i, i + 12);
         const lists = await Promise.all(batch.map(g => tcgcsvProducts(catId, g.groupId)));
         lists.forEach((products, idx) => {
             const group = batch[idx];
             products.forEach(p => {
-                if (hits.length >= 20) return;
-                const name = String(p.name || '');
-                const lower = name.toLowerCase();
-                if (SKIP_PRODUCT_RE.test(name)) return;
-                if (type === SINGLE_CARD_TYPE) {
-                    if (SEALED_NAME_RE.test(name) || PRECON_NAME_RE.test(name)) return;
-                } else if (!productKindOk(name, type)) return;
-                if (!words.every(w => lower.includes(w))) return;
-                hits.push(mapCatalogHit('tcgcsv', group.groupId + ':' + p.productId, name, group.name, String(p.productId)));
+                built.push({ groupId: group.groupId, productId: p.productId, name: p.name, groupName: group.name });
+                consider(p.name, group.groupId, p.productId, group.name);
             });
         });
+    }
+    if (built.length && hits.length < 20) {
+        tcgcsvCache.index[catId] = { exp: Date.now() + 6 * 60 * 60 * 1000, rows: built };
     }
     return hits.slice(0, 20);
 }
@@ -1381,14 +1394,21 @@ function ygoHit(c) {
     return mapCatalogHit('ygoprodeck', c.id, c.name, set, number);
 }
 
+function queryLooksItalian(q) {
+    return /[àèéìòù]/i.test(q) || /\b(mago|drago|occhi|bianco|nero|cenere|angelo|demone|eroe)\b/i.test(q);
+}
+
 async function searchYugiohCards(query) {
     const terms = catalogSearchTerms(query, 'Yugioh');
+    const italian = queryLooksItalian(query);
     const urls = [];
     terms.forEach(term => {
         const enc = encodeURIComponent(term);
-        urls.push('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=' + enc + '&num=20&offset=0');
-        urls.push('https://db.ygoprodeck.com/api/v7/cardinfo.php?name=' + enc);
-        urls.push('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=' + enc + '&language=it&num=20&offset=0');
+        const en = 'https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=' + enc + '&num=20&offset=0';
+        const exact = 'https://db.ygoprodeck.com/api/v7/cardinfo.php?name=' + enc;
+        const it = 'https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=' + enc + '&language=it&num=20&offset=0';
+        if (italian) urls.push(it, en, exact);
+        else urls.push(en, exact, it);
     });
     for (const url of urls) {
         const json = await catalogFetchJson(url);
@@ -1480,7 +1500,8 @@ async function verifyOfficialCard(category, source, id) {
         return mapCatalogHit('scryfall', c.id, c.name, c.set_name, c.collector_number);
     }
     if (category === 'Yugioh' && source === 'ygoprodeck') {
-        const json = await catalogFetchJson('https://db.ygoprodeck.com/api/v7/cardinfo.php?id=' + encodeURIComponent(cardId));
+        const konamiId = cardId.split(':')[0];
+        const json = await catalogFetchJson('https://db.ygoprodeck.com/api/v7/cardinfo.php?id=' + encodeURIComponent(konamiId));
         const c = json && json.data && json.data[0];
         if (!c) return null;
         return ygoHit(c);
@@ -1731,7 +1752,11 @@ app.post('/api/listings', async (req, res) => {
         if (!verified) {
             return res.status(400).json({ success: false, error: 'Questo prodotto non è nel catalogo ufficiale. Cercalo e selezionalo dalla lista (box/mazzi precon: nome set + booster box, ETB, deck…).' });
         }
-        title = verified.name + (verified.set ? (' · ' + verified.set) : '');
+        const official = verified.name + (verified.set ? (' · ' + verified.set) : '');
+        const typed = String(body.title || '').trim();
+        title = typed && typed.toLowerCase().includes(String(verified.name).toLowerCase())
+            ? typed.slice(0, 180)
+            : official;
         catalogId = verified.id;
         catalogSource = verified.source;
         catalogSet = verified.set || null;

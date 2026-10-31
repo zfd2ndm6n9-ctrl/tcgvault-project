@@ -1246,7 +1246,7 @@
                 </div>
                 <div class="form-group">
                     <label>Titolo del Prodotto *</label>
-                    <input type="text" id="sell-title" required>
+                    <input type="text" id="sell-title" required placeholder="Si riempie dalla lista. Puoi aggiungere NM, PSA…">
                 </div>
                 <div class="form-group">
                     <label>Prezzo (€) *</label>
@@ -1259,15 +1259,16 @@
                 <div class="form-group">
                     <label>Condizione *</label>
                     <select id="sell-condition" required>
-                        <option value="Nuovo Sigillato">Nuovo Sigillato</option>
-                        <option value="Quasi Nuovo">Quasi Nuovo</option>
                         <option value="Eccellente">Eccellente</option>
+                        <option value="Quasi Nuovo">Quasi Nuovo</option>
+                        <option value="Nuovo Sigillato">Nuovo Sigillato</option>
                         <option value="Buono">Buono</option>
                         <option value="Usato">Usato</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label>📷 Foto del tuo pezzo *</label>
+                    <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 6px;">JPG o PNG. Da iPhone: Impostazioni → Fotocamera → Formati → Compatibile.</p>
                     <input type="file" id="sell-image-file" accept="image/jpeg,image/png,image/webp,image/gif" required style="padding: 8px;">
                 </div>
                 <div class="form-group">
@@ -1305,6 +1306,7 @@
         let selectedCard = null;
         let selectedCatalog = null;
         let catalogSearchTimer = null;
+        let catalogSearchSeq = 0;
         let pendingPaymentOrderId = null;
         let elements = null;
         let clientSecret = null;
@@ -2110,14 +2112,14 @@
 
         const CATALOG_UI = {
             Pokemon: {
-                hint: 'Nome inglese Pokémon. La foto la carichi tu sotto.',
+                hint: 'Nome inglese Pokémon. Mazzo custom: tipo Lotto / Stock. La foto la carichi tu sotto.',
                 single: 'Es. Charizard, Pikachu, Mewtwo',
                 sealed: 'Es. Obsidian Flames, Paldea Evolved',
                 emptySingle: 'Nessuna carta Pokémon. Prova Charizard, Pikachu, Mewtwo.',
                 emptySealed: 'Nessun box/mazzo Pokémon. Cerca il set, es. Obsidian Flames.'
             },
             Yugioh: {
-                hint: 'Nome inglese Yu-Gi-Oh! (Dark Magician, non Mago Nero). La foto la carichi tu sotto.',
+                hint: 'Nome inglese Yu-Gi-Oh! (Dark Magician, non Mago Nero). Mazzo custom: tipo Lotto / Stock.',
                 single: 'Es. Dark Magician, Blue-Eyes White Dragon, Ash Blossom',
                 sealed: 'Es. Maze of Memories, 25th Anniversary Tin',
                 emptySingle: 'Nessuna carta Yu-Gi-Oh!. Prova Dark Magician, Blue-Eyes White Dragon, Ash Blossom.',
@@ -2126,7 +2128,7 @@
             Magic: {
                 hint: 'Nome inglese Magic. La foto la carichi tu sotto.',
                 single: 'Es. Lightning Bolt, Sol Ring, Counterspell',
-                sealed: 'Es. Commander Masters, Wilds of Eldraine',
+                sealed: 'Es. Commander Masters, Wilds of Eldraine. Mazzo custom: Lotto / Stock.',
                 emptySingle: 'Nessuna carta Magic. Prova Lightning Bolt, Sol Ring, Counterspell.',
                 emptySealed: 'Nessun box/mazzo Magic. Cerca il set, es. Commander Masters.'
             },
@@ -2163,7 +2165,7 @@
 
         function onSellCatalogFieldsChange() {
             selectedCatalog = null;
-            const { ui, sealed, type } = catalogUiCopy();
+            const { ui, sealed, type, category } = catalogUiCopy();
             const wrap = document.getElementById('catalog-search-wrap');
             const title = document.getElementById('sell-title');
             const picked = document.getElementById('catalog-picked');
@@ -2175,10 +2177,16 @@
             if (hint) hint.textContent = ui.hint;
             if (qInput) qInput.placeholder = sealed ? ui.sealed : ui.single;
             const needsCatalog = type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo';
+            const altroBlocked = category === 'Altro' && needsCatalog;
             if (wrap) wrap.style.display = needsCatalog ? 'block' : 'none';
+            if (qInput) qInput.style.display = altroBlocked ? 'none' : '';
             if (title) {
-                title.readOnly = needsCatalog;
+                title.readOnly = false;
                 if (needsCatalog) title.value = '';
+            }
+            if (altroBlocked && results) {
+                results.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">' + ui.emptySingle + '</p>';
+                return;
             }
             if (needsCatalog && qInput && qInput.value.trim().length >= 2) searchOfficialCards();
         }
@@ -2194,11 +2202,16 @@
             const category = (document.getElementById('sell-category') || {}).value;
             if (!box) return;
             if (q.length < 2) { box.innerHTML = ''; return; }
-            box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Ricerca nel catalogo ufficiale…</p>';
+            const seq = ++catalogSearchSeq;
+            const waitMsg = category === 'OnePiece'
+                ? 'Ricerca One Piece in corso (può richiedere qualche secondo)…'
+                : 'Ricerca nel catalogo ufficiale…';
+            box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">' + waitMsg + '</p>';
             try {
                 const type = (document.getElementById('sell-type') || {}).value || 'Carta Singola';
                 const res = await fetch(`${window.location.origin}/api/catalog/search?category=${encodeURIComponent(category)}&q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}`);
                 const data = await res.json().catch(() => ({}));
+                if (seq !== catalogSearchSeq) return;
                 if (res.status === 401 || data.error === 'Accesso richiesto.') {
                     box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Accedi di nuovo, poi cerca la carta.</p>';
                     return;
@@ -2232,8 +2245,7 @@
             const picked = document.getElementById('catalog-picked');
             const results = document.getElementById('catalog-results');
             if (title) title.value = card.name + (card.set ? (' · ' + card.set) : '') + (card.number ? (' #' + card.number) : '');
-            if (picked) picked.textContent = 'Selezionata: ' + title.value;
-            if (results) results.innerHTML = '';
+            if (picked) picked.textContent = 'Selezionata: ' + title.value + '. Puoi aggiungere NM, PSA, holo… nel titolo.';
         }
 
         async function handleSellSubmit(event) {
@@ -2245,6 +2257,21 @@
                 return; 
             }
             
+            const type = document.getElementById('sell-type').value;
+            const category = document.getElementById('sell-category').value;
+            if ((type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo') && category === 'Altro') {
+                showNotification('Per carte, box e mazzi scegli il gioco. «Altro TCG» è solo per lotti e accessori.', 'error');
+                return;
+            }
+            if ((type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo') && !(selectedCatalog && selectedCatalog.id)) {
+                showNotification('Seleziona il prodotto dalla lista del catalogo, poi carica la foto.', 'error');
+                return;
+            }
+            const price = parseFloat(String(document.getElementById('sell-price').value).replace(',', '.'));
+            if (!price || price <= 0) {
+                showNotification('Inserisci un prezzo valido.', 'error');
+                return;
+            }
             const fileInput = document.getElementById('sell-image-file');
             if (!fileInput.files || !fileInput.files[0]) {
                 showNotification('Seleziona un\'immagine per la carta.', 'error');
@@ -2281,18 +2308,7 @@
 
             const imageUrl = publicUrlData.publicUrl;
             const sellerRealName = currentUser.name || currentUser.email.split('@')[0];
-            const price = parseFloat(String(document.getElementById('sell-price').value).replace(',', '.'));
-            if (!price || price <= 0) {
-                showNotification('Inserisci un prezzo valido.', 'error');
-                return;
-            }
-
             const pending = getSellerCatalogCents(currentUser.id, price) < SELLER_MIN_CATALOG_CENTS;
-            const type = document.getElementById('sell-type').value;
-            if ((type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo') && !(selectedCatalog && selectedCatalog.id)) {
-                showNotification('Seleziona il prodotto dal catalogo ufficiale. I nomi inventati non sono ammessi.', 'error');
-                return;
-            }
             const listingRes = await fetch(`${window.location.origin}/api/listings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
