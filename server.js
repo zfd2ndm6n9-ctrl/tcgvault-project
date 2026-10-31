@@ -444,16 +444,36 @@ const LISTING_BLOCK_RE = /\b(iphone|ipad|samsung|xiaomi|huawei|airpods?|nike|adi
 const CATALOG_UA = 'TCGVault/1.0 (https://tcg-vault.it; catalog-match)';
 const tcgcsvCache = { groups: {}, products: {} };
 const CATALOG_ALIASES = {
-    dracofiamma: 'Charizard',
-    charizard: 'Charizard',
-    pikachu: 'Pikachu',
-    mewtwo: 'Mewtwo',
-    'mago nero': 'Dark Magician',
-    'drago bianco occhi blu': 'Blue-Eyes White Dragon',
-    'exodia': 'Exodia the Forbidden One',
-    fulmine: 'Lightning Bolt',
-    'uccello del paradiso': 'Birds of Paradise',
-    'contatore di incantesimi': 'Counterspell'
+    Pokemon: {
+        dracofiamma: 'Charizard',
+        pikachu: 'Pikachu',
+        mewtwo: 'Mewtwo'
+    },
+    Yugioh: {
+        'mago nero': 'Dark Magician',
+        'mago oscuro': 'Dark Magician',
+        'drago bianco occhi blu': 'Blue-Eyes White Dragon',
+        'drago bianco': 'Blue-Eyes White Dragon',
+        exodia: 'Exodia the Forbidden One',
+        'fioritura di cenere': 'Ash Blossom & Joyous Spring',
+        'cenere gioiosa': 'Ash Blossom & Joyous Spring'
+    },
+    Magic: {
+        fulmine: 'Lightning Bolt',
+        'uccello del paradiso': 'Birds of Paradise',
+        'contatore di incantesimi': 'Counterspell',
+        'anello solare': 'Sol Ring'
+    },
+    OnePiece: {
+        rufy: 'Luffy',
+        luffy: 'Luffy',
+        zoro: 'Zoro'
+    },
+    Lorcana: {
+        elsa: 'Elsa',
+        topolino: 'Mickey Mouse',
+        'mickey': 'Mickey Mouse'
+    }
 };
 
 function orderToRow(o) {
@@ -1150,11 +1170,11 @@ function catalogQuerySafe(q) {
     return String(q || '').trim().replace(/[:"*?~\\()]/g, ' ').replace(/\s+/g, ' ').slice(0, 80);
 }
 
-function catalogSearchTerms(query) {
+function catalogSearchTerms(query, category) {
     const raw = catalogQuerySafe(query);
     const terms = [];
     if (raw) terms.push(raw);
-    const alias = CATALOG_ALIASES[raw.toLowerCase()];
+    const alias = (CATALOG_ALIASES[category] || {})[raw.toLowerCase()];
     if (alias && alias.toLowerCase() !== raw.toLowerCase()) terms.push(alias);
     return terms;
 }
@@ -1174,12 +1194,18 @@ async function catalogFetchJson(url) {
     if (process.env.POKEMONTCG_API_KEY && /pokemontcg\.io/.test(url)) {
         headers['X-Api-Key'] = process.env.POKEMONTCG_API_KEY;
     }
+    if (/ygoprodeck\.com/.test(url)) {
+        headers.Referer = 'https://db.ygoprodeck.com/';
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 12000);
         try {
             const res = await fetch(url, { signal: ctrl.signal, headers });
             if (res.ok) return await res.json();
+            if (res.status === 400 || res.status === 404) {
+                try { return await res.json(); } catch (err) { return null; }
+            }
             console.error('Catalog HTTP', res.status, url.slice(0, 140));
             if (res.status < 500 || attempt) return null;
         } catch (err) {
@@ -1251,7 +1277,36 @@ async function searchTcgcsvProducts(category, query, type) {
             ));
         });
     });
-    return hits.slice(0, 15);
+    return hits.slice(0, 20);
+}
+
+async function searchTcgcsvByName(category, query, type) {
+    const catId = TCGCSV_CAT[category];
+    const raw = catalogQuerySafe(query).toLowerCase();
+    if (!catId || raw.length < 2) return [];
+    const words = raw.split(/\s+/).filter(w => w.length > 1);
+    if (!words.length) return [];
+    const groups = await tcgcsvGroups(catId);
+    const hits = [];
+    for (let i = 0; i < groups.length && hits.length < 20; i += 8) {
+        const batch = groups.slice(i, i + 8);
+        const lists = await Promise.all(batch.map(g => tcgcsvProducts(catId, g.groupId)));
+        lists.forEach((products, idx) => {
+            const group = batch[idx];
+            products.forEach(p => {
+                if (hits.length >= 20) return;
+                const name = String(p.name || '');
+                const lower = name.toLowerCase();
+                if (SKIP_PRODUCT_RE.test(name)) return;
+                if (type === SINGLE_CARD_TYPE) {
+                    if (SEALED_NAME_RE.test(name) || PRECON_NAME_RE.test(name)) return;
+                } else if (!productKindOk(name, type)) return;
+                if (!words.every(w => lower.includes(w))) return;
+                hits.push(mapCatalogHit('tcgcsv', group.groupId + ':' + p.productId, name, group.name, String(p.productId)));
+            });
+        });
+    }
+    return hits.slice(0, 20);
 }
 
 async function verifyTcgcsvProduct(category, id) {
@@ -1269,7 +1324,7 @@ async function verifyTcgcsvProduct(category, id) {
 }
 
 async function searchPokemonCards(q) {
-    const terms = catalogSearchTerms(q);
+    const terms = catalogSearchTerms(q, 'Pokemon');
     const clauses = [];
     terms.forEach(term => {
         if (/\s/.test(term)) {
@@ -1290,7 +1345,7 @@ async function searchPokemonCards(q) {
 }
 
 async function searchPokemonSealed(q, type) {
-    const term = catalogSearchTerms(q)[0] || '';
+    const term = catalogSearchTerms(q, 'Pokemon')[0] || '';
     const first = term.split(/\s+/)[0] || term;
     const json = await catalogFetchJson('https://api.pokemontcg.io/v2/sets?q=' + encodeURIComponent('name:' + first + '*') + '&pageSize=10');
     const sets = (json && json.data) || [];
@@ -1320,14 +1375,78 @@ async function verifyPokeSet(id) {
     return mapCatalogHit('pokeset', s.id + ':' + parts[1], s.name + ' — ' + label, s.name, s.ptcgoCode || '');
 }
 
+function ygoHit(c) {
+    const set = (c.card_sets && c.card_sets[0] && c.card_sets[0].set_name) || c.type || 'Yu-Gi-Oh!';
+    const number = (c.card_sets && c.card_sets[0] && c.card_sets[0].set_code) || c.id;
+    return mapCatalogHit('ygoprodeck', c.id, c.name, set, number);
+}
+
+async function searchYugiohCards(query) {
+    const terms = catalogSearchTerms(query, 'Yugioh');
+    const urls = [];
+    terms.forEach(term => {
+        const enc = encodeURIComponent(term);
+        urls.push('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=' + enc + '&num=20&offset=0');
+        urls.push('https://db.ygoprodeck.com/api/v7/cardinfo.php?name=' + enc);
+        urls.push('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=' + enc + '&language=it&num=20&offset=0');
+    });
+    for (const url of urls) {
+        const json = await catalogFetchJson(url);
+        const rows = (json && json.data) || [];
+        if (rows.length) return rows.map(ygoHit);
+    }
+    return [];
+}
+
+async function searchMagicCards(query) {
+    const terms = catalogSearchTerms(query, 'Magic');
+    const queries = [];
+    terms.forEach(term => {
+        queries.push('name:"' + term + '"');
+        queries.push(term);
+        queries.push('printed:"' + term + '"');
+    });
+    for (const q of queries) {
+        const json = await catalogFetchJson('https://api.scryfall.com/cards/search?q=' + encodeURIComponent(q) + '&unique=prints');
+        const rows = (json && json.object !== 'error' && json.data) || [];
+        if (rows.length) {
+            return rows.slice(0, 20).map(c => mapCatalogHit(
+                'scryfall',
+                c.id,
+                c.name,
+                c.set_name || c.set,
+                c.collector_number
+            ));
+        }
+    }
+    return [];
+}
+
+function lorcastHit(c) {
+    if (!c || !c.id || !c.name || c.object === 'error') return null;
+    const name = c.version ? (c.name + ' — ' + c.version) : c.name;
+    return mapCatalogHit('lorcast', c.id, name, c.set && c.set.name, c.collector_number);
+}
+
+async function searchLorcanaCards(query) {
+    const terms = catalogSearchTerms(query, 'Lorcana');
+    for (const term of terms) {
+        const json = await catalogFetchJson('https://api.lorcast.com/v0/cards/search?q=' + encodeURIComponent(term) + '&unique=prints');
+        const rows = (json && (json.data || json.results)) || [];
+        const hits = rows.map(lorcastHit).filter(Boolean);
+        if (hits.length) return hits.slice(0, 20);
+    }
+    return searchTcgcsvByName('Lorcana', query, SINGLE_CARD_TYPE);
+}
+
 async function searchOfficialCatalog(category, query, type) {
     const listingType = String(type || SINGLE_CARD_TYPE);
-    const terms = catalogSearchTerms(query);
-    const q = terms[0] || '';
+    const q = catalogSearchTerms(query, category)[0] || '';
     if (listingType === BOX_PRODUCT_TYPE || listingType === DECK_PRODUCT_TYPE) {
         let hits = [];
         if (category === 'Pokemon') hits = await searchPokemonSealed(q, listingType);
-        const extra = await searchTcgcsvProducts(category, q, listingType);
+        let extra = await searchTcgcsvProducts(category, q, listingType);
+        if (!extra.length) extra = await searchTcgcsvByName(category, q, listingType);
         const seen = {};
         return hits.concat(extra).filter(h => {
             const k = h.source + ':' + h.id;
@@ -1337,69 +1456,18 @@ async function searchOfficialCatalog(category, query, type) {
         }).slice(0, 20);
     }
     if (q.length < 2) return [];
-    if (category === 'Pokemon') {
-        return searchPokemonCards(query);
-    }
-    if (category === 'Magic') {
-        for (const term of terms) {
-            const json = await catalogFetchJson('https://api.scryfall.com/cards/search?q=' + encodeURIComponent(term) + '&unique=prints');
-            if (json && json.object !== 'error' && json.data && json.data.length) {
-                return json.data.slice(0, 20).map(c => mapCatalogHit(
-                    'scryfall',
-                    c.id,
-                    c.name,
-                    c.set_name || c.set,
-                    c.collector_number
-                ));
-            }
-        }
-        return [];
-    }
-    if (category === 'Yugioh') {
-        for (const term of terms) {
-            const json = await catalogFetchJson('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=' + encodeURIComponent(term) + '&num=20&offset=0');
-            const rows = (json && json.data) || [];
-            if (rows.length) {
-                return rows.map(c => mapCatalogHit(
-                    'ygoprodeck',
-                    c.id,
-                    c.name,
-                    (c.typeline && c.typeline.join(' ')) || c.type || 'Yu-Gi-Oh!',
-                    String(c.id)
-                ));
-            }
-        }
-        return [];
-    }
-    if (category === 'Lorcana') {
-        const json = await catalogFetchJson('https://api.lorcana-api.com/cards/fetch?search=' + encodeURIComponent(q));
-        const rows = Array.isArray(json) ? json : (json && json.cards) || [];
-        return rows.slice(0, 20).map(c => mapCatalogHit(
-            'lorcana',
-            c.Set_ID || c.id || c.Name,
-            c.Name || c.name,
-            c.Set_Name || c.set,
-            c.Card_Num || c.number
-        ));
-    }
-    if (category === 'OnePiece') {
-        const json = await catalogFetchJson('https://apitcg.com/api/one-piece/cards?name=' + encodeURIComponent(q) + '&limit=20');
-        const rows = (json && (json.data || json.cards || json)) || [];
-        const list = Array.isArray(rows) ? rows : [];
-        return list.slice(0, 20).map(c => mapCatalogHit(
-            'onepiece',
-            c.id || c.code || c.setId,
-            c.name || c.n || c.title,
-            c.set || c.setName || 'One Piece',
-            c.code || c.number || ''
-        )).filter(c => c.id && c.name);
-    }
+    if (category === 'Pokemon') return searchPokemonCards(query);
+    if (category === 'Magic') return searchMagicCards(query);
+    if (category === 'Yugioh') return searchYugiohCards(query);
+    if (category === 'Lorcana') return searchLorcanaCards(query);
+    if (category === 'OnePiece') return searchTcgcsvByName('OnePiece', query, SINGLE_CARD_TYPE);
     return [];
 }
 
 async function verifyOfficialCard(category, source, id) {
     const cardId = String(id || '').trim();
     if (!cardId) return null;
+    if (source === 'tcgcsv') return verifyTcgcsvProduct(category, cardId);
     if (category === 'Pokemon' && source === 'pokemon') {
         const json = await catalogFetchJson('https://api.pokemontcg.io/v2/cards/' + encodeURIComponent(cardId));
         const c = json && json.data;
@@ -1415,22 +1483,11 @@ async function verifyOfficialCard(category, source, id) {
         const json = await catalogFetchJson('https://db.ygoprodeck.com/api/v7/cardinfo.php?id=' + encodeURIComponent(cardId));
         const c = json && json.data && json.data[0];
         if (!c) return null;
-        return mapCatalogHit('ygoprodeck', c.id, c.name, c.type, c.id);
+        return ygoHit(c);
     }
-    if (category === 'Lorcana' && source === 'lorcana') {
-        const json = await catalogFetchJson('https://api.lorcana-api.com/cards/fetch?search=' + encodeURIComponent(cardId));
-        const rows = Array.isArray(json) ? json : (json && json.cards) || [];
-        const c = rows.find(row => String(row.Set_ID || row.id || row.Name) === cardId) || rows[0];
-        if (!c || !(c.Name || c.name)) return null;
-        return mapCatalogHit('lorcana', c.Set_ID || c.Name, c.Name || c.name, c.Set_Name, c.Card_Num);
-    }
-    if (category === 'OnePiece' && source === 'onepiece') {
-        const json = await catalogFetchJson('https://apitcg.com/api/one-piece/cards?id=' + encodeURIComponent(cardId));
-        const rows = (json && (json.data || json.cards || json)) || [];
-        const list = Array.isArray(rows) ? rows : [rows];
-        const c = list.find(row => String(row.id || row.code) === cardId) || list[0];
-        if (!c || !(c.name || c.title)) return null;
-        return mapCatalogHit('onepiece', c.id || c.code, c.name || c.title, c.set || c.setName, c.code);
+    if (category === 'Lorcana' && (source === 'lorcast' || source === 'lorcana')) {
+        const c = await catalogFetchJson('https://api.lorcast.com/v0/cards/' + encodeURIComponent(cardId));
+        return lorcastHit(c);
     }
     return null;
 }

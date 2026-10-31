@@ -1239,8 +1239,8 @@
                 </div>
                 <div class="form-group" id="catalog-search-wrap">
                     <label>Cerca nel catalogo ufficiale *</label>
-                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Scegli il nome ufficiale (in inglese, es. Charizard). Le foto le carichi tu sotto: devono essere del tuo pezzo.</p>
-                    <input type="text" id="sell-catalog-q" placeholder="Es. Charizard, Obsidian Flames Booster Box, Commander deck" autocomplete="off" oninput="onCatalogQueryInput()">
+                    <p id="catalog-hint" style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Scegli il nome ufficiale. Le foto le carichi tu sotto.</p>
+                    <input type="text" id="sell-catalog-q" placeholder="Es. Charizard" autocomplete="off" oninput="onCatalogQueryInput()">
                     <div id="catalog-results" style="max-height:220px;overflow:auto;margin-top:6px;"></div>
                     <p id="catalog-picked" style="font-size:0.85rem;color:var(--accent-neon);margin:8px 0 0;"></p>
                 </div>
@@ -2108,21 +2108,79 @@
             updateCartCounter();
         }
 
+        const CATALOG_UI = {
+            Pokemon: {
+                hint: 'Nome inglese Pokémon. La foto la carichi tu sotto.',
+                single: 'Es. Charizard, Pikachu, Mewtwo',
+                sealed: 'Es. Obsidian Flames, Paldea Evolved',
+                emptySingle: 'Nessuna carta Pokémon. Prova Charizard, Pikachu, Mewtwo.',
+                emptySealed: 'Nessun box/mazzo Pokémon. Cerca il set, es. Obsidian Flames.'
+            },
+            Yugioh: {
+                hint: 'Nome inglese Yu-Gi-Oh! (Dark Magician, non Mago Nero). La foto la carichi tu sotto.',
+                single: 'Es. Dark Magician, Blue-Eyes White Dragon, Ash Blossom',
+                sealed: 'Es. Maze of Memories, 25th Anniversary Tin',
+                emptySingle: 'Nessuna carta Yu-Gi-Oh!. Prova Dark Magician, Blue-Eyes White Dragon, Ash Blossom.',
+                emptySealed: 'Nessun box/mazzo Yu-Gi-Oh!. Cerca il set, es. Maze of Memories.'
+            },
+            Magic: {
+                hint: 'Nome inglese Magic. La foto la carichi tu sotto.',
+                single: 'Es. Lightning Bolt, Sol Ring, Counterspell',
+                sealed: 'Es. Commander Masters, Wilds of Eldraine',
+                emptySingle: 'Nessuna carta Magic. Prova Lightning Bolt, Sol Ring, Counterspell.',
+                emptySealed: 'Nessun box/mazzo Magic. Cerca il set, es. Commander Masters.'
+            },
+            OnePiece: {
+                hint: 'Nome inglese One Piece. La foto la carichi tu sotto.',
+                single: 'Es. Monkey D. Luffy, Roronoa Zoro',
+                sealed: 'Es. Romance Dawn, Pillars of Strength',
+                emptySingle: 'Nessuna carta One Piece. Prova Monkey D. Luffy, Roronoa Zoro.',
+                emptySealed: 'Nessun box/mazzo One Piece. Cerca il set, es. Romance Dawn.'
+            },
+            Lorcana: {
+                hint: 'Nome inglese Lorcana. La foto la carichi tu sotto.',
+                single: 'Es. Elsa, Mickey Mouse, Maleficent',
+                sealed: 'Es. The First Chapter, Rise of the Floodborn',
+                emptySingle: 'Nessuna carta Lorcana. Prova Elsa, Mickey Mouse, Maleficent.',
+                emptySealed: 'Nessun box/mazzo Lorcana. Cerca il set, es. The First Chapter.'
+            },
+            Altro: {
+                hint: 'Carte, box e mazzi precon: scegli il gioco. «Altro TCG» è solo per lotti e accessori.',
+                single: '',
+                sealed: '',
+                emptySingle: 'Scegli Pokémon, Magic, Yu-Gi-Oh!, One Piece o Lorcana.',
+                emptySealed: 'Scegli Pokémon, Magic, Yu-Gi-Oh!, One Piece o Lorcana.'
+            }
+        };
+
+        function catalogUiCopy() {
+            const category = (document.getElementById('sell-category') || {}).value || 'Pokemon';
+            const type = (document.getElementById('sell-type') || {}).value || 'Carta Singola';
+            const ui = CATALOG_UI[category] || CATALOG_UI.Altro;
+            const sealed = type === 'Box / Bustina' || type === 'Mazzo Completo';
+            return { ui, sealed, type, category };
+        }
+
         function onSellCatalogFieldsChange() {
             selectedCatalog = null;
-            const type = (document.getElementById('sell-type') || {}).value;
+            const { ui, sealed, type } = catalogUiCopy();
             const wrap = document.getElementById('catalog-search-wrap');
             const title = document.getElementById('sell-title');
             const picked = document.getElementById('catalog-picked');
             const results = document.getElementById('catalog-results');
+            const hint = document.getElementById('catalog-hint');
+            const qInput = document.getElementById('sell-catalog-q');
             if (picked) picked.textContent = '';
             if (results) results.innerHTML = '';
+            if (hint) hint.textContent = ui.hint;
+            if (qInput) qInput.placeholder = sealed ? ui.sealed : ui.single;
             const needsCatalog = type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo';
             if (wrap) wrap.style.display = needsCatalog ? 'block' : 'none';
             if (title) {
                 title.readOnly = needsCatalog;
                 if (needsCatalog) title.value = '';
             }
+            if (needsCatalog && qInput && qInput.value.trim().length >= 2) searchOfficialCards();
         }
 
         function onCatalogQueryInput() {
@@ -2150,9 +2208,8 @@
                     return;
                 }
                 if (!data.cards.length) {
-                    box.innerHTML = type === 'Carta Singola'
-                        ? '<p style="color:var(--text-muted);font-size:0.85rem;">Nessuna carta trovata. Tipo = Carta Singola, nome inglese (Charizard, Dark Magician, Lightning Bolt).</p>'
-                        : '<p style="color:var(--text-muted);font-size:0.85rem;">Nessun box/mazzo precon. Cerca il set in inglese (es. Obsidian Flames). Per una carta singola cambia tipo. Mazzo custom: Lotto / Stock.</p>';
+                    const { ui, sealed } = catalogUiCopy();
+                    box.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">' + (sealed ? ui.emptySealed : ui.emptySingle) + '</p>';
                     return;
                 }
                 box.innerHTML = data.cards.map((c, i) => `
