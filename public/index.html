@@ -1239,7 +1239,7 @@
                 </div>
                 <div class="form-group" id="catalog-search-wrap">
                     <label>Cerca nel catalogo ufficiale *</label>
-                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Carte singole, box/bustine e mazzi precon: scegli un prodotto reale. I lotti misti e i mazzi costruiti da te vanno in «Lotto / Stock».</p>
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Scegli il nome ufficiale (in inglese, es. Charizard). Le foto le carichi tu sotto: devono essere del tuo pezzo.</p>
                     <input type="text" id="sell-catalog-q" placeholder="Es. Charizard, Obsidian Flames Booster Box, Commander deck" autocomplete="off" oninput="onCatalogQueryInput()">
                     <div id="catalog-results" style="max-height:220px;overflow:auto;margin-top:6px;"></div>
                     <p id="catalog-picked" style="font-size:0.85rem;color:var(--accent-neon);margin:8px 0 0;"></p>
@@ -1267,7 +1267,7 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>📷 Foto della Carta *</label>
+                    <label>📷 Foto del tuo pezzo *</label>
                     <input type="file" id="sell-image-file" accept="image/jpeg,image/png,image/webp,image/gif" required style="padding: 8px;">
                 </div>
                 <div class="form-group">
@@ -2151,14 +2151,14 @@
                 }
                 if (!data.cards.length) {
                     box.innerHTML = type === 'Carta Singola'
-                        ? '<p style="color:var(--text-muted);font-size:0.85rem;">Nessuna carta trovata. Usa il nome inglese (es. Charizard, non Dracofiamma).</p>'
+                        ? '<p style="color:var(--text-muted);font-size:0.85rem;">Nessuna carta trovata. Tipo = Carta Singola, nome inglese (Charizard, Dark Magician, Lightning Bolt).</p>'
                         : '<p style="color:var(--text-muted);font-size:0.85rem;">Nessun box/mazzo precon. Cerca il set in inglese (es. Obsidian Flames). Per una carta singola cambia tipo. Mazzo custom: Lotto / Stock.</p>';
                     return;
                 }
                 box.innerHTML = data.cards.map((c, i) => `
-                    <button type="button" class="btn-outline" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin-bottom:6px;padding:8px;" onclick="pickCatalogCard(${i})">
-                        ${c.image ? productImgHtml(c.image, '', 'width:36px;height:50px;object-fit:cover;border-radius:4px;') : ''}
-                        <span><b>${escapeHtml(c.name)}</b><br><small>${escapeHtml(c.set || '')} ${c.number ? '#' + escapeHtml(c.number) : ''}</small></span>
+                    <button type="button" class="btn-outline" style="display:block;width:100%;text-align:left;margin-bottom:6px;padding:8px;" onclick="pickCatalogCard(${i})">
+                        <b>${escapeHtml(c.name)}</b><br>
+                        <small>${escapeHtml(c.set || '')}${c.number ? ' · #' + escapeHtml(c.number) : ''}</small>
                     </button>
                 `).join('');
                 window.__catalogHits = data.cards;
