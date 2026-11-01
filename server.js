@@ -1121,7 +1121,8 @@ async function getAuthUser(req) {
             strongAuth: !!strong,
             emailConfirmed: !!(row.email_confirmed_at || row.confirmed_at),
             phoneConfirmed: !!row.phone_confirmed_at,
-            createdAt: row.created_at || null
+            createdAt: row.created_at || null,
+            accessToken: token
         };
         authUserCache.set(token, { user, exp: Date.now() + 15000 });
         if (authUserCache.size > 500) {
@@ -1513,37 +1514,75 @@ async function verifyOfficialCard(category, source, id) {
     return null;
 }
 
-async function insertListingRow(row) {
-    const headers = {
-        apikey: SUPABASE_KEY,
-        Authorization: 'Bearer ' + SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation'
-    };
-    let res = await fetch(SUPABASE_URL + '/rest/v1/cards', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(row)
-    });
-    if (!res.ok) {
-        const errText = await res.text();
-        if (/catalog_/i.test(errText) || res.status === 400) {
-            const slim = { ...row };
-            delete slim.catalog_id;
-            delete slim.catalog_source;
-            delete slim.catalog_set;
-            res = await fetch(SUPABASE_URL + '/rest/v1/cards', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(slim)
-            });
-            if (!res.ok) return { error: await res.text() };
-            return { row: (await res.json())[0] };
-        }
-        return { error: errText };
+function supabaseAuthBundles(userJwt) {
+    const bundles = [];
+    let role = '';
+    try {
+        role = JSON.parse(Buffer.from(String(SUPABASE_KEY).split('.')[1], 'base64url').toString()).role || '';
+    } catch (e) {}
+    if (role === 'service_role') {
+        bundles.push({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY });
     }
-    const data = await res.json();
-    return { row: Array.isArray(data) ? data[0] : data };
+    if (userJwt) {
+        bundles.push({ apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + userJwt });
+    }
+    if (!bundles.length) {
+        bundles.push({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY });
+    }
+    return bundles;
+}
+
+async function insertListingRow(row, userJwt) {
+    const payload = { ...row };
+    Object.keys(payload).forEach(k => {
+        if (payload[k] == null || payload[k] === '') delete payload[k];
+    });
+    const bundles = supabaseAuthBundles(userJwt);
+    for (let round = 0; round < 10; round++) {
+        let lastErr = '';
+        let lastStatus = 0;
+        let retry = false;
+        for (const auth of bundles) {
+            const res = await fetch(SUPABASE_URL + '/rest/v1/cards', {
+                method: 'POST',
+                headers: {
+                    ...auth,
+                    'Content-Type': 'application/json',
+                    Prefer: 'return=representation'
+                },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                const data = await res.json();
+                return { row: Array.isArray(data) ? data[0] : data };
+            }
+            lastStatus = res.status;
+            lastErr = await res.text();
+            console.error('Listing insert', res.status, lastErr.slice(0, 280));
+            const missing = lastErr.match(/Could not find the '([^']+)' column/i);
+            if (missing && Object.prototype.hasOwnProperty.call(payload, missing[1])) {
+                delete payload[missing[1]];
+                retry = true;
+                break;
+            }
+            if (/null value in column "?id"?/i.test(lastErr) && !payload.id) {
+                payload.id = crypto.randomUUID();
+                retry = true;
+                break;
+            }
+            if (/invalid input syntax for type integer/i.test(lastErr) && payload.id) {
+                delete payload.id;
+                retry = true;
+                break;
+            }
+        }
+        if (retry) continue;
+        if (lastStatus === 401 || lastStatus === 403) {
+            return { error: 'Permesso database: su Supabase serve policy INSERT su public.cards (auth.uid() = user_id) oppure SUPABASE_SERVICE_ROLE_KEY su Render.' };
+        }
+        return { error: lastErr || 'Salvataggio annuncio fallito.' };
+    }
+    return { error: 'Salvataggio annuncio fallito.' };
 }
 
 function normalizeCardIds(raw) {
@@ -1785,9 +1824,12 @@ app.post('/api/listings', async (req, res) => {
         catalog_id: catalogId,
         catalog_source: catalogSource,
         catalog_set: catalogSet
-    });
+    }, auth.accessToken);
     if (inserted.error) {
-        return res.status(400).json({ success: false, error: 'Salvataggio annuncio fallito.' });
+        const hint = /permesso database/i.test(inserted.error)
+            ? inserted.error
+            : 'Salvataggio annuncio fallito. Riprova; se continua, su Supabase manca una colonna o il permesso INSERT su cards.';
+        return res.status(400).json({ success: false, error: hint });
     }
     res.json({ success: true, card: inserted.row, title });
 });
