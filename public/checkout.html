@@ -79,14 +79,35 @@
 
         <div class="card">
             <h2 style="margin-top:0;">Dati di pagamento</h2>
+            <p style="font-size:0.85rem;color:var(--text-muted);margin-top:0;">Tutti i campi sono obbligatori, anche per incontro di persona (identità e fattura Stripe).</p>
             <form id="payment-form">
                 <div class="form-group">
-                    <label>Nome completo *</label>
-                    <input type="text" id="checkout-full-name" required autocomplete="name" placeholder="Nome e cognome">
+                    <label>Nome *</label>
+                    <input type="text" id="checkout-first-name" required autocomplete="given-name" placeholder="Mario">
                 </div>
                 <div class="form-group">
-                    <label>Indirizzo di fatturazione *</label>
-                    <input type="text" id="checkout-billing-address" required autocomplete="street-address" placeholder="Via, civico, città">
+                    <label>Cognome *</label>
+                    <input type="text" id="checkout-last-name" required autocomplete="family-name" placeholder="Rossi">
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="checkout-email" required autocomplete="email" placeholder="mario@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Cellulare *</label>
+                    <input type="tel" id="checkout-phone" required autocomplete="tel" placeholder="+39 340 1234567">
+                </div>
+                <div class="form-group">
+                    <label>Indirizzo *</label>
+                    <input type="text" id="checkout-street" required autocomplete="street-address" placeholder="Via Roma 10">
+                </div>
+                <div class="form-group">
+                    <label>Città *</label>
+                    <input type="text" id="checkout-city" required autocomplete="address-level2" placeholder="Milano">
+                </div>
+                <div class="form-group">
+                    <label>CAP *</label>
+                    <input type="text" id="checkout-zip" required inputmode="numeric" maxlength="5" autocomplete="postal-code" placeholder="20100">
                 </div>
                 <div id="payment-element" style="margin: 12px 0; background: var(--bg-color); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color);"></div>
                 <label class="tos-check">
@@ -143,6 +164,50 @@
             return String(text || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
         }
 
+        function normalizeItPhone(raw) {
+            let s = String(raw || '').replace(/[\s().-]/g, '');
+            if (s.startsWith('00')) s = '+' + s.slice(2);
+            if (s.startsWith('+')) return s;
+            if (s.startsWith('39') && s.length > 10) return '+' + s;
+            if (s.startsWith('3')) return '+39' + s;
+            return s;
+        }
+
+        function readCheckoutBilling() {
+            const first = String((document.getElementById('checkout-first-name') || {}).value || '').trim();
+            const last = String((document.getElementById('checkout-last-name') || {}).value || '').trim();
+            const email = String((document.getElementById('checkout-email') || {}).value || '').trim();
+            const phone = normalizeItPhone((document.getElementById('checkout-phone') || {}).value);
+            const street = String((document.getElementById('checkout-street') || {}).value || '').trim();
+            const city = String((document.getElementById('checkout-city') || {}).value || '').trim();
+            const zip = String((document.getElementById('checkout-zip') || {}).value || '').replace(/\s/g, '');
+            const missing = [];
+            if (first.length < 2) missing.push('nome');
+            if (last.length < 2) missing.push('cognome');
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) missing.push('email');
+            if (!/^\+[1-9]\d{7,14}$/.test(phone)) missing.push('cellulare');
+            if (street.length < 5) missing.push('indirizzo');
+            if (city.length < 2) missing.push('città');
+            if (!/^\d{5}$/.test(zip)) missing.push('CAP');
+            return {
+                ok: !missing.length,
+                missing,
+                name: (first + ' ' + last).trim(),
+                email,
+                phone,
+                address: { line1: street, city, postal_code: zip, country: 'IT' }
+            };
+        }
+
+        function stripePaymentOptions() {
+            return {
+                layout: 'tabs',
+                fields: {
+                    billingDetails: { name: 'never', email: 'never', phone: 'never', address: 'never' }
+                }
+            };
+        }
+
         async function sendBotMessage() {
             const input = document.getElementById('botInput');
             const text = input.value.trim();
@@ -192,8 +257,11 @@
                     currentUser.address = data.address || '';
                 }
             } catch (e) {}
-            document.getElementById('checkout-full-name').value = currentUser.name;
-            document.getElementById('checkout-billing-address').value = currentUser.address;
+            const nameParts = String(currentUser.name || '').trim().split(/\s+/);
+            document.getElementById('checkout-first-name').value = nameParts[0] || '';
+            document.getElementById('checkout-last-name').value = nameParts.slice(1).join(' ');
+            document.getElementById('checkout-email').value = currentUser.email || session.user.email || '';
+            document.getElementById('checkout-street').value = currentUser.address || '';
 
             if (!cart.length) return;
             if (cart.some(item => String(item.user_id) !== String(cart[0].user_id))) {
@@ -228,17 +296,16 @@
                 appearance: { theme: 'night', variables: { colorPrimary: '#00ff88', colorBackground: '#131b2e', colorText: '#f8fafc', borderRadius: '10px' } },
                 clientSecret
             });
-            elements.create('payment', { layout: 'auto' }).mount('#payment-element');
+            elements.create('payment', stripePaymentOptions()).mount('#payment-element');
         }
 
         document.getElementById('payment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const fullName = document.getElementById('checkout-full-name').value.trim();
-            const billing = document.getElementById('checkout-billing-address').value.trim();
+            const billing = readCheckoutBilling();
             const tosOk = document.getElementById('checkout-tos-accept').checked;
             const msg = document.getElementById('payment-message');
-            if (!fullName || !billing) {
-                msg.innerText = 'Nome completo e indirizzo di fatturazione sono obbligatori.';
+            if (!billing.ok) {
+                msg.innerText = 'Obbligatori: ' + billing.missing.join(', ') + '.';
                 return;
             }
             if (!tosOk) {
@@ -251,7 +318,17 @@
             btn.innerText = 'Elaborazione...';
             const { error } = await stripe.confirmPayment({
                 elements,
-                confirmParams: { return_url: window.location.origin + '/index.html?payment_success=true' },
+                confirmParams: {
+                    return_url: window.location.origin + '/index.html?payment_success=true',
+                    payment_method_data: {
+                        billing_details: {
+                            name: billing.name,
+                            email: billing.email,
+                            phone: billing.phone,
+                            address: billing.address
+                        }
+                    }
+                },
                 redirect: 'if_required'
             });
             if (error) {

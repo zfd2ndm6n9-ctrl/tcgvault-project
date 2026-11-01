@@ -1049,13 +1049,34 @@
                 </label>
             </div>
             <form id="payment-form" style="margin-bottom: 15px;">
+                <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 12px;">Tutti i campi sono obbligatori, anche per incontro di persona.</p>
                 <div class="form-group">
-                    <label>Nome completo *</label>
-                    <input type="text" id="checkout-full-name" required autocomplete="name" placeholder="Nome e cognome">
+                    <label>Nome *</label>
+                    <input type="text" id="checkout-first-name" required autocomplete="given-name" placeholder="Mario">
                 </div>
                 <div class="form-group">
-                    <label>Indirizzo di fatturazione *</label>
-                    <input type="text" id="checkout-billing-address" required autocomplete="street-address" placeholder="Via, civico, città">
+                    <label>Cognome *</label>
+                    <input type="text" id="checkout-last-name" required autocomplete="family-name" placeholder="Rossi">
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="checkout-email" required autocomplete="email" placeholder="mario@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Cellulare *</label>
+                    <input type="tel" id="checkout-phone" required autocomplete="tel" placeholder="+39 340 1234567">
+                </div>
+                <div class="form-group">
+                    <label>Indirizzo *</label>
+                    <input type="text" id="checkout-street" required autocomplete="street-address" placeholder="Via Roma 10">
+                </div>
+                <div class="form-group">
+                    <label>Città *</label>
+                    <input type="text" id="checkout-city" required autocomplete="address-level2" placeholder="Milano">
+                </div>
+                <div class="form-group">
+                    <label>CAP *</label>
+                    <input type="text" id="checkout-zip" required inputmode="numeric" maxlength="5" autocomplete="postal-code" placeholder="20100">
                 </div>
                 <div id="payment-element" style="margin-bottom: 15px; background: var(--bg-color); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color);"></div>
                 <label class="tos-check">
@@ -1353,6 +1374,41 @@
             if (s.startsWith('39') && s.length > 10) return '+' + s;
             if (s.startsWith('3')) return '+39' + s;
             return s;
+        }
+
+        function readCheckoutBilling() {
+            const first = String((document.getElementById('checkout-first-name') || {}).value || '').trim();
+            const last = String((document.getElementById('checkout-last-name') || {}).value || '').trim();
+            const email = String((document.getElementById('checkout-email') || {}).value || '').trim();
+            const phone = normalizeItPhone((document.getElementById('checkout-phone') || {}).value);
+            const street = String((document.getElementById('checkout-street') || {}).value || '').trim();
+            const city = String((document.getElementById('checkout-city') || {}).value || '').trim();
+            const zip = String((document.getElementById('checkout-zip') || {}).value || '').replace(/\s/g, '');
+            const missing = [];
+            if (first.length < 2) missing.push('nome');
+            if (last.length < 2) missing.push('cognome');
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) missing.push('email');
+            if (!/^\+[1-9]\d{7,14}$/.test(phone)) missing.push('cellulare');
+            if (street.length < 5) missing.push('indirizzo');
+            if (city.length < 2) missing.push('città');
+            if (!/^\d{5}$/.test(zip)) missing.push('CAP');
+            return {
+                ok: !missing.length,
+                missing,
+                name: (first + ' ' + last).trim(),
+                email,
+                phone,
+                address: { line1: street, city, postal_code: zip, country: 'IT' }
+            };
+        }
+
+        function stripePaymentOptions() {
+            return {
+                layout: 'tabs',
+                fields: {
+                    billingDetails: { name: 'never', email: 'never', phone: 'never', address: 'never' }
+                }
+            };
         }
 
         function isValidE164(phone) {
@@ -3085,11 +3141,18 @@
             }
             
             closeDetailModal();
-            const nameEl = document.getElementById('checkout-full-name');
-            const addrEl = document.getElementById('checkout-billing-address');
             const tosEl = document.getElementById('checkout-tos-accept');
-            if (nameEl) nameEl.value = currentUser.name || '';
-            if (addrEl) addrEl.value = currentUser.address || '';
+            const nameParts = String(currentUser.name || '').trim().split(/\s+/);
+            const firstEl = document.getElementById('checkout-first-name');
+            const lastEl = document.getElementById('checkout-last-name');
+            const emailEl = document.getElementById('checkout-email');
+            const phoneEl = document.getElementById('checkout-phone');
+            const streetEl = document.getElementById('checkout-street');
+            if (firstEl) firstEl.value = nameParts[0] || '';
+            if (lastEl) lastEl.value = nameParts.slice(1).join(' ');
+            if (emailEl) emailEl.value = currentUser.email || '';
+            if (phoneEl) phoneEl.value = currentUser.phone || '';
+            if (streetEl) streetEl.value = currentUser.address || '';
             if (tosEl) tosEl.checked = false;
             showOverlay('stripe-checkout-modal');
 
@@ -3130,9 +3193,7 @@
 
                     elements = stripe.elements({ appearance, clientSecret });
                     
-                    const paymentElement = elements.create('payment', {
-                        layout: 'auto'
-                    });
+                    const paymentElement = elements.create('payment', stripePaymentOptions());
 
                     paymentElement.mount('#payment-element');
                 } else {
@@ -3147,13 +3208,13 @@
 
         document.getElementById('payment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const fullName = (document.getElementById('checkout-full-name') || {}).value?.trim();
-            const billing = (document.getElementById('checkout-billing-address') || {}).value?.trim();
+            const billing = readCheckoutBilling();
             const tosOk = document.getElementById('checkout-tos-accept')?.checked;
             const payMsg = document.getElementById('payment-message');
-            if (!fullName || !billing) {
-                if (payMsg) payMsg.innerText = 'Compila Nome completo e Indirizzo di fatturazione.';
-                showNotification('Nome e indirizzo di fatturazione sono obbligatori.', 'error');
+            if (!billing.ok) {
+                const text = 'Obbligatori: ' + billing.missing.join(', ') + '.';
+                if (payMsg) payMsg.innerText = text;
+                showNotification(text, 'error');
                 return;
             }
             if (!tosOk) {
@@ -3169,7 +3230,17 @@
 
             const { error } = await stripe.confirmPayment({
                 elements,
-                confirmParams: { return_url: window.location.href.split('?')[0] + '?payment_success=true' },
+                confirmParams: {
+                    return_url: window.location.href.split('?')[0] + '?payment_success=true',
+                    payment_method_data: {
+                        billing_details: {
+                            name: billing.name,
+                            email: billing.email,
+                            phone: billing.phone,
+                            address: billing.address
+                        }
+                    }
+                },
                 redirect: 'if_required'
             });
 
