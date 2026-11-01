@@ -41,10 +41,13 @@ function loadOrdersFromDisk() {
 }
 
 async function markCardsSold(cardIds) {
-    const ids = [...new Set((cardIds || []).map(id => Number(id)).filter(n => Number.isFinite(n)))];
+    const ids = [...new Set((cardIds || []).map(id => String(id).trim()).filter(id => id && id !== 'undefined' && id !== 'null'))];
     if (!ids.length) return;
+    const filter = ids.every(id => /^\d+$/.test(id))
+        ? 'id=in.(' + ids.join(',') + ')'
+        : 'id=in.(' + ids.map(id => '"' + id.replace(/"/g, '') + '"').join(',') + ')';
     try {
-        const res = await fetch(SUPABASE_URL + '/rest/v1/cards?id=in.(' + ids.join(',') + ')', {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/cards?' + filter, {
             method: 'PATCH',
             headers: {
                 apikey: SUPABASE_KEY,

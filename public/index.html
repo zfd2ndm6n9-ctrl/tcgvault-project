@@ -3506,12 +3506,14 @@
                 const newHtml = relevant.map(m => {
                     if (m.senderId === 'SYSTEM_ESCROW') {
                         const isMeet = m.deliveryMethod === 'meetup' || /incontro/i.test(String(m.text || ''));
+                        const isSellerAlert = /VENDITA IN INCONTRO|VENDITA EFFETTUATA|inserire corriere/i.test(String(m.text || ''));
+                        const action = isSellerAlert
+                            ? `<button onclick="openEscrowGuideModal('${escapeHtml(String(m.orderId || ''))}', '${isMeet ? 'meetup' : 'shipping'}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">${isMeet ? '🤝 Proponi incontro' : '📦 Guida Spedizione & Tracking'}</button>`
+                            : `<button onclick="openProfileTabFromMenu('my-orders')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Vedi i tuoi ordini</button>`;
                         return `
                             <div class="escrow-alert-msg">
                                 <div>${escapeHtml(m.text)}</div>
-                                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
-                                    <button onclick="openEscrowGuideModal('${m.orderId}', '${isMeet ? 'meetup' : 'shipping'}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">${isMeet ? '🤝 Proponi incontro' : '📦 Guida Spedizione & Tracking'}</button>
-                                </div>
+                                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">${action}</div>
                             </div>
                         `;
                     }
