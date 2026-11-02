@@ -609,10 +609,14 @@
             </div>
 
             <div id="wizard-step-3" class="wizard-step" style="display: none;">
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Inserisci il tuo indirizzo (via e città) per gli scambi e le spedizioni:</p>
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Via e città restano visibili in modo diverso: in vetrina si vede solo la città.</p>
                 <div class="form-group">
-                    <label>Indirizzo Completo *</label>
-                    <input type="text" id="wizard-address" placeholder="Es. Via Dante 15, Milano">
+                    <label>Via e civico *</label>
+                    <input type="text" id="wizard-address" placeholder="Es. Via Dante 15" autocomplete="street-address">
+                </div>
+                <div class="form-group">
+                    <label>Città *</label>
+                    <input type="text" id="wizard-city" placeholder="Es. Milano" autocomplete="address-level2">
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <button type="button" class="btn-outline" onclick="nextWizardStep(2)">⬅️ Indietro</button>
@@ -913,8 +917,12 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Indirizzo</label>
-                        <input type="text" id="profile-address" placeholder="Es. Via Roma 10, Milano">
+                        <label>Via e civico</label>
+                        <input type="text" id="profile-address" placeholder="Es. Via Roma 10" autocomplete="street-address">
+                    </div>
+                    <div class="form-group">
+                        <label>Città (visibile in vetrina) *</label>
+                        <input type="text" id="profile-city" placeholder="Es. Milano" autocomplete="address-level2">
                     </div>
                     <div class="form-group">
                         <label>Numero di Cellulare (Facoltativo)</label>
@@ -1557,11 +1565,12 @@
 
         function extractProfileCity(profile) {
             if (!profile) return '';
-            const raw = profile.city || profile.citta || profile.location || profile.address || '';
-            const text = String(raw).trim();
-            if (!text) return '';
-            const parts = text.split(',').map(part => part.trim()).filter(Boolean);
-            return parts.length ? parts[parts.length - 1] : text;
+            const dedicated = String(profile.city || profile.citta || '').trim();
+            if (dedicated) return dedicated;
+            const raw = String(profile.location || profile.address || '').trim();
+            if (!raw) return '';
+            const parts = raw.split(',').map(part => part.trim()).filter(Boolean);
+            return parts.length > 1 ? parts[parts.length - 1] : '';
         }
 
         const profileByIdCache = {};
@@ -1664,6 +1673,7 @@
             if (session && session.user) {
                 let profileName = '';
                 let profileAddress = '';
+                let profileCity = '';
 
                 try {
                     const { data, error } = await supabaseClient
@@ -1675,6 +1685,7 @@
                     if (data) {
                         profileName = data.name || '';
                         profileAddress = data.address || '';
+                        profileCity = data.city || data.citta || '';
                     }
                 } catch (e) {
                     console.error('Errore lettura profilo supabase:', e);
@@ -1685,11 +1696,13 @@
                     profileName = savedProfile.name || '';
                     profileAddress = savedProfile.address || '';
                 }
+                if (!profileCity) profileCity = savedProfile.city || extractProfileCity({ address: profileAddress, city: savedProfile.city });
                 currentUser = {
                     id: session.user.id,
                     email: session.user.email,
                     name: profileName,
                     address: profileAddress,
+                    city: profileCity,
                     wallet: 0.00,
                     iban: '',
                     accountType: normalizeAccountType(savedProfile.userType || savedProfile.accountType || 'privato'),
@@ -1707,11 +1720,13 @@
                     if (flags && flags.availableWallet != null) currentUser.wallet = Number(flags.availableWallet) || 0;
                     if (flags && flags.heldWallet != null) currentUser.heldWallet = Number(flags.heldWallet) || 0;
                     if (flags && flags.iban) currentUser.iban = flags.iban;
+                    if (flags && flags.city) currentUser.city = flags.city;
+                    if (flags && flags.address && !currentUser.address) currentUser.address = flags.address;
                     currentUser.payoutPending = !!flags.payoutPending;
                     accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
                 } catch (e) {}
 
-                if (accountReady() && (!currentUser.name || !currentUser.address)) {
+                if (accountReady() && (!currentUser.name || !currentUser.address || !currentUser.city)) {
                     showOverlay('onboarding-wizard-modal');
                 } else {
                     hideOverlay('onboarding-wizard-modal');
@@ -1754,15 +1769,17 @@
             const name = document.getElementById('wizard-name').value.trim();
             const userType = document.getElementById('wizard-usertype').value;
             const address = document.getElementById('wizard-address').value.trim();
+            const city = document.getElementById('wizard-city').value.trim();
 
-            if (!name || !address) {
-                showNotification('Compila tutti i campi obbligatori.', 'error');
+            if (!name || !address || city.length < 2) {
+                showNotification('Inserisci via e città.', 'error');
                 return;
             }
 
             if (currentUser) {
                 currentUser.name = name;
                 currentUser.address = address;
+                currentUser.city = city;
                 currentUser.userType = userType;
                 currentUser.accountType = normalizeAccountType(userType);
 
@@ -1770,7 +1787,8 @@
                     id: String(currentUser.id),
                     name: String(name),
                     email: String(currentUser.email || ''),
-                    address: String(address)
+                    address: String(address),
+                    city: String(city)
                 };
                 fetch('/api/users/profile', {
                     method: 'POST',
@@ -1779,9 +1797,15 @@
                 }).catch(() => {});
                 accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
 
-                const { data, error } = await supabaseClient
+                let { data, error } = await supabaseClient
                     .from('profiles')
                     .upsert([profilePayload], { onConflict: 'id' });
+                if (error && /city/i.test(error.message || '')) {
+                    const slim = { id: profilePayload.id, name: profilePayload.name, email: profilePayload.email, address: address + ', ' + city };
+                    const retry = await supabaseClient.from('profiles').upsert([slim], { onConflict: 'id' });
+                    error = retry.error;
+                    data = retry.data;
+                }
 
                 if (error) {
                     console.error('ERRORE SUPABASE PROFILES:', error.message, error.details);
@@ -1791,7 +1815,7 @@
                     console.log('SUCCESSO SALVATAGGIO PROFILES:', data);
                 }
 
-                localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({ name, address, userType }));
+                localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({ name, address, city, userType }));
             }
 
             hideOverlay('onboarding-wizard-modal');
@@ -2509,6 +2533,8 @@
             document.getElementById('profile-email').value = currentUser.email;
             document.getElementById('profile-name').value = currentUser.name || '';
             document.getElementById('profile-address').value = currentUser.address || '';
+            const cityEl = document.getElementById('profile-city');
+            if (cityEl) cityEl.value = currentUser.city || extractProfileCity(currentUser) || '';
             document.getElementById('profile-phone').value = currentUser.phone || '';
             const typeSelect = document.getElementById('profile-account-type');
             if (typeSelect) typeSelect.value = normalizeAccountType(currentUser.accountType);
@@ -2551,13 +2577,21 @@
                 const res = await fetch(`${window.location.origin}/api/orders/${currentUser.id}`);
                 const orders = await res.json();
                 const container = document.getElementById('my-orders-container');
-                if (!orders || orders.length === 0) {
-                    container.innerHTML = '<p style="color: var(--text-muted);">Nessun ordine effettuato.</p>';
+                const live = (orders || []).filter(o => o.status && o.status !== 'pending_payment');
+                if (!live.length) {
+                    container.innerHTML = '<p style="color: var(--text-muted);">Nessun ordine pagato. I checkout non completati non compaiono qui.</p>';
                     return;
                 }
-                container.innerHTML = orders.map(o => {
+                const statusIt = {
+                    paid: 'Pagato / in escrow',
+                    meetup_arranged: 'Incontro proposto',
+                    shipped: 'Spedito',
+                    completed: 'Completato (hold 7 giorni)'
+                };
+                container.innerHTML = live.map(o => {
                     const isBuyer = String(o.buyerId) === String(currentUser.id);
                     const isMeetup = o.deliveryMethod === 'meetup';
+                    const role = isBuyer ? 'Acquisto' : 'Vendita';
                     let action = `<button class="btn-outline" onclick="openChatModal('${isBuyer ? o.sellerId : o.buyerId}', 'Gestione Ordine Escrow', '${isBuyer ? o.sellerId : o.buyerId}')">💬 Chat</button>`;
                     if (isBuyer && o.status === 'shipped') {
                         action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmOrderReceipt('${o.id}')">Conferma ricezione</button>`;
@@ -2574,7 +2608,7 @@
                     <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
                             <div style="font-weight: bold; color: var(--accent-neon); margin-bottom: 4px;">Ordine #${escapeHtml(o.id || 'N/D')}</div>
-                            <div style="font-size: 0.9rem; margin-bottom: 2px;">Stato: <b>${escapeHtml(o.status || 'Pagato / In Escrow')}</b> · ${isMeetup ? 'Incontro' : 'Spedizione'}</div>
+                            <div style="font-size: 0.9rem; margin-bottom: 2px;">${role} · Stato: <b>${escapeHtml(statusIt[o.status] || o.status)}</b> · ${isMeetup ? 'Incontro' : 'Spedizione'}</div>
                             <div style="font-size: 0.8rem; color: var(--text-muted);">Totale: € ${Number(o.amount || 0).toFixed(2)}</div>
                             ${codeLine}${meetLine}
                         </div>
@@ -2652,14 +2686,31 @@
             e.preventDefault();
             currentUser.name = document.getElementById('profile-name').value;
             currentUser.address = document.getElementById('profile-address').value;
+            currentUser.city = String((document.getElementById('profile-city') || {}).value || '').trim();
             currentUser.phone = document.getElementById('profile-phone').value;
             currentUser.accountType = normalizeAccountType(document.getElementById('profile-account-type').value);
-            
-            await supabaseClient
-                .from('profiles')
-                .upsert([
-                    { id: String(currentUser.id), email: String(currentUser.email), name: String(currentUser.name), address: String(currentUser.address) }
-                ], { onConflict: 'id' });
+            if (currentUser.city.length < 2) {
+                showNotification('Inserisci la città: è quella visibile in vetrina.', 'error');
+                return;
+            }
+
+            const profileRow = {
+                id: String(currentUser.id),
+                email: String(currentUser.email),
+                name: String(currentUser.name),
+                address: String(currentUser.address),
+                city: String(currentUser.city)
+            };
+            let { error } = await supabaseClient.from('profiles').upsert([profileRow], { onConflict: 'id' });
+            if (error && /city/i.test(error.message || '')) {
+                const retry = await supabaseClient.from('profiles').upsert([{
+                    id: profileRow.id,
+                    email: profileRow.email,
+                    name: profileRow.name,
+                    address: currentUser.address + ', ' + currentUser.city
+                }], { onConflict: 'id' });
+                error = retry.error;
+            }
 
             fetch('/api/users/profile', {
                 method: 'POST',
@@ -2669,6 +2720,7 @@
                     email: String(currentUser.email),
                     name: String(currentUser.name),
                     address: String(currentUser.address),
+                    city: String(currentUser.city),
                     accountType: currentUser.accountType
                 })
             }).catch(() => {});
@@ -2677,7 +2729,7 @@
             const identityBox = document.getElementById('profile-identity-badges');
             if (identityBox) identityBox.innerHTML = identityBadgesHtml(accountMetaCache[String(currentUser.id)]);
 
-            const profileData = { name: currentUser.name, address: currentUser.address, email: currentUser.email, accountType: currentUser.accountType };
+            const profileData = { name: currentUser.name, address: currentUser.address, city: currentUser.city, email: currentUser.email, accountType: currentUser.accountType };
             localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify(profileData));
 
             showNotification('Profilo aggiornato!');

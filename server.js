@@ -200,11 +200,12 @@ function idsMatch(a, b) {
 
 function extractCityFromProfile(row) {
     if (!row) return '';
-    const raw = row.city || row.citta || row.location || row.address || '';
-    const text = String(raw).trim();
-    if (!text) return '';
-    const parts = text.split(',').map(part => part.trim()).filter(Boolean);
-    return parts.length ? parts[parts.length - 1] : text;
+    const dedicated = String(row.city || row.citta || '').trim();
+    if (dedicated) return dedicated;
+    const raw = String(row.location || row.address || '').trim();
+    if (!raw) return '';
+    const parts = raw.split(',').map(part => part.trim()).filter(Boolean);
+    return parts.length > 1 ? parts[parts.length - 1] : '';
 }
 
 const persistTimers = {};
@@ -1641,6 +1642,7 @@ function upsertUserInMemory(profile) {
             email: profile.email || '',
             name: profile.name || 'Utente TCG',
             address: profile.address || '',
+            city: String(profile.city || '').trim(),
             wallet: 0.00,
             iban: ''
         };
@@ -1651,28 +1653,44 @@ function upsertUserInMemory(profile) {
         if (profile.address !== undefined) user.address = profile.address;
         if (profile.email) user.email = profile.email;
         if (profile.accountType) user.accountType = normalizeAccountType(profile.accountType);
+        if (profile.city !== undefined) user.city = String(profile.city || '').trim();
     }
     return user;
 }
 
 async function saveProfileToSupabase(profile) {
+    const headers = {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=representation'
+    };
     const payload = {
         id: String(profile.id),
         name: String(profile.name || ''),
         email: String(profile.email || ''),
-        address: String(profile.address || '')
+        address: String(profile.address || ''),
+        city: String(profile.city || '').trim()
     };
-
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+    let res = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
         method: 'POST',
-        headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates,return=representation'
-        },
+        headers,
         body: JSON.stringify(payload)
     });
+    if (!res.ok) {
+        const errText = await res.text();
+        if (/city/i.test(errText) || res.status === 400) {
+            const slim = { id: payload.id, name: payload.name, email: payload.email, address: payload.city ? (payload.address + ', ' + payload.city) : payload.address };
+            res = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(slim)
+            });
+        } else {
+            console.error('Errore salvataggio profiles su Supabase:', errText);
+            return { error: errText, data: null };
+        }
+    }
 
     const data = await res.json().catch(() => null);
     if (!res.ok) {
@@ -1840,10 +1858,10 @@ app.post('/api/listings', async (req, res) => {
 app.post('/api/users/profile', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    const { name, address, accountType } = req.body;
+    const { name, address, city, accountType } = req.body;
     const id = auth.id;
     const email = auth.email;
-    const user = upsertUserInMemory({ id, email, name, address, accountType });
+    const user = upsertUserInMemory({ id, email, name, address, city, accountType });
     if (accountType) user.accountType = setAccountType(id, accountType);
     const supabaseResult = await saveProfileToSupabase(user);
 
@@ -1880,7 +1898,8 @@ app.get('/api/users/:userId', async (req, res) => {
         };
         if (self && String(self.id) === String(userId)) {
             payload.email = remoteProfile.email || self.email;
-            payload.address = remoteProfile.address || remoteProfile.city || remoteProfile.location || '';
+            payload.address = remoteProfile.address || remoteProfile.location || '';
+            payload.city = extractCityFromProfile(remoteProfile);
             Object.assign(payload, walletPublic(userId));
         }
         return res.json(payload);
@@ -1901,6 +1920,7 @@ app.get('/api/users/:userId', async (req, res) => {
         if (self && String(self.id) === String(userId)) {
             payload.email = user.email || self.email;
             payload.address = user.address || '';
+            payload.city = extractCityFromProfile(user);
             Object.assign(payload, walletPublic(userId));
         }
         return res.json(payload);
@@ -2063,7 +2083,7 @@ app.get('/api/orders/:userId', async (req, res) => {
     const userId = req.params.userId;
     if (!assertSelf(req, res, userId)) return;
     const userOrders = ordersDB
-        .filter(o => o.buyerId === userId || o.sellerId === userId)
+        .filter(o => (o.buyerId === userId || o.sellerId === userId) && o.status && o.status !== 'pending_payment')
         .map(o => publicOrderFor(o, userId));
     res.json(userOrders);
 });
