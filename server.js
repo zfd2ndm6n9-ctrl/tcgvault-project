@@ -208,6 +208,138 @@ function extractCityFromProfile(row) {
     return parts.length > 1 ? parts[parts.length - 1] : '';
 }
 
+function extractStreetFromProfile(row) {
+    if (!row) return '';
+    const city = extractCityFromProfile(row).toLowerCase();
+    const raw = String(row.address || row.location || '').trim();
+    if (!raw) return '';
+    const parts = raw.split(',').map(part => part.trim()).filter(Boolean);
+    if (city && parts.length > 1 && parts[parts.length - 1].toLowerCase() === city) {
+        return parts.slice(0, -1).join(', ');
+    }
+    return raw;
+}
+
+function formatProfilePlace(row) {
+    const street = extractStreetFromProfile(row);
+    const city = extractCityFromProfile(row);
+    if (street && city && street.toLowerCase() !== city.toLowerCase()) return street + ', ' + city;
+    return street || city || '';
+}
+
+function mapsEmbedUrl(query) {
+    const q = String(query || '').trim();
+    if (!q) return '';
+    return 'https://maps.google.com/maps?q=' + encodeURIComponent(q) + '&z=14&output=embed';
+}
+
+const geoCache = Object.create(null);
+let geoChain = Promise.resolve();
+
+function haversineKm(aLat, aLng, bLat, bLng) {
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(bLat - aLat);
+    const dLng = toRad(bLng - aLng);
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+function geocodePlace(query) {
+    const q = String(query || '').trim();
+    if (q.length < 2) return Promise.resolve(null);
+    const key = q.toLowerCase();
+    if (geoCache[key] !== undefined) return Promise.resolve(geoCache[key]);
+    geoChain = geoChain.then(async () => {
+        if (geoCache[key] !== undefined) return geoCache[key];
+        await new Promise(r => setTimeout(r, 1100));
+        try {
+            const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q=' + encodeURIComponent(q);
+            const res = await fetch(url, { headers: { 'User-Agent': 'TCGVault/1.0 (https://tcg-vault.it)' } });
+            const data = await res.json().catch(() => []);
+            const hit = Array.isArray(data) && data[0];
+            geoCache[key] = hit ? { lat: Number(hit.lat), lng: Number(hit.lon), label: hit.display_name || q } : null;
+        } catch (err) {
+            console.error('Geocode:', err.message);
+            geoCache[key] = null;
+        }
+        return geoCache[key];
+    });
+    return geoChain;
+}
+
+function loadJsonObject(fileName) {
+    try {
+        const file = path.join(__dirname, 'data', fileName);
+        if (!fs.existsSync(file)) return {};
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (err) {
+        return {};
+    }
+}
+
+let profileExtras = loadJsonObject('profile-extras.json');
+
+function extraFor(userId) {
+    return profileExtras[String(userId)] || {};
+}
+
+function saveProfileExtra(userId, patch) {
+    const id = String(userId);
+    profileExtras[id] = { ...extraFor(id), ...patch };
+    persistJsonFile('profile-extras.json', profileExtras);
+}
+
+function mergeProfileRow(row) {
+    if (!row || !row.id) return row;
+    const extra = extraFor(row.id);
+    return {
+        ...extra,
+        ...row,
+        address: row.address || extra.address || '',
+        city: row.city || extra.city || '',
+        avatar_url: row.avatar_url || extra.avatar_url || '',
+        lat: row.lat != null && row.lat !== '' ? Number(row.lat) : extra.lat,
+        lng: row.lng != null && row.lng !== '' ? Number(row.lng) : extra.lng
+    };
+}
+
+function publicProfilePayload(row) {
+    const merged = mergeProfileRow(row) || {};
+    const flags = publicAccountMeta(merged.id);
+    const city = extractCityFromProfile(merged);
+    const address = extractStreetFromProfile(merged);
+    const place = formatProfilePlace(merged);
+    return {
+        success: true,
+        found: true,
+        id: merged.id,
+        name: merged.name || '',
+        address,
+        city,
+        place,
+        avatar_url: merged.avatar_url || '',
+        lat: Number(merged.lat) || null,
+        lng: Number(merged.lng) || null,
+        mapsEmbed: mapsEmbedUrl(place || city),
+        accountType: flags.accountType,
+        partner: flags.partner
+    };
+}
+
+async function attachGeoToUser(user) {
+    if (!user) return user;
+    if (Number(user.lat) && Number(user.lng)) return user;
+    const place = formatProfilePlace(user) || user.city || user.address;
+    const geo = await geocodePlace(place);
+    if (geo) {
+        user.lat = geo.lat;
+        user.lng = geo.lng;
+        saveProfileExtra(user.id, { lat: geo.lat, lng: geo.lng, address: user.address || '', city: user.city || '', avatar_url: user.avatar_url || '' });
+    }
+    return user;
+}
+
 const persistTimers = {};
 function persistJsonFile(fileName, data, immediate) {
     if (!persistTimers[fileName]) persistTimers[fileName] = {};
@@ -1643,6 +1775,9 @@ function upsertUserInMemory(profile) {
             name: profile.name || 'Utente TCG',
             address: profile.address || '',
             city: String(profile.city || '').trim(),
+            avatar_url: String(profile.avatar_url || extraFor(id).avatar_url || '').trim(),
+            lat: profile.lat != null ? Number(profile.lat) : extraFor(id).lat,
+            lng: profile.lng != null ? Number(profile.lng) : extraFor(id).lng,
             wallet: 0.00,
             iban: ''
         };
@@ -1654,6 +1789,9 @@ function upsertUserInMemory(profile) {
         if (profile.email) user.email = profile.email;
         if (profile.accountType) user.accountType = normalizeAccountType(profile.accountType);
         if (profile.city !== undefined) user.city = String(profile.city || '').trim();
+        if (profile.avatar_url !== undefined) user.avatar_url = String(profile.avatar_url || '').trim();
+        if (profile.lat != null) user.lat = Number(profile.lat);
+        if (profile.lng != null) user.lng = Number(profile.lng);
     }
     return user;
 }
@@ -1670,35 +1808,38 @@ async function saveProfileToSupabase(profile) {
         name: String(profile.name || ''),
         email: String(profile.email || ''),
         address: String(profile.address || ''),
-        city: String(profile.city || '').trim()
+        city: String(profile.city || '').trim(),
+        avatar_url: String(profile.avatar_url || '').trim(),
+        lat: profile.lat != null && profile.lat !== '' ? Number(profile.lat) : undefined,
+        lng: profile.lng != null && profile.lng !== '' ? Number(profile.lng) : undefined
     };
-    let res = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
+    Object.keys(payload).forEach(k => {
+        if (payload[k] === undefined || payload[k] === '') delete payload[k];
     });
-    if (!res.ok) {
-        const errText = await res.text();
-        if (/city/i.test(errText) || res.status === 400) {
-            const slim = { id: payload.id, name: payload.name, email: payload.email, address: payload.city ? (payload.address + ', ' + payload.city) : payload.address };
-            res = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(slim)
-            });
-        } else {
-            console.error('Errore salvataggio profiles su Supabase:', errText);
-            return { error: errText, data: null };
+    payload.id = String(profile.id);
+    for (let round = 0; round < 8; round++) {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            const data = await res.json().catch(() => null);
+            return { error: null, data };
         }
+        const errText = await res.text();
+        const missing = errText.match(/Could not find the '([^']+)' column/i);
+        if (missing && Object.prototype.hasOwnProperty.call(payload, missing[1])) {
+            if (missing[1] === 'city' && profile.city) {
+                payload.address = String(profile.address || '') + (profile.address ? ', ' : '') + profile.city;
+            }
+            delete payload[missing[1]];
+            continue;
+        }
+        console.error('Errore salvataggio profiles su Supabase:', errText);
+        return { error: errText, data: null };
     }
-
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-        const message = (data && (data.message || data.error)) || `HTTP ${res.status}`;
-        console.error('Errore salvataggio profiles su Supabase:', message, data);
-        return { error: message, data: null };
-    }
-    return { error: null, data };
+    return { error: 'Salvataggio profilo fallito', data: null };
 }
 
 async function getProfileFromSupabase(userId) {
@@ -1858,11 +1999,19 @@ app.post('/api/listings', async (req, res) => {
 app.post('/api/users/profile', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    const { name, address, city, accountType } = req.body;
+    const { name, address, city, accountType, avatar_url } = req.body;
     const id = auth.id;
     const email = auth.email;
-    const user = upsertUserInMemory({ id, email, name, address, city, accountType });
+    const user = upsertUserInMemory({ id, email, name, address, city, accountType, avatar_url });
     if (accountType) user.accountType = setAccountType(id, accountType);
+    await attachGeoToUser(user);
+    saveProfileExtra(id, {
+        address: user.address || '',
+        city: user.city || '',
+        avatar_url: user.avatar_url || '',
+        lat: user.lat,
+        lng: user.lng
+    });
     const supabaseResult = await saveProfileToSupabase(user);
 
     res.json({
@@ -1886,20 +2035,10 @@ app.get('/api/users/:userId', async (req, res) => {
     const remoteProfile = await getProfileFromSupabase(userId);
     if (remoteProfile) {
         upsertUserInMemory(remoteProfile);
-        const flags = publicAccountMeta(userId);
         const self = await getAuthUser(req);
-        const payload = {
-            success: true,
-            found: true,
-            name: remoteProfile.name || '',
-            city: extractCityFromProfile(remoteProfile),
-            accountType: flags.accountType,
-            partner: flags.partner
-        };
+        const payload = publicProfilePayload({ ...remoteProfile, ...extraFor(userId), id: userId });
         if (self && String(self.id) === String(userId)) {
             payload.email = remoteProfile.email || self.email;
-            payload.address = remoteProfile.address || remoteProfile.location || '';
-            payload.city = extractCityFromProfile(remoteProfile);
             Object.assign(payload, walletPublic(userId));
         }
         return res.json(payload);
@@ -1907,20 +2046,10 @@ app.get('/api/users/:userId', async (req, res) => {
 
     const user = usersDB.find(u => String(u.id) === String(userId));
     if (user) {
-        const flags = publicAccountMeta(userId);
         const self = await getAuthUser(req);
-        const payload = {
-            success: true,
-            found: true,
-            name: user.name || '',
-            city: extractCityFromProfile(user),
-            accountType: flags.accountType,
-            partner: flags.partner
-        };
+        const payload = publicProfilePayload({ ...user, ...extraFor(userId) });
         if (self && String(self.id) === String(userId)) {
             payload.email = user.email || self.email;
-            payload.address = user.address || '';
-            payload.city = extractCityFromProfile(user);
             Object.assign(payload, walletPublic(userId));
         }
         return res.json(payload);
@@ -1936,31 +2065,58 @@ app.get('/api/profiles/:userId', async (req, res) => {
     }
     const remoteProfile = await getProfileFromSupabase(userId);
     if (remoteProfile) {
-        const flags = publicAccountMeta(userId);
-        return res.json({
-            success: true,
-            found: true,
-            id: remoteProfile.id,
-            name: remoteProfile.name || '',
-            city: extractCityFromProfile(remoteProfile),
-            accountType: flags.accountType,
-            partner: flags.partner
-        });
+        return res.json(publicProfilePayload({ ...remoteProfile, ...extraFor(userId), id: userId }));
     }
     const user = usersDB.find(u => String(u.id) === userId);
     if (user) {
-        const flags = publicAccountMeta(userId);
-        return res.json({
-            success: true,
-            found: true,
-            id: user.id,
-            name: user.name || '',
-            city: extractCityFromProfile(user),
-            accountType: flags.accountType,
-            partner: flags.partner
-        });
+        return res.json(publicProfilePayload({ ...user, ...extraFor(userId) }));
+    }
+    const extra = extraFor(userId);
+    if (extra.city || extra.address || extra.avatar_url) {
+        return res.json(publicProfilePayload({ id: userId, ...extra }));
     }
     res.json({ success: true, found: false, address: '', city: '', accountType: 'privato', partner: false });
+});
+
+app.get('/api/geo/lookup', async (req, res) => {
+    if (!rateLimit('geo:' + (req.ip || 'x'), 30, 60000)) {
+        return res.status(429).json({ success: false, error: 'Troppe ricerche mappa.' });
+    }
+    const geo = await geocodePlace(req.query.q);
+    if (!geo) return res.json({ success: true, found: false });
+    res.json({ success: true, found: true, ...geo });
+});
+
+app.get('/api/geo/sellers', async (req, res) => {
+    const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 80);
+    const sellers = {};
+    let geoBudget = 8;
+    for (const id of ids) {
+        const user = usersDB.find(u => String(u.id) === String(id));
+        let row = mergeProfileRow({ ...(user || {}), ...extraFor(id), id });
+        if (!extractCityFromProfile(row) && !row.address) {
+            const remote = await getProfileFromSupabase(id);
+            if (remote) row = mergeProfileRow({ ...row, ...remote, id });
+        }
+        if ((!Number(row.lat) || !Number(row.lng)) && geoBudget > 0) {
+            geoBudget -= 1;
+            const geo = await geocodePlace(extractCityFromProfile(row) || formatProfilePlace(row) || row.address);
+            if (geo) {
+                row.lat = geo.lat;
+                row.lng = geo.lng;
+                saveProfileExtra(id, { lat: geo.lat, lng: geo.lng, city: extractCityFromProfile(row), address: extractStreetFromProfile(row) });
+            }
+        }
+        sellers[id] = {
+            city: extractCityFromProfile(row),
+            address: extractStreetFromProfile(row),
+            place: formatProfilePlace(row),
+            lat: Number(row.lat) || null,
+            lng: Number(row.lng) || null,
+            avatar_url: row.avatar_url || ''
+        };
+    }
+    res.json({ success: true, sellers });
 });
 
 app.get('/api/accounts/public', (req, res) => {

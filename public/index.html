@@ -385,6 +385,25 @@
         .card-title { margin: 6px 0 10px 0; font-size: 1.15rem; color: var(--text-main); font-weight: 700; line-height: 1.3; }
         .price { color: var(--accent-neon); font-size: 1.35rem; font-weight: 800; margin-bottom: 6px; }
         .card-location { font-size: 0.82rem; color: var(--text-muted); font-weight: 500; margin-bottom: 8px; }
+        .avatar-circle {
+            width: 84px; height: 84px; border-radius: 50%; object-fit: cover;
+            border: 2px solid var(--border-color); background: rgba(255,255,255,.06);
+        }
+        .avatar-circle.lg { width: 96px; height: 96px; }
+        .maps-embed {
+            width: 100%; height: 180px; border: 0; border-radius: 12px; margin-top: 10px;
+            background: var(--bg-color);
+        }
+        .radius-bar {
+            display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+            margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border-color);
+            border-radius: 12px; background: var(--panel-bg);
+        }
+        .radius-bar label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; }
+        .radius-bar input, .radius-bar select {
+            background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 10px;
+            padding: 8px 12px; color: var(--text-main); font-size: 15px; outline: none;
+        }
         .account-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 8px; }
         .badge-type {
             font-size: 0.66rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
@@ -609,7 +628,7 @@
             </div>
 
             <div id="wizard-step-3" class="wizard-step" style="display: none;">
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Via e città restano visibili in modo diverso: in vetrina si vede solo la città.</p>
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Via e città compaiono sul tuo profilo, con mappa. In catalogo gli altri filtrano per raggio dalla città.</p>
                 <div class="form-group">
                     <label>Via e civico *</label>
                     <input type="text" id="wizard-address" placeholder="Es. Via Dante 15" autocomplete="street-address">
@@ -669,10 +688,14 @@
                 <h2>Profilo Venditore & Reputazione</h2>
                 <button class="close-btn" onclick="closeSellerProfileModal()">&times;</button>
             </div>
-            <div style="margin-bottom: 20px; background: var(--bg-color); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color);">
-                <div id="seller-profile-name" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-neon); margin-bottom: 5px;"></div>
-                <div id="seller-profile-type" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 5px;"></div>
-                <div id="seller-profile-location" style="font-size: 0.9rem; color: var(--text-muted);"></div>
+            <div style="margin-bottom: 20px; background: var(--bg-color); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;">
+                <img id="seller-profile-avatar" class="avatar-circle lg" alt="Foto profilo" src="" style="display:none;">
+                <div style="flex:1; min-width:200px;">
+                    <div id="seller-profile-name" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-neon); margin-bottom: 5px;"></div>
+                    <div id="seller-profile-type" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 5px;"></div>
+                    <div id="seller-profile-location" style="font-size: 0.9rem; color: var(--text-muted);"></div>
+                    <iframe id="seller-profile-map" class="maps-embed" title="Mappa" style="display:none;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                </div>
             </div>
 
             <h3 style="font-size: 1rem; color: var(--text-main); margin-bottom: 10px;">⭐ Recensioni Ricevute</h3>
@@ -723,6 +746,20 @@
         <div class="search-row">
             <input type="text" id="search-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFiltersDebounced()" aria-label="Cerca prodotto">
             <button type="button" class="btn-filters" onclick="openFiltersPanel()">Filtri</button>
+        </div>
+        <div class="radius-bar">
+            <label for="radius-city">Zona</label>
+            <input type="text" id="radius-city" placeholder="Es. Milano" autocomplete="address-level2" oninput="syncLocationInputs(); applyFiltersDebounced()">
+            <label for="radius-km">Raggio</label>
+            <select id="radius-km" onchange="syncRadiusSelects(); applyFilters()">
+                <option value="5">5 km</option>
+                <option value="10">10 km</option>
+                <option value="20">20 km</option>
+                <option value="40">40 km</option>
+                <option value="80">80 km</option>
+                <option value="150">150 km</option>
+                <option value="all" selected>Tutta Italia</option>
+            </select>
         </div>
 
         <div class="rules-banner">
@@ -797,8 +834,20 @@
                 <button class="close-btn" onclick="closeFiltersPanel()">&times;</button>
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
-                <label>📍 Località</label>
-                <input type="text" id="location-input" class="filter-input" placeholder="Es. Milano, Roma..." oninput="applyFiltersDebounced()">
+                <label>📍 Città / zona</label>
+                <input type="text" id="location-input" class="filter-input" placeholder="Es. Milano, Roma..." oninput="syncLocationInputs('filters'); applyFiltersDebounced()">
+            </div>
+            <div class="filter-group" style="margin-bottom:12px;">
+                <label>Raggio (come Facebook)</label>
+                <select id="filter-radius-km" class="filter-select" onchange="syncRadiusSelects('filters'); applyFilters()">
+                    <option value="5">5 km</option>
+                    <option value="10">10 km</option>
+                    <option value="20">20 km</option>
+                    <option value="40">40 km</option>
+                    <option value="80">80 km</option>
+                    <option value="150">150 km</option>
+                    <option value="all" selected>Tutta Italia</option>
+                </select>
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>Tipo Articolo</label>
@@ -905,6 +954,14 @@
             <div id="tab-info" class="tab-content">
                 <div id="profile-identity-badges" class="account-badges"></div>
                 <form onsubmit="saveProfileDetails(event)">
+                    <div class="form-group" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+                        <img id="profile-avatar-preview" class="avatar-circle" alt="Foto profilo" src="">
+                        <div style="flex:1;min-width:180px;">
+                            <label>Foto profilo</label>
+                            <input type="file" id="profile-avatar-file" accept="image/jpeg,image/png,image/webp" onchange="previewProfileAvatar(this)">
+                            <p style="font-size:0.8rem;color:var(--text-muted);margin:6px 0 0;">JPG o PNG. Compare sul profilo pubblico.</p>
+                        </div>
+                    </div>
                     <div class="form-group">
                         <label>Nome / Nickname</label>
                         <input type="text" id="profile-name" placeholder="Es. Marco TCG Collector">
@@ -921,9 +978,11 @@
                         <input type="text" id="profile-address" placeholder="Es. Via Roma 10" autocomplete="street-address">
                     </div>
                     <div class="form-group">
-                        <label>Città (visibile in vetrina) *</label>
+                        <label>Città *</label>
                         <input type="text" id="profile-city" placeholder="Es. Milano" autocomplete="address-level2">
                     </div>
+                    <p id="profile-place-summary" style="font-size:0.9rem;color:var(--text-muted);margin:0 0 10px;"></p>
+                    <iframe id="profile-map" class="maps-embed" title="Mappa del tuo indirizzo" style="display:none;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
                     <div class="form-group">
                         <label>Numero di Cellulare (Facoltativo)</label>
                         <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567">
@@ -1573,6 +1632,97 @@
             return parts.length > 1 ? parts[parts.length - 1] : '';
         }
 
+        function extractProfileStreet(profile) {
+            if (!profile) return '';
+            const city = extractProfileCity(profile).toLowerCase();
+            const raw = String(profile.address || profile.location || '').trim();
+            if (!raw) return '';
+            const parts = raw.split(',').map(part => part.trim()).filter(Boolean);
+            if (city && parts.length > 1 && parts[parts.length - 1].toLowerCase() === city) {
+                return parts.slice(0, -1).join(', ');
+            }
+            return raw;
+        }
+
+        function formatProfilePlace(profile) {
+            const street = extractProfileStreet(profile);
+            const city = extractProfileCity(profile);
+            if (street && city && street.toLowerCase() !== city.toLowerCase()) return street + ', ' + city;
+            return street || city || '';
+        }
+
+        function mapsEmbedSrc(place) {
+            const q = String(place || '').trim();
+            if (!q) return '';
+            return 'https://maps.google.com/maps?q=' + encodeURIComponent(q) + '&z=14&output=embed';
+        }
+
+        function setMapIframe(id, place) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const src = mapsEmbedSrc(place);
+            if (!src) { el.style.display = 'none'; el.removeAttribute('src'); return; }
+            el.src = src;
+            el.style.display = 'block';
+        }
+
+        function setAvatarEl(id, url) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (url) { el.src = url; el.style.display = 'block'; }
+            else { el.removeAttribute('src'); el.style.display = id === 'profile-avatar-preview' ? 'block' : 'none'; }
+        }
+
+        function haversineKm(aLat, aLng, bLat, bLng) {
+            const toRad = d => d * Math.PI / 180;
+            const dLat = toRad(bLat - aLat);
+            const dLng = toRad(bLng - aLng);
+            const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+            return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(s)));
+        }
+
+        const sellerGeoCache = {};
+        const geoLookupCache = {};
+        async function lookupGeo(query) {
+            const q = String(query || '').trim();
+            if (q.length < 2) return null;
+            const key = q.toLowerCase();
+            if (geoLookupCache[key] !== undefined) return geoLookupCache[key];
+            try {
+                const res = await fetch('/api/geo/lookup?q=' + encodeURIComponent(q));
+                const data = await res.json();
+                geoLookupCache[key] = data && data.found ? data : null;
+            } catch (e) {
+                geoLookupCache[key] = null;
+            }
+            return geoLookupCache[key];
+        }
+
+        async function ensureSellerGeo(ids) {
+            const missing = [...new Set((ids || []).map(String))].filter(id => id && !sellerGeoCache[id]);
+            if (!missing.length) return;
+            try {
+                const res = await fetch('/api/geo/sellers?ids=' + encodeURIComponent(missing.join(',')));
+                const data = await res.json();
+                Object.assign(sellerGeoCache, data.sellers || {});
+            } catch (e) {}
+        }
+
+        function syncLocationInputs(from) {
+            const a = document.getElementById('radius-city');
+            const b = document.getElementById('location-input');
+            if (!a || !b) return;
+            if (from === 'filters') a.value = b.value;
+            else b.value = a.value;
+        }
+        function syncRadiusSelects(from) {
+            const a = document.getElementById('radius-km');
+            const b = document.getElementById('filter-radius-km');
+            if (!a || !b) return;
+            if (from === 'filters') a.value = b.value;
+            else b.value = a.value;
+        }
+
         const profileByIdCache = {};
         async function fetchProfileById(userId) {
             if (!userId || userId === 'SYSTEM_ESCROW') return null;
@@ -1595,10 +1745,12 @@
         async function setProfileLocationEl(userId) {
             const el = document.getElementById('seller-profile-location');
             if (!el) return;
-            el.innerText = '📍 Caricamento località...';
+            el.innerText = '📍 Caricamento indirizzo...';
             const profile = await fetchProfileById(userId);
-            const city = extractProfileCity(profile);
-            el.innerText = city ? `📍 ${city}` : '📍 Città non trovata sul profilo';
+            const place = formatProfilePlace(profile);
+            el.innerText = place ? `📍 ${place}` : '📍 Indirizzo non trovato sul profilo';
+            setMapIframe('seller-profile-map', place);
+            setAvatarEl('seller-profile-avatar', profile && profile.avatar_url);
         }
 
         async function syncSellerListingStatuses(userId) {
@@ -1674,6 +1826,7 @@
                 let profileName = '';
                 let profileAddress = '';
                 let profileCity = '';
+                let profileAvatar = '';
 
                 try {
                     const { data, error } = await supabaseClient
@@ -1686,6 +1839,7 @@
                         profileName = data.name || '';
                         profileAddress = data.address || '';
                         profileCity = data.city || data.citta || '';
+                        profileAvatar = data.avatar_url || '';
                     }
                 } catch (e) {
                     console.error('Errore lettura profilo supabase:', e);
@@ -1697,12 +1851,14 @@
                     profileAddress = savedProfile.address || '';
                 }
                 if (!profileCity) profileCity = savedProfile.city || extractProfileCity({ address: profileAddress, city: savedProfile.city });
+                if (!profileAvatar) profileAvatar = savedProfile.avatar_url || '';
                 currentUser = {
                     id: session.user.id,
                     email: session.user.email,
                     name: profileName,
                     address: profileAddress,
                     city: profileCity,
+                    avatar_url: profileAvatar,
                     wallet: 0.00,
                     iban: '',
                     accountType: normalizeAccountType(savedProfile.userType || savedProfile.accountType || 'privato'),
@@ -1722,7 +1878,12 @@
                     if (flags && flags.iban) currentUser.iban = flags.iban;
                     if (flags && flags.city) currentUser.city = flags.city;
                     if (flags && flags.address && !currentUser.address) currentUser.address = flags.address;
+                    if (flags && flags.avatar_url) currentUser.avatar_url = flags.avatar_url;
                     currentUser.payoutPending = !!flags.payoutPending;
+                    const radiusCity = document.getElementById('radius-city');
+                    const locInput = document.getElementById('location-input');
+                    if (radiusCity && !radiusCity.value && currentUser.city) radiusCity.value = currentUser.city;
+                    if (locInput && !locInput.value && currentUser.city) locInput.value = currentUser.city;
                     accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
                 } catch (e) {}
 
@@ -1815,7 +1976,7 @@
                     console.log('SUCCESSO SALVATAGGIO PROFILES:', data);
                 }
 
-                localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({ name, address, city, userType }));
+                localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({ name, address, city, userType, avatar_url: currentUser.avatar_url || '' }));
             }
 
             hideOverlay('onboarding-wizard-modal');
@@ -2535,6 +2696,11 @@
             document.getElementById('profile-address').value = currentUser.address || '';
             const cityEl = document.getElementById('profile-city');
             if (cityEl) cityEl.value = currentUser.city || extractProfileCity(currentUser) || '';
+            setAvatarEl('profile-avatar-preview', currentUser.avatar_url || '');
+            const place = formatProfilePlace(currentUser);
+            const summary = document.getElementById('profile-place-summary');
+            if (summary) summary.textContent = place ? ('In vetrina: ' + place) : '';
+            setMapIframe('profile-map', place);
             document.getElementById('profile-phone').value = currentUser.phone || '';
             const typeSelect = document.getElementById('profile-account-type');
             if (typeSelect) typeSelect.value = normalizeAccountType(currentUser.accountType);
@@ -2690,8 +2856,13 @@
             currentUser.phone = document.getElementById('profile-phone').value;
             currentUser.accountType = normalizeAccountType(document.getElementById('profile-account-type').value);
             if (currentUser.city.length < 2) {
-                showNotification('Inserisci la città: è quella visibile in vetrina.', 'error');
+                showNotification('Inserisci via e città.', 'error');
                 return;
+            }
+            const avatarFile = document.getElementById('profile-avatar-file');
+            if (avatarFile && avatarFile.files && avatarFile.files[0]) {
+                const url = await uploadProfileAvatar(avatarFile.files[0]);
+                if (url) currentUser.avatar_url = url;
             }
 
             const profileRow = {
@@ -2699,16 +2870,18 @@
                 email: String(currentUser.email),
                 name: String(currentUser.name),
                 address: String(currentUser.address),
-                city: String(currentUser.city)
+                city: String(currentUser.city),
+                avatar_url: String(currentUser.avatar_url || '')
             };
             let { error } = await supabaseClient.from('profiles').upsert([profileRow], { onConflict: 'id' });
-            if (error && /city/i.test(error.message || '')) {
-                const retry = await supabaseClient.from('profiles').upsert([{
+            if (error && /(city|avatar)/i.test(error.message || '')) {
+                const slim = {
                     id: profileRow.id,
                     email: profileRow.email,
                     name: profileRow.name,
                     address: currentUser.address + ', ' + currentUser.city
-                }], { onConflict: 'id' });
+                };
+                const retry = await supabaseClient.from('profiles').upsert([slim], { onConflict: 'id' });
                 error = retry.error;
             }
 
@@ -2721,6 +2894,7 @@
                     name: String(currentUser.name),
                     address: String(currentUser.address),
                     city: String(currentUser.city),
+                    avatar_url: String(currentUser.avatar_url || ''),
                     accountType: currentUser.accountType
                 })
             }).catch(() => {});
@@ -2729,11 +2903,38 @@
             const identityBox = document.getElementById('profile-identity-badges');
             if (identityBox) identityBox.innerHTML = identityBadgesHtml(accountMetaCache[String(currentUser.id)]);
 
-            const profileData = { name: currentUser.name, address: currentUser.address, city: currentUser.city, email: currentUser.email, accountType: currentUser.accountType };
+            const profileData = { name: currentUser.name, address: currentUser.address, city: currentUser.city, email: currentUser.email, accountType: currentUser.accountType, avatar_url: currentUser.avatar_url || '' };
             localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify(profileData));
-
+            setAvatarEl('profile-avatar-preview', currentUser.avatar_url || '');
+            const place = formatProfilePlace(currentUser);
+            const summary = document.getElementById('profile-place-summary');
+            if (summary) summary.textContent = place ? ('In vetrina: ' + place) : '';
+            setMapIframe('profile-map', place);
             showNotification('Profilo aggiornato!');
             updateHeaderUI();
+        }
+
+        function previewProfileAvatar(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            setAvatarEl('profile-avatar-preview', URL.createObjectURL(file));
+        }
+
+        async function uploadProfileAvatar(file) {
+            const fileType = String(file.type || '').toLowerCase();
+            const fileExt = String(file.name.split('.').pop() || '').toLowerCase();
+            if (!['jpg', 'jpeg', 'png', 'webp'].includes(fileExt) && !/^image\/(jpeg|png|webp)$/.test(fileType)) {
+                showNotification('Usa una foto JPG, PNG o WebP.', 'error');
+                return '';
+            }
+            const filePath = `avatars/${currentUser.id}_${Date.now()}.${fileExt === 'jpeg' ? 'jpg' : fileExt}`;
+            const { error } = await supabaseClient.storage.from('card-images').upload(filePath, file, { upsert: true });
+            if (error) {
+                showNotification('Caricamento foto fallito: ' + error.message, 'error');
+                return '';
+            }
+            const { data } = supabaseClient.storage.from('card-images').getPublicUrl(filePath);
+            return data && data.publicUrl ? data.publicUrl : '';
         }
 
         async function loadUserReviews() {
@@ -2877,32 +3078,58 @@
         }
 
         function applyFilters() {
+            applyFiltersAsync().catch(() => {});
+        }
+
+        async function applyFiltersAsync() {
             const searchQuery = document.getElementById('search-input').value.toLowerCase();
-            const locationQuery = document.getElementById('location-input').value.toLowerCase();
+            const locationQuery = (document.getElementById('radius-city') || document.getElementById('location-input')).value.trim();
+            const radiusKmRaw = (document.getElementById('radius-km') || {}).value || 'all';
             const selectedType = document.getElementById('type-filter').value;
             const statusFilter = document.getElementById('status-filter').value;
             const maxPriceInput = document.getElementById('price-clean-input').value;
             const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
             const sortBy = document.getElementById('sort-filter').value;
+            const useRadius = radiusKmRaw !== 'all' && locationQuery.length >= 2;
+            const radiusKm = Number(radiusKmRaw);
+
+            let origin = null;
+            if (useRadius) origin = await lookupGeo(locationQuery);
+            const sellerIds = [...new Set(allCards.map(c => String(c.user_id || '')).filter(Boolean))];
+            if (useRadius && origin) await ensureSellerGeo(sellerIds);
 
             let filtered = allCards.filter(card => {
                 const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
-                const matchesLocation = !locationQuery || (card.location || '').toLowerCase().includes(locationQuery);
                 const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
                 const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
                 const matchesPrice = (Number(card.price) || 0) <= maxPrice;
-                
                 if (isListingPending(card)) return false;
-
                 let matchesStatus = true;
                 if (statusFilter === 'available') matchesStatus = isListingBuyable(card);
                 if (statusFilter === 'sold') matchesStatus = isCardSold(card);
-
+                let matchesLocation = true;
+                if (useRadius && origin && origin.lat) {
+                    const geo = sellerGeoCache[String(card.user_id)] || {};
+                    if (geo.lat && geo.lng) {
+                        const km = haversineKm(origin.lat, origin.lng, geo.lat, geo.lng);
+                        card._distanceKm = km;
+                        matchesLocation = km <= radiusKm;
+                    } else {
+                        card._distanceKm = null;
+                        matchesLocation = String(card.location || '').toLowerCase().includes(locationQuery.toLowerCase());
+                    }
+                } else if (locationQuery && radiusKmRaw === 'all') {
+                    matchesLocation = String(card.location || '').toLowerCase().includes(locationQuery.toLowerCase());
+                    card._distanceKm = null;
+                } else {
+                    card._distanceKm = null;
+                }
                 return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
             });
 
             if (sortBy === 'price-asc') filtered.sort((a, b) => Number(a.price) - Number(b.price));
             else if (sortBy === 'price-desc') filtered.sort((a, b) => Number(b.price) - Number(a.price));
+            else if (useRadius && origin) filtered.sort((a, b) => (a._distanceKm == null ? 9999 : a._distanceKm) - (b._distanceKm == null ? 9999 : b._distanceKm));
             else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
             renderCardsToContainer(filtered, document.getElementById('product-list'));
@@ -2923,13 +3150,23 @@
                             <h3 class="card-title">${escapeHtml(card.title)}</h3>
                             <div class="price">€ ${Number(card.price).toFixed(2)}</div>
                             <div class="account-badges" data-seller-id="${escapeHtml(String(card.user_id || ''))}">${identityBadgesHtml(accountMetaCache[String(card.user_id)] || { accountType: 'privato', partner: false })}</div>
-                            <div class="card-location">📍 ${escapeHtml(card.location || 'Indirizzo non specificato')}</div>
+                            <div class="card-location">📍 ${escapeHtml(cardLocationLabel(card))}</div>
                             <div class="status-badge ${status.className}">${status.label}</div>
                         </div>
                     </div>
                 `;
             }).join('');
             loadAccountMeta(cards.map(c => c.user_id)).then(() => paintSellerBadges(container));
+        }
+
+        function cardLocationLabel(card) {
+            const geo = sellerGeoCache[String(card.user_id || '')] || {};
+            const city = geo.city || extractProfileCity({ address: card.location, city: '' }) || card.location || 'Località non indicata';
+            if (card._distanceKm != null && Number.isFinite(card._distanceKm)) {
+                const km = card._distanceKm < 10 ? card._distanceKm.toFixed(1) : Math.round(card._distanceKm);
+                return city + ' · ' + km + ' km';
+            }
+            return city;
         }
 
         const displayNameCache = {};
@@ -3154,10 +3391,10 @@
                 sellerIdentity.innerHTML = identityBadgesHtml(accountMetaCache[String(selectedCard.user_id)] || { accountType: 'privato', partner: false });
                 loadAccountMeta([selectedCard.user_id]).then(() => paintSellerBadges(sellerIdentity.parentElement));
             }
-            document.getElementById('detail-location-view').innerText = '📍 Caricamento città...';
+            document.getElementById('detail-location-view').innerText = '📍 Caricamento indirizzo...';
             fetchProfileById(selectedCard.user_id).then(profile => {
-                const city = extractProfileCity(profile);
-                document.getElementById('detail-location-view').innerText = city ? `📍 ${city}` : '📍 Città non trovata sul profilo';
+                const place = formatProfilePlace(profile) || selectedCard.location;
+                document.getElementById('detail-location-view').innerText = place ? `📍 ${place}` : '📍 Indirizzo non trovato sul profilo';
             });
             document.getElementById('detail-desc').innerText = stripPendingMarker(selectedCard.description) || 'Nessuna descrizione.';
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
@@ -3748,9 +3985,8 @@
 
         function checkAuthAndOpenSellModal() { 
             if (!requireVerifiedUser()) return;
-            if (currentUser.address) {
-                document.getElementById('sell-location').value = currentUser.address;
-            }
+            const sellLoc = document.getElementById('sell-location');
+            if (sellLoc) sellLoc.value = formatProfilePlace(currentUser) || currentUser.address || currentUser.city || '';
             onSellCatalogFieldsChange();
             showOverlay('sell-modal');
         }
