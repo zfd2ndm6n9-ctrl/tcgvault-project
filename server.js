@@ -300,7 +300,8 @@ function mergeProfileRow(row) {
         city: row.city || extra.city || '',
         avatar_url: row.avatar_url || extra.avatar_url || '',
         lat: row.lat != null && row.lat !== '' ? Number(row.lat) : extra.lat,
-        lng: row.lng != null && row.lng !== '' ? Number(row.lng) : extra.lng
+        lng: row.lng != null && row.lng !== '' ? Number(row.lng) : extra.lng,
+        radius_km: row.radius_km != null && row.radius_km !== '' ? Number(row.radius_km) : extra.radius_km
     };
 }
 
@@ -321,6 +322,7 @@ function publicProfilePayload(row) {
         avatar_url: merged.avatar_url || '',
         lat: Number(merged.lat) || null,
         lng: Number(merged.lng) || null,
+        radius_km: Number(merged.radius_km) || 20,
         mapsEmbed: mapsEmbedUrl(place || city),
         accountType: flags.accountType,
         partner: flags.partner
@@ -1778,6 +1780,7 @@ function upsertUserInMemory(profile) {
             avatar_url: String(profile.avatar_url || extraFor(id).avatar_url || '').trim(),
             lat: profile.lat != null ? Number(profile.lat) : extraFor(id).lat,
             lng: profile.lng != null ? Number(profile.lng) : extraFor(id).lng,
+            radius_km: profile.radius_km != null ? Number(profile.radius_km) : extraFor(id).radius_km,
             wallet: 0.00,
             iban: ''
         };
@@ -1792,6 +1795,7 @@ function upsertUserInMemory(profile) {
         if (profile.avatar_url !== undefined) user.avatar_url = String(profile.avatar_url || '').trim();
         if (profile.lat != null) user.lat = Number(profile.lat);
         if (profile.lng != null) user.lng = Number(profile.lng);
+        if (profile.radius_km != null) user.radius_km = Number(profile.radius_km);
     }
     return user;
 }
@@ -1811,7 +1815,8 @@ async function saveProfileToSupabase(profile) {
         city: String(profile.city || '').trim(),
         avatar_url: String(profile.avatar_url || '').trim(),
         lat: profile.lat != null && profile.lat !== '' ? Number(profile.lat) : undefined,
-        lng: profile.lng != null && profile.lng !== '' ? Number(profile.lng) : undefined
+        lng: profile.lng != null && profile.lng !== '' ? Number(profile.lng) : undefined,
+        radius_km: profile.radius_km != null && profile.radius_km !== '' ? Number(profile.radius_km) : undefined
     };
     Object.keys(payload).forEach(k => {
         if (payload[k] === undefined || payload[k] === '') delete payload[k];
@@ -1999,18 +2004,19 @@ app.post('/api/listings', async (req, res) => {
 app.post('/api/users/profile', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    const { name, address, city, accountType, avatar_url } = req.body;
+    const { name, address, city, accountType, avatar_url, lat, lng, radius_km } = req.body;
     const id = auth.id;
     const email = auth.email;
-    const user = upsertUserInMemory({ id, email, name, address, city, accountType, avatar_url });
+    const user = upsertUserInMemory({ id, email, name, address, city, accountType, avatar_url, lat, lng, radius_km });
     if (accountType) user.accountType = setAccountType(id, accountType);
-    await attachGeoToUser(user);
+    if (!(Number(user.lat) && Number(user.lng))) await attachGeoToUser(user);
     saveProfileExtra(id, {
         address: user.address || '',
         city: user.city || '',
         avatar_url: user.avatar_url || '',
         lat: user.lat,
-        lng: user.lng
+        lng: user.lng,
+        radius_km: user.radius_km
     });
     const supabaseResult = await saveProfileToSupabase(user);
 
@@ -2113,6 +2119,7 @@ app.get('/api/geo/sellers', async (req, res) => {
             place: formatProfilePlace(row),
             lat: Number(row.lat) || null,
             lng: Number(row.lng) || null,
+            radius_km: Number(row.radius_km) || 20,
             avatar_url: row.avatar_url || ''
         };
     }

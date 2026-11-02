@@ -8,6 +8,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="vault.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0"></script>
     <script src="auth-fetch.js"></script>
@@ -390,20 +392,15 @@
             border: 2px solid var(--border-color); background: rgba(255,255,255,.06);
         }
         .avatar-circle.lg { width: 96px; height: 96px; }
-        .maps-embed {
-            width: 100%; height: 180px; border: 0; border-radius: 12px; margin-top: 10px;
-            background: var(--bg-color);
+        .area-map {
+            width: 100%; height: 230px; border-radius: 12px; margin-top: 8px;
+            border: 1px solid var(--border-color); z-index: 1; background: #1a2336;
         }
-        .radius-bar {
-            display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-            margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border-color);
-            border-radius: 12px; background: var(--panel-bg);
+        .zone-chip {
+            display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+            margin: 0 0 16px; font-size: 0.88rem; color: var(--text-muted);
         }
-        .radius-bar label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; }
-        .radius-bar input, .radius-bar select {
-            background: var(--panel-solid); border: 1px solid var(--border-color); border-radius: 10px;
-            padding: 8px 12px; color: var(--text-main); font-size: 15px; outline: none;
-        }
+        .zone-chip button { font-size: 0.82rem; padding: 6px 10px; width: auto; }
         .account-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 8px; }
         .badge-type {
             font-size: 0.66rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
@@ -628,16 +625,22 @@
             </div>
 
             <div id="wizard-step-3" class="wizard-step" style="display: none;">
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Via e città compaiono sul tuo profilo, con mappa. In catalogo gli altri filtrano per raggio dalla città.</p>
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Inserisci via e città, poi tocca la mappa per piantare il segnalino della tua zona. Il raggio filtra il catalogo al posto dei vecchi filtri località.</p>
                 <div class="form-group">
                     <label>Via e civico *</label>
-                    <input type="text" id="wizard-address" placeholder="Es. Via Dante 15" autocomplete="street-address">
+                    <input type="text" id="wizard-address" placeholder="Es. Via Dante 15" autocomplete="street-address" onblur="geocodeWizardToMap()">
                 </div>
                 <div class="form-group">
                     <label>Città *</label>
-                    <input type="text" id="wizard-city" placeholder="Es. Milano" autocomplete="address-level2">
+                    <input type="text" id="wizard-city" placeholder="Es. Milano" autocomplete="address-level2" onblur="geocodeWizardToMap()">
                 </div>
-                <div style="display: flex; gap: 10px;">
+                <div class="form-group">
+                    <label>Raggio della tua zona: <span id="wizard-radius-label">20</span> km</label>
+                    <input type="range" id="wizard-radius" min="5" max="80" step="5" value="20" oninput="onAreaRadiusInput('wizard')">
+                </div>
+                <p id="wizard-pin-hint" style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Tocca la mappa o trascina il segnalino.</p>
+                <div id="wizard-area-map" class="area-map"></div>
+                <div style="display: flex; gap: 10px; margin-top: 14px;">
                     <button type="button" class="btn-outline" onclick="nextWizardStep(2)">⬅️ Indietro</button>
                     <button type="button" class="btn-submit" onclick="finishWizardOnboarding()" style="flex: 1;">Salva e Inizia a Usare il Sito 🚀</button>
                 </div>
@@ -694,7 +697,7 @@
                     <div id="seller-profile-name" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-neon); margin-bottom: 5px;"></div>
                     <div id="seller-profile-type" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 5px;"></div>
                     <div id="seller-profile-location" style="font-size: 0.9rem; color: var(--text-muted);"></div>
-                    <iframe id="seller-profile-map" class="maps-embed" title="Mappa" style="display:none;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                    <div id="seller-area-map" class="area-map" style="display:none;"></div>
                 </div>
             </div>
 
@@ -747,19 +750,9 @@
             <input type="text" id="search-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFiltersDebounced()" aria-label="Cerca prodotto">
             <button type="button" class="btn-filters" onclick="openFiltersPanel()">Filtri</button>
         </div>
-        <div class="radius-bar">
-            <label for="radius-city">Zona</label>
-            <input type="text" id="radius-city" placeholder="Es. Milano" autocomplete="address-level2" oninput="syncLocationInputs(); applyFiltersDebounced()">
-            <label for="radius-km">Raggio</label>
-            <select id="radius-km" onchange="syncRadiusSelects(); applyFilters()">
-                <option value="5">5 km</option>
-                <option value="10">10 km</option>
-                <option value="20">20 km</option>
-                <option value="40">40 km</option>
-                <option value="80">80 km</option>
-                <option value="150">150 km</option>
-                <option value="all" selected>Tutta Italia</option>
-            </select>
+        <div class="zone-chip" id="zone-chip">
+            <span id="zone-chip-text">Zona: imposta il segnalino nel profilo per filtrare gli annunci vicini.</span>
+            <button type="button" class="btn-outline" onclick="openZoneEditor()">Modifica zona</button>
         </div>
 
         <div class="rules-banner">
@@ -833,22 +826,7 @@
                 <h2>Filtri</h2>
                 <button class="close-btn" onclick="closeFiltersPanel()">&times;</button>
             </div>
-            <div class="filter-group" style="margin-bottom:12px;">
-                <label>📍 Città / zona</label>
-                <input type="text" id="location-input" class="filter-input" placeholder="Es. Milano, Roma..." oninput="syncLocationInputs('filters'); applyFiltersDebounced()">
-            </div>
-            <div class="filter-group" style="margin-bottom:12px;">
-                <label>Raggio (come Facebook)</label>
-                <select id="filter-radius-km" class="filter-select" onchange="syncRadiusSelects('filters'); applyFilters()">
-                    <option value="5">5 km</option>
-                    <option value="10">10 km</option>
-                    <option value="20">20 km</option>
-                    <option value="40">40 km</option>
-                    <option value="80">80 km</option>
-                    <option value="150">150 km</option>
-                    <option value="all" selected>Tutta Italia</option>
-                </select>
-            </div>
+            <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 14px;">La zona e il raggio si impostano sulla mappa del profilo (segnalino). Qui restano tipo, prezzo e stato.</p>
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>Tipo Articolo</label>
                 <select id="type-filter" class="filter-select" onchange="applyFilters()">
@@ -982,7 +960,12 @@
                         <input type="text" id="profile-city" placeholder="Es. Milano" autocomplete="address-level2">
                     </div>
                     <p id="profile-place-summary" style="font-size:0.9rem;color:var(--text-muted);margin:0 0 10px;"></p>
-                    <iframe id="profile-map" class="maps-embed" title="Mappa del tuo indirizzo" style="display:none;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                    <div class="form-group">
+                        <label>Raggio zona: <span id="profile-radius-label">20</span> km</label>
+                        <input type="range" id="profile-radius" min="5" max="80" step="5" value="20" oninput="onAreaRadiusInput('profile')">
+                    </div>
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Tocca la mappa per piantare il segnalino. Si salva da solo su Supabase e filtra il catalogo.</p>
+                    <div id="profile-area-map" class="area-map"></div>
                     <div class="form-group">
                         <label>Numero di Cellulare (Facoltativo)</label>
                         <input type="tel" id="profile-phone" placeholder="Es. +39 340 1234567">
@@ -1072,6 +1055,7 @@
                     <h2 id="detail-name" style="margin: 6px 0 10px 0; color: var(--text-main); font-size: 1.5rem; font-weight: 800;"></h2>
                     <div id="detail-condition" style="font-size:0.88rem; color:var(--accent-neon); margin-bottom:6px; font-weight: 600;"></div>
                     <div id="detail-location-view" style="font-size:0.88rem; color:var(--text-muted); margin-bottom:6px; font-weight: 500;">📍 Indirizzo: </div>
+                    <div id="detail-area-map" class="area-map" style="display:none;margin-bottom:10px;"></div>
                     <div id="detail-seller-identity" class="account-badges"></div>
                     <div style="margin-bottom: 10px;">
                         <button class="btn-outline" onclick="openSellerPublicProfile()" style="font-size: 0.82rem; padding: 6px 12px;">👤 Visualizza Profilo e Recensioni del Venditore</button>
@@ -1651,19 +1635,200 @@
             return street || city || '';
         }
 
-        function mapsEmbedSrc(place) {
-            const q = String(place || '').trim();
-            if (!q) return '';
-            return 'https://maps.google.com/maps?q=' + encodeURIComponent(q) + '&z=14&output=embed';
+        function clampRadiusKm(v) {
+            const n = Number(v);
+            if (!Number.isFinite(n)) return 20;
+            return Math.min(80, Math.max(5, Math.round(n)));
         }
 
-        function setMapIframe(id, place) {
-            const el = document.getElementById(id);
-            if (!el) return;
-            const src = mapsEmbedSrc(place);
-            if (!src) { el.style.display = 'none'; el.removeAttribute('src'); return; }
-            el.src = src;
+        const areaMaps = {};
+        function mountAreaMap(containerId, opts) {
+            const el = document.getElementById(containerId);
+            if (!el || typeof L === 'undefined') return null;
             el.style.display = 'block';
+            const editable = !!opts.editable;
+            const lat = Number(opts.lat);
+            const lng = Number(opts.lng);
+            const hasPin = Number.isFinite(lat) && Number.isFinite(lng);
+            const radiusKm = clampRadiusKm(opts.radiusKm);
+            const center = hasPin ? [lat, lng] : [41.9, 12.5];
+            if (areaMaps[containerId]) {
+                areaMaps[containerId].map.remove();
+                delete areaMaps[containerId];
+            }
+            const map = L.map(el, { scrollWheelZoom: true }).setView(center, hasPin ? 12 : 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(map);
+            const marker = L.marker(center, { draggable: editable, autoPan: true }).addTo(map);
+            const circle = L.circle(center, {
+                radius: radiusKm * 1000,
+                color: '#00ff88',
+                fillColor: '#00ff88',
+                fillOpacity: 0.18,
+                weight: 2
+            }).addTo(map);
+            function syncCircle() {
+                const p = marker.getLatLng();
+                circle.setLatLng(p);
+                circle.setRadius(areaMaps[containerId].radiusKm * 1000);
+                try { map.fitBounds(circle.getBounds(), { padding: [18, 18], maxZoom: 13 }); } catch (e) {}
+            }
+            areaMaps[containerId] = { map, marker, circle, radiusKm, editable, onChange: opts.onChange || null };
+            if (editable) {
+                map.on('click', e => {
+                    marker.setLatLng(e.latlng);
+                    syncCircle();
+                    if (areaMaps[containerId].onChange) areaMaps[containerId].onChange(readAreaMap(containerId));
+                });
+                marker.on('dragend', () => {
+                    syncCircle();
+                    if (areaMaps[containerId].onChange) areaMaps[containerId].onChange(readAreaMap(containerId));
+                });
+            }
+            if (hasPin) syncCircle();
+            setTimeout(() => { try { map.invalidateSize(); syncCircle(); } catch (e) {} }, 250);
+            return areaMaps[containerId];
+        }
+
+        function readAreaMap(containerId) {
+            const slot = areaMaps[containerId];
+            if (!slot) return null;
+            const p = slot.marker.getLatLng();
+            return { lat: p.lat, lng: p.lng, radiusKm: slot.radiusKm };
+        }
+
+        function setAreaMapRadius(containerId, km) {
+            const slot = areaMaps[containerId];
+            if (!slot) return;
+            slot.radiusKm = clampRadiusKm(km);
+            slot.circle.setRadius(slot.radiusKm * 1000);
+            try { slot.map.fitBounds(slot.circle.getBounds(), { padding: [18, 18], maxZoom: 13 }); } catch (e) {}
+        }
+
+        function onAreaRadiusInput(kind) {
+            const slider = document.getElementById(kind + '-radius');
+            const label = document.getElementById(kind + '-radius-label');
+            const km = clampRadiusKm(slider && slider.value);
+            if (label) label.textContent = String(km);
+            setAreaMapRadius(kind + '-area-map', km);
+            if (kind === 'profile' && currentUser) {
+                currentUser.radius_km = km;
+                persistAreaToServer();
+                updateZoneChip();
+                applyFilters();
+            }
+            if (kind === 'wizard' && currentUser) {
+                currentUser.radius_km = km;
+                const pin = readAreaMap('wizard-area-map');
+                if (pin) { currentUser.lat = pin.lat; currentUser.lng = pin.lng; persistAreaToServer(); }
+            }
+        }
+
+        let persistAreaTimer = null;
+        function persistAreaToServer() {
+            if (!currentUser) return;
+            clearTimeout(persistAreaTimer);
+            persistAreaTimer = setTimeout(() => {
+                const payload = {
+                    id: String(currentUser.id),
+                    email: String(currentUser.email || ''),
+                    name: String(currentUser.name || ''),
+                    address: String(currentUser.address || ''),
+                    city: String(currentUser.city || ''),
+                    avatar_url: String(currentUser.avatar_url || ''),
+                    lat: currentUser.lat,
+                    lng: currentUser.lng,
+                    radius_km: clampRadiusKm(currentUser.radius_km),
+                    accountType: currentUser.accountType
+                };
+                fetch('/api/users/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).catch(() => {});
+                supabaseClient.from('profiles').upsert([{
+                    id: payload.id,
+                    email: payload.email,
+                    name: payload.name,
+                    address: payload.address,
+                    city: payload.city,
+                    avatar_url: payload.avatar_url,
+                    lat: payload.lat,
+                    lng: payload.lng,
+                    radius_km: payload.radius_km
+                }], { onConflict: 'id' }).then(({ error }) => {
+                    if (!error) return;
+                    supabaseClient.from('profiles').upsert([{
+                        id: payload.id, email: payload.email, name: payload.name,
+                        address: payload.address + (payload.city ? ', ' + payload.city : ''),
+                        lat: payload.lat, lng: payload.lng, radius_km: payload.radius_km
+                    }], { onConflict: 'id' });
+                });
+                const saved = JSON.parse(localStorage.getItem(`tcg_vault_profile_${currentUser.id}`) || '{}');
+                localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({
+                    ...saved,
+                    name: currentUser.name,
+                    address: currentUser.address,
+                    city: currentUser.city,
+                    avatar_url: currentUser.avatar_url || '',
+                    lat: currentUser.lat,
+                    lng: currentUser.lng,
+                    radius_km: payload.radius_km
+                }));
+                updateZoneChip();
+            }, 500);
+        }
+
+        function updateZoneChip() {
+            const text = document.getElementById('zone-chip-text');
+            if (!text) return;
+            if (currentUser && Number(currentUser.lat) && Number(currentUser.lng)) {
+                const km = clampRadiusKm(currentUser.radius_km);
+                const city = currentUser.city || 'zona impostata';
+                text.textContent = 'Zona: ' + city + ' · raggio ' + km + ' km (dal segnalino del profilo)';
+            } else if (currentUser) {
+                text.textContent = 'Segna la tua zona sulla mappa del profilo: da lì si filtrano gli annunci.';
+            } else {
+                text.textContent = 'Accedi e segna la zona nel wizard: il catalogo si allinea al tuo raggio.';
+            }
+        }
+
+        function openZoneEditor() {
+            if (!currentUser) { openAuthModal(); return; }
+            if (!currentUser.lat) {
+                showOverlay('onboarding-wizard-modal');
+                nextWizardStep(3);
+                return;
+            }
+            openProfileModal();
+        }
+
+        async function geocodeWizardToMap() {
+            const address = (document.getElementById('wizard-address') || {}).value || '';
+            const city = (document.getElementById('wizard-city') || {}).value || '';
+            const q = [address, city, 'Italia'].filter(Boolean).join(', ');
+            if (q.length < 3) return;
+            const geo = await lookupGeo(q);
+            if (!geo) return;
+            const km = clampRadiusKm((document.getElementById('wizard-radius') || {}).value);
+            mountAreaMap('wizard-area-map', {
+                lat: geo.lat, lng: geo.lng, radiusKm: km, editable: true,
+                onChange: pin => {
+                    if (!currentUser) return;
+                    currentUser.lat = pin.lat;
+                    currentUser.lng = pin.lng;
+                    currentUser.radius_km = pin.radiusKm;
+                    persistAreaToServer();
+                }
+            });
+            if (currentUser) {
+                currentUser.lat = geo.lat;
+                currentUser.lng = geo.lng;
+                currentUser.radius_km = km;
+                persistAreaToServer();
+            }
         }
 
         function setAvatarEl(id, url) {
@@ -1708,21 +1873,6 @@
             } catch (e) {}
         }
 
-        function syncLocationInputs(from) {
-            const a = document.getElementById('radius-city');
-            const b = document.getElementById('location-input');
-            if (!a || !b) return;
-            if (from === 'filters') a.value = b.value;
-            else b.value = a.value;
-        }
-        function syncRadiusSelects(from) {
-            const a = document.getElementById('radius-km');
-            const b = document.getElementById('filter-radius-km');
-            if (!a || !b) return;
-            if (from === 'filters') a.value = b.value;
-            else b.value = a.value;
-        }
-
         const profileByIdCache = {};
         async function fetchProfileById(userId) {
             if (!userId || userId === 'SYSTEM_ESCROW') return null;
@@ -1749,8 +1899,15 @@
             const profile = await fetchProfileById(userId);
             const place = formatProfilePlace(profile);
             el.innerText = place ? `📍 ${place}` : '📍 Indirizzo non trovato sul profilo';
-            setMapIframe('seller-profile-map', place);
             setAvatarEl('seller-profile-avatar', profile && profile.avatar_url);
+            if (profile && Number(profile.lat) && Number(profile.lng)) {
+                mountAreaMap('seller-area-map', {
+                    lat: profile.lat,
+                    lng: profile.lng,
+                    radiusKm: profile.radius_km || 20,
+                    editable: false
+                });
+            }
         }
 
         async function syncSellerListingStatuses(userId) {
@@ -1827,6 +1984,9 @@
                 let profileAddress = '';
                 let profileCity = '';
                 let profileAvatar = '';
+                let profileLat = '';
+                let profileLng = '';
+                let profileRadius = '';
 
                 try {
                     const { data, error } = await supabaseClient
@@ -1840,6 +2000,9 @@
                         profileAddress = data.address || '';
                         profileCity = data.city || data.citta || '';
                         profileAvatar = data.avatar_url || '';
+                        if (data.lat) profileLat = Number(data.lat);
+                        if (data.lng) profileLng = Number(data.lng);
+                        if (data.radius_km) profileRadius = Number(data.radius_km);
                     }
                 } catch (e) {
                     console.error('Errore lettura profilo supabase:', e);
@@ -1859,6 +2022,9 @@
                     address: profileAddress,
                     city: profileCity,
                     avatar_url: profileAvatar,
+                    lat: profileLat || savedProfile.lat,
+                    lng: profileLng || savedProfile.lng,
+                    radius_km: profileRadius || savedProfile.radius_km,
                     wallet: 0.00,
                     iban: '',
                     accountType: normalizeAccountType(savedProfile.userType || savedProfile.accountType || 'privato'),
@@ -1879,21 +2045,28 @@
                     if (flags && flags.city) currentUser.city = flags.city;
                     if (flags && flags.address && !currentUser.address) currentUser.address = flags.address;
                     if (flags && flags.avatar_url) currentUser.avatar_url = flags.avatar_url;
+                    if (flags && flags.lat) currentUser.lat = Number(flags.lat);
+                    if (flags && flags.lng) currentUser.lng = Number(flags.lng);
+                    if (flags && flags.radius_km) currentUser.radius_km = clampRadiusKm(flags.radius_km);
                     currentUser.payoutPending = !!flags.payoutPending;
-                    const radiusCity = document.getElementById('radius-city');
-                    const locInput = document.getElementById('location-input');
-                    if (radiusCity && !radiusCity.value && currentUser.city) radiusCity.value = currentUser.city;
-                    if (locInput && !locInput.value && currentUser.city) locInput.value = currentUser.city;
                     accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
                 } catch (e) {}
+                if (!currentUser.lat) {
+                    const saved = JSON.parse(localStorage.getItem(`tcg_vault_profile_${session.user.id}`) || '{}');
+                    if (saved.lat) currentUser.lat = Number(saved.lat);
+                    if (saved.lng) currentUser.lng = Number(saved.lng);
+                    if (saved.radius_km) currentUser.radius_km = clampRadiusKm(saved.radius_km);
+                }
+                updateZoneChip();
 
-                if (accountReady() && (!currentUser.name || !currentUser.address || !currentUser.city)) {
+                if (accountReady() && (!currentUser.name || !currentUser.address || !currentUser.city || !currentUser.lat)) {
                     showOverlay('onboarding-wizard-modal');
                 } else {
                     hideOverlay('onboarding-wizard-modal');
                 }
             } else {
                 currentUser = null;
+                updateZoneChip();
                 hideOverlay('onboarding-wizard-modal');
             }
             updateHeaderUI();
@@ -1924,6 +2097,24 @@
             document.querySelectorAll('.wizard-step').forEach(el => el.style.display = 'none');
             document.getElementById(`wizard-step-${step}`).style.display = 'block';
             currentWizardStepNumber = step;
+            if (step === 3) {
+                const km = clampRadiusKm((document.getElementById('wizard-radius') || {}).value);
+                const lat = currentUser && currentUser.lat;
+                const lng = currentUser && currentUser.lng;
+                setTimeout(() => {
+                    mountAreaMap('wizard-area-map', {
+                        lat, lng, radiusKm: km, editable: true,
+                        onChange: pin => {
+                            if (!currentUser) return;
+                            currentUser.lat = pin.lat;
+                            currentUser.lng = pin.lng;
+                            currentUser.radius_km = pin.radiusKm;
+                            persistAreaToServer();
+                        }
+                    });
+                    geocodeWizardToMap();
+                }, 80);
+            }
         }
 
         async function finishWizardOnboarding() {
@@ -1931,9 +2122,15 @@
             const userType = document.getElementById('wizard-usertype').value;
             const address = document.getElementById('wizard-address').value.trim();
             const city = document.getElementById('wizard-city').value.trim();
+            const pin = readAreaMap('wizard-area-map');
+            const radiusKm = clampRadiusKm((document.getElementById('wizard-radius') || {}).value);
 
             if (!name || !address || city.length < 2) {
                 showNotification('Inserisci via e città.', 'error');
+                return;
+            }
+            if (!pin || !pin.lat) {
+                showNotification('Tocca la mappa e pianta il segnalino della tua zona.', 'error');
                 return;
             }
 
@@ -1941,6 +2138,9 @@
                 currentUser.name = name;
                 currentUser.address = address;
                 currentUser.city = city;
+                currentUser.lat = pin.lat;
+                currentUser.lng = pin.lng;
+                currentUser.radius_km = radiusKm;
                 currentUser.userType = userType;
                 currentUser.accountType = normalizeAccountType(userType);
 
@@ -1949,7 +2149,10 @@
                     name: String(name),
                     email: String(currentUser.email || ''),
                     address: String(address),
-                    city: String(city)
+                    city: String(city),
+                    lat: pin.lat,
+                    lng: pin.lng,
+                    radius_km: radiusKm
                 };
                 fetch('/api/users/profile', {
                     method: 'POST',
@@ -1961,7 +2164,7 @@
                 let { data, error } = await supabaseClient
                     .from('profiles')
                     .upsert([profilePayload], { onConflict: 'id' });
-                if (error && /city/i.test(error.message || '')) {
+                if (error && /(city|lat|lng|radius)/i.test(error.message || '')) {
                     const slim = { id: profilePayload.id, name: profilePayload.name, email: profilePayload.email, address: address + ', ' + city };
                     const retry = await supabaseClient.from('profiles').upsert([slim], { onConflict: 'id' });
                     error = retry.error;
@@ -1976,12 +2179,13 @@
                     console.log('SUCCESSO SALVATAGGIO PROFILES:', data);
                 }
 
-                localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({ name, address, city, userType, avatar_url: currentUser.avatar_url || '' }));
+                localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify({ name, address, city, userType, avatar_url: currentUser.avatar_url || '', lat: pin.lat, lng: pin.lng, radius_km: radiusKm }));
             }
 
             hideOverlay('onboarding-wizard-modal');
-            showNotification('🎉 Profilo completato e salvato su Supabase!');
+            showNotification('🎉 Zona salvata: il catalogo usa il tuo segnalino e raggio.');
             updateHeaderUI();
+            updateZoneChip();
             loadCardsFromSupabase();
         }
 
@@ -2700,7 +2904,11 @@
             const place = formatProfilePlace(currentUser);
             const summary = document.getElementById('profile-place-summary');
             if (summary) summary.textContent = place ? ('In vetrina: ' + place) : '';
-            setMapIframe('profile-map', place);
+            const km = clampRadiusKm(currentUser.radius_km);
+            const radiusEl = document.getElementById('profile-radius');
+            const radiusLabel = document.getElementById('profile-radius-label');
+            if (radiusEl) radiusEl.value = String(km);
+            if (radiusLabel) radiusLabel.textContent = String(km);
             document.getElementById('profile-phone').value = currentUser.phone || '';
             const typeSelect = document.getElementById('profile-account-type');
             if (typeSelect) typeSelect.value = normalizeAccountType(currentUser.accountType);
@@ -2720,6 +2928,21 @@
             loadUserReviews();
             loadMyOrders();
             showOverlay('profile-modal');
+            setTimeout(() => {
+                mountAreaMap('profile-area-map', {
+                    lat: currentUser.lat,
+                    lng: currentUser.lng,
+                    radiusKm: km,
+                    editable: true,
+                    onChange: pin => {
+                        currentUser.lat = pin.lat;
+                        currentUser.lng = pin.lng;
+                        currentUser.radius_km = pin.radiusKm;
+                        persistAreaToServer();
+                        applyFilters();
+                    }
+                });
+            }, 80);
         }
 
         function closeProfileModal() { hideOverlay('profile-modal'); }
@@ -2871,10 +3094,22 @@
                 name: String(currentUser.name),
                 address: String(currentUser.address),
                 city: String(currentUser.city),
-                avatar_url: String(currentUser.avatar_url || '')
+                avatar_url: String(currentUser.avatar_url || ''),
+                lat: currentUser.lat,
+                lng: currentUser.lng,
+                radius_km: clampRadiusKm(currentUser.radius_km)
             };
+            const pin = readAreaMap('profile-area-map');
+            if (pin) {
+                currentUser.lat = pin.lat;
+                currentUser.lng = pin.lng;
+                currentUser.radius_km = clampRadiusKm((document.getElementById('profile-radius') || {}).value);
+                profileRow.lat = pin.lat;
+                profileRow.lng = pin.lng;
+                profileRow.radius_km = currentUser.radius_km;
+            }
             let { error } = await supabaseClient.from('profiles').upsert([profileRow], { onConflict: 'id' });
-            if (error && /(city|avatar)/i.test(error.message || '')) {
+            if (error && /(city|avatar|lat|lng|radius)/i.test(error.message || '')) {
                 const slim = {
                     id: profileRow.id,
                     email: profileRow.email,
@@ -2895,6 +3130,9 @@
                     address: String(currentUser.address),
                     city: String(currentUser.city),
                     avatar_url: String(currentUser.avatar_url || ''),
+                    lat: currentUser.lat,
+                    lng: currentUser.lng,
+                    radius_km: clampRadiusKm(currentUser.radius_km),
                     accountType: currentUser.accountType
                 })
             }).catch(() => {});
@@ -2903,15 +3141,16 @@
             const identityBox = document.getElementById('profile-identity-badges');
             if (identityBox) identityBox.innerHTML = identityBadgesHtml(accountMetaCache[String(currentUser.id)]);
 
-            const profileData = { name: currentUser.name, address: currentUser.address, city: currentUser.city, email: currentUser.email, accountType: currentUser.accountType, avatar_url: currentUser.avatar_url || '' };
+            const profileData = { name: currentUser.name, address: currentUser.address, city: currentUser.city, email: currentUser.email, accountType: currentUser.accountType, avatar_url: currentUser.avatar_url || '', lat: currentUser.lat, lng: currentUser.lng, radius_km: currentUser.radius_km };
             localStorage.setItem(`tcg_vault_profile_${currentUser.id}`, JSON.stringify(profileData));
             setAvatarEl('profile-avatar-preview', currentUser.avatar_url || '');
             const place = formatProfilePlace(currentUser);
             const summary = document.getElementById('profile-place-summary');
             if (summary) summary.textContent = place ? ('In vetrina: ' + place) : '';
-            setMapIframe('profile-map', place);
             showNotification('Profilo aggiornato!');
             updateHeaderUI();
+            updateZoneChip();
+            applyFilters();
         }
 
         function previewProfileAvatar(input) {
@@ -3083,20 +3322,18 @@
 
         async function applyFiltersAsync() {
             const searchQuery = document.getElementById('search-input').value.toLowerCase();
-            const locationQuery = (document.getElementById('radius-city') || document.getElementById('location-input')).value.trim();
-            const radiusKmRaw = (document.getElementById('radius-km') || {}).value || 'all';
             const selectedType = document.getElementById('type-filter').value;
             const statusFilter = document.getElementById('status-filter').value;
             const maxPriceInput = document.getElementById('price-clean-input').value;
             const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
             const sortBy = document.getElementById('sort-filter').value;
-            const useRadius = radiusKmRaw !== 'all' && locationQuery.length >= 2;
-            const radiusKm = Number(radiusKmRaw);
+            const originLat = currentUser && Number(currentUser.lat);
+            const originLng = currentUser && Number(currentUser.lng);
+            const useRadius = !!(originLat && originLng);
+            const radiusKm = clampRadiusKm(currentUser && currentUser.radius_km);
 
-            let origin = null;
-            if (useRadius) origin = await lookupGeo(locationQuery);
             const sellerIds = [...new Set(allCards.map(c => String(c.user_id || '')).filter(Boolean))];
-            if (useRadius && origin) await ensureSellerGeo(sellerIds);
+            if (useRadius) await ensureSellerGeo(sellerIds);
 
             let filtered = allCards.filter(card => {
                 const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
@@ -3108,19 +3345,16 @@
                 if (statusFilter === 'available') matchesStatus = isListingBuyable(card);
                 if (statusFilter === 'sold') matchesStatus = isCardSold(card);
                 let matchesLocation = true;
-                if (useRadius && origin && origin.lat) {
+                if (useRadius) {
                     const geo = sellerGeoCache[String(card.user_id)] || {};
                     if (geo.lat && geo.lng) {
-                        const km = haversineKm(origin.lat, origin.lng, geo.lat, geo.lng);
+                        const km = haversineKm(originLat, originLng, geo.lat, geo.lng);
                         card._distanceKm = km;
                         matchesLocation = km <= radiusKm;
                     } else {
                         card._distanceKm = null;
-                        matchesLocation = String(card.location || '').toLowerCase().includes(locationQuery.toLowerCase());
+                        matchesLocation = false;
                     }
-                } else if (locationQuery && radiusKmRaw === 'all') {
-                    matchesLocation = String(card.location || '').toLowerCase().includes(locationQuery.toLowerCase());
-                    card._distanceKm = null;
                 } else {
                     card._distanceKm = null;
                 }
@@ -3129,10 +3363,11 @@
 
             if (sortBy === 'price-asc') filtered.sort((a, b) => Number(a.price) - Number(b.price));
             else if (sortBy === 'price-desc') filtered.sort((a, b) => Number(b.price) - Number(a.price));
-            else if (useRadius && origin) filtered.sort((a, b) => (a._distanceKm == null ? 9999 : a._distanceKm) - (b._distanceKm == null ? 9999 : b._distanceKm));
+            else if (useRadius) filtered.sort((a, b) => (a._distanceKm == null ? 9999 : a._distanceKm) - (b._distanceKm == null ? 9999 : b._distanceKm));
             else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
             renderCardsToContainer(filtered, document.getElementById('product-list'));
+            updateZoneChip();
         }
 
         function renderCardsToContainer(cards, container) {
@@ -3395,6 +3630,14 @@
             fetchProfileById(selectedCard.user_id).then(profile => {
                 const place = formatProfilePlace(profile) || selectedCard.location;
                 document.getElementById('detail-location-view').innerText = place ? `📍 ${place}` : '📍 Indirizzo non trovato sul profilo';
+                if (profile && Number(profile.lat) && Number(profile.lng)) {
+                    mountAreaMap('detail-area-map', {
+                        lat: profile.lat,
+                        lng: profile.lng,
+                        radiusKm: profile.radius_km || 20,
+                        editable: false
+                    });
+                }
             });
             document.getElementById('detail-desc').innerText = stripPendingMarker(selectedCard.description) || 'Nessuna descrizione.';
             document.getElementById('detail-price').innerText = '€ ' + Number(selectedCard.price).toFixed(2);
