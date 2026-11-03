@@ -861,9 +861,9 @@
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>Stato Annuncio</label>
                 <select id="status-filter" class="filter-select" onchange="applyFilters()">
+                    <option value="available" selected>In vendita</option>
                     <option value="">Tutti</option>
-                    <option value="available">Solo Disponibili</option>
-                    <option value="sold">Solo Venduti</option>
+                    <option value="sold">Solo venduti</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -2643,18 +2643,31 @@
             showNotification('Logout effettuato.');
         }
 
+        async function applySoldOverlay(cards) {
+            try {
+                const data = await fetch('/api/sold-card-ids').then(r => r.json());
+                const sold = new Set((data.ids || []).map(String));
+                (cards || []).forEach(c => {
+                    if (sold.has(String(c.id))) c.is_sold = true;
+                });
+            } catch (e) {}
+            return cards || [];
+        }
+
         async function loadCardsFromSupabase() {
             try {
                 const { data, error } = await supabaseClient
                     .from('cards')
                     .select('*')
-                    .order('created_at', { ascending: false });
+                    .order('created_at', { ascending: false })
+                    .limit(2000);
 
                 if (error) {
                     allCards = [];
                 } else {
                     allCards = data || [];
                 }
+                await applySoldOverlay(allCards);
 
                 rebuildSellerCatalogIndex();
                 validateAndCleanCart();
@@ -3521,6 +3534,7 @@
                 const matchesCategory = !selectedCategory || (card.category || '').toLowerCase() === selectedCategory.toLowerCase();
                 const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
                 const matchesPrice = (Number(card.price) || 0) <= maxPrice;
+                if (statusFilter !== 'sold' && isCardSold(card)) return false;
                 if (isListingPending(card)) return false;
                 let matchesStatus = true;
                 if (statusFilter === 'available') matchesStatus = isListingBuyable(card);

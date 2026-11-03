@@ -46,28 +46,138 @@ function loadOrdersFromDisk() {
     }
 }
 
+let soldIdSet = new Set();
+
+function rememberSoldIds(cardIds) {
+    (cardIds || []).forEach(id => {
+        const s = String(id || '').trim();
+        if (s && s !== 'undefined' && s !== 'null') soldIdSet.add(s);
+    });
+}
+
+function persistSoldIds() {
+    persistJsonFile('sold-ids.json', [...soldIdSet], true);
+}
+
+function soldIdsFromOrders() {
+    ordersDB.forEach(o => {
+        if (!o || !o.status || o.status === 'pending_payment') return;
+        rememberSoldIds(o.cardIds && o.cardIds.length ? o.cardIds : [o.cardId]);
+    });
+    persistSoldIds();
+}
+
 async function markCardsSold(cardIds) {
     const ids = [...new Set((cardIds || []).map(id => String(id).trim()).filter(id => id && id !== 'undefined' && id !== 'null'))];
     if (!ids.length) return;
-    const filter = ids.every(id => /^\d+$/.test(id))
-        ? 'id=in.(' + ids.join(',') + ')'
-        : 'id=in.(' + ids.map(id => '"' + id.replace(/"/g, '') + '"').join(',') + ')';
-    try {
-        const res = await fetch(SUPABASE_URL + '/rest/v1/cards?' + filter, {
-            method: 'PATCH',
-            headers: {
-                apikey: SUPABASE_KEY,
-                Authorization: 'Bearer ' + SUPABASE_KEY,
-                'Content-Type': 'application/json',
-                Prefer: 'return=minimal'
-            },
-            body: JSON.stringify({ is_sold: true })
-        });
-        if (!res.ok) {
-            console.error('Marcatura venduto fallita:', res.status, await res.text());
+    rememberSoldIds(ids);
+    persistSoldIds();
+    const filters = [
+        'id=in.(' + ids.join(',') + ')',
+        'id=in.(' + ids.map(id => '"' + id.replace(/"/g, '') + '"').join(',') + ')'
+    ];
+    ids.forEach(id => filters.push('id=eq.' + encodeURIComponent(id)));
+    const headers = {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
+    };
+    for (const filter of filters) {
+        try {
+            const res = await fetch(SUPABASE_URL + '/rest/v1/cards?' + filter, {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify({ is_sold: true })
+            });
+            const body = await res.text();
+            if (!res.ok) {
+                console.error('Marcatura venduto fallita:', filter, res.status, body.slice(0, 280));
+                continue;
+            }
+            let rows = [];
+            try { rows = JSON.parse(body); } catch (e) { rows = []; }
+            if (Array.isArray(rows) && rows.length) return;
+        } catch (err) {
+            console.error('Marcatura venduto fallita:', err.message);
         }
+    }
+}
+
+function cardIdsFromStripeMeta(meta) {
+    const row = meta || {};
+    if (row.type === 'shop_saas' || row.tournamentId) return [];
+    return normalizeCardIds(row.cardIds || row.cardId);
+}
+
+function ensureOrderFromPaymentIntent(pi) {
+    if (!pi || !pi.id) return null;
+    let order = ordersDB.find(o => o.paymentIntentId === pi.id);
+    if (order) return order;
+    const ids = cardIdsFromStripeMeta(pi.metadata);
+    if (!ids.length) return null;
+    const meta = pi.metadata || {};
+    order = {
+        id: 'order-stripe-' + pi.id,
+        paymentIntentId: pi.id,
+        buyerId: String(meta.buyerId || ''),
+        sellerId: String(meta.sellerId || ''),
+        cardId: ids[0],
+        cardIds: ids,
+        cardTitle: String(meta.cardTitle || ids.join(', ')),
+        amount: Number(meta.listedAmount || 0) || Number(((pi.amount || 0) / 100).toFixed(2)),
+        status: 'pending_payment',
+        escrowNotified: false,
+        deliveryMethod: String(meta.deliveryMethod || 'shipping').toLowerCase() === 'meetup' ? 'meetup' : 'shipping',
+        createdAt: pi.created ? new Date(pi.created * 1000).toISOString() : new Date().toISOString()
+    };
+    ordersDB.push(order);
+    return order;
+}
+
+let stripeSoldSyncAt = 0;
+let stripeSoldSyncing = false;
+async function recoverSoldFromStripe() {
+    if (!stripe || stripeSoldSyncing) return;
+    if (Date.now() - stripeSoldSyncAt < 30000) return;
+    stripeSoldSyncing = true;
+    stripeSoldSyncAt = Date.now();
+    const found = [];
+    try {
+        let startingAfter;
+        for (let page = 0; page < 4; page++) {
+            const list = await stripe.paymentIntents.list(startingAfter ? { limit: 100, starting_after: startingAfter } : { limit: 100 });
+            for (const pi of list.data || []) {
+                if (pi.status !== 'succeeded') continue;
+                const ids = cardIdsFromStripeMeta(pi.metadata);
+                if (!ids.length) continue;
+                found.push(...ids);
+                const existing = ordersDB.find(o => o.paymentIntentId === pi.id);
+                const order = ensureOrderFromPaymentIntent(pi);
+                if (order && !order.escrowNotified) {
+                    if (existing) await fulfillPaidOrder(order);
+                    else {
+                        order.status = 'paid';
+                        order.paidAt = order.createdAt;
+                        order.escrowNotified = true;
+                    }
+                }
+            }
+            if (!list.has_more || !(list.data && list.data.length)) break;
+            startingAfter = list.data[list.data.length - 1].id;
+        }
+        if (found.length) {
+            rememberSoldIds(found);
+            persistSoldIds();
+            await markCardsSold(found);
+        }
+        persistOrdersToDisk();
+        console.log('Venduti recuperati da Stripe:', [...new Set(found)].length);
     } catch (err) {
-        console.error('Marcatura venduto fallita:', err.message);
+        console.error('Recupero venduti da Stripe:', err.message);
+        stripeSoldSyncAt = 0;
+    } finally {
+        stripeSoldSyncing = false;
     }
 }
 
@@ -201,8 +311,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     }
     if (event.type === 'payment_intent.succeeded') {
         const pi = event.data.object;
-        const order = ordersDB.find(o => o.paymentIntentId === pi.id);
+        const order = ensureOrderFromPaymentIntent(pi) || ordersDB.find(o => o.paymentIntentId === pi.id);
         if (order) await fulfillPaidOrder(order);
+        else await markCardsSold(cardIdsFromStripeMeta(pi.metadata));
     }
     res.json({ received: true });
 });
@@ -689,6 +800,8 @@ function publicTournament(t) {
 
 loadMessagesFromDisk();
 loadOrdersFromDisk();
+soldIdSet = new Set((loadJsonArray('sold-ids.json') || []).map(String));
+soldIdsFromOrders();
 shopSubsDB = loadJsonArray('shops.json');
 tournamentsDB = loadJsonArray('tournaments.json');
 promoCodesDB = loadJsonArray('promo-codes.json');
@@ -851,6 +964,7 @@ async function loadOrdersFromSupabase() {
                 fs.writeFileSync(file, JSON.stringify(ordersDB, null, 2));
             } catch (err) {}
             console.log('Ordini caricati da Supabase:', ordersDB.length);
+            soldIdsFromOrders();
             return;
         }
         if (ordersDB.length) {
@@ -2362,7 +2476,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
         if (String(sellerId) === auth.id) {
             return res.status(400).json({ error: { message: 'Non puoi acquistare i tuoi annunci.' } });
         }
-        if (cards.some(c => c.is_sold === true || c.is_sold === 'true')) {
+        if (cards.some(c => c.is_sold === true || c.is_sold === 'true' || soldIdSet.has(String(c.id)))) {
             return res.status(400).json({ error: { message: 'Uno o più articoli non sono più disponibili.' } });
         }
         const amount = cards.reduce((sum, c) => sum + Number(c.price || 0), 0);
@@ -2380,7 +2494,13 @@ app.post('/api/create-payment-intent', async (req, res) => {
             amount: totalChargedToBuyer,
             currency: 'eur',
             automatic_payment_methods: { enabled: true },
-            metadata: { buyerId: auth.id, sellerId, cardIds: cards.map(c => c.id).join(','), deliveryMethod }
+            metadata: {
+                buyerId: auth.id,
+                sellerId,
+                cardIds: cards.map(c => c.id).join(','),
+                deliveryMethod,
+                listedAmount: String(amount)
+            }
         });
 
         const newOrder = {
@@ -3510,6 +3630,13 @@ app.post('/api/tournaments/:id/match', async (req, res) => {
     res.json({ success: true, tournament });
 });
 
+app.get('/api/sold-card-ids', (req, res) => {
+    soldIdsFromOrders();
+    recoverSoldFromStripe().catch(err => console.error('Recupero venduti da Stripe:', err.message));
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, ids: [...soldIdSet] });
+});
+
 app.post('/api/vaultbot', (req, res) => {
     if (!rateLimit('bot:' + clientIp(req), 30, 60000)) {
         return res.status(429).json({ success: false, error: 'Troppe richieste a VaultBot.' });
@@ -3526,12 +3653,22 @@ Promise.all([
     loadTournamentsFromSupabase(),
     loadPromoCodesFromSupabase(),
     loadWalletsFromSupabase()
-]).finally(() => {
+]).finally(async () => {
     releaseMatureHolds();
+    soldIdsFromOrders();
+    await recoverSoldFromStripe();
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
         console.log('Ambiente:', IS_SANDBOX ? 'SANDBOX' : 'produzione');
         console.log('Dati locali:', DATA_DIR);
+        try {
+            const role = JSON.parse(Buffer.from(String(SUPABASE_KEY).split('.')[1], 'base64url').toString()).role;
+            if (role === 'anon') {
+                console.log('CRITICO: manca SUPABASE_SERVICE_ROLE_KEY su Render. Ordini, wallet e is_sold NON si salvano su Supabase.');
+            } else {
+                console.log('Supabase server key:', role);
+            }
+        } catch (e) {}
         if (IS_SANDBOX && !fs.existsSync(path.join(__dirname, '.env.sandbox'))) {
             console.log('Attenzione: manca .env.sandbox — Supabase/Stripe sono quelli del live. Copia .env.sandbox.example in .env.sandbox con un progetto di test.');
         }
