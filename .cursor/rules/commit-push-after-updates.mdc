@@ -1,0 +1,14 @@
+---
+description: After every completed code change, commit and push without waiting to be asked.
+alwaysApply: true
+---
+
+# Commit e push dopo ogni aggiornamento
+
+Francesco ha chiesto di fare **commit + push su `origin` dopo ogni modifica completata**, senza aspettare un messaggio a parte.
+
+- Committa e fai push al termine di ogni intervento sul codice (bugfix, feature, UI).
+- Messaggi in inglese, 1-2 frasi sul perché, come lo storico del repo.
+- Non committare segreti, `.env`, o `data/*.json`.
+- Non usare force-push, `--no-verify`, né amend se il commit è già su remote.
+- Se non c’è nulla da committare, non creare commit vuoti.

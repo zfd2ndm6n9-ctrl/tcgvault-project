@@ -235,6 +235,7 @@ function mapsEmbedUrl(query) {
 
 const geoCache = Object.create(null);
 let geoChain = Promise.resolve();
+let lastGeoAt = 0;
 
 function haversineKm(aLat, aLng, bLat, bLng) {
     const toRad = d => d * Math.PI / 180;
@@ -248,21 +249,25 @@ function geocodePlace(query) {
     const q = String(query || '').trim();
     if (q.length < 2) return Promise.resolve(null);
     const key = q.toLowerCase();
-    if (geoCache[key] !== undefined) return Promise.resolve(geoCache[key]);
+    if (geoCache[key]) return Promise.resolve(geoCache[key]);
     geoChain = geoChain.then(async () => {
-        if (geoCache[key] !== undefined) return geoCache[key];
-        await new Promise(r => setTimeout(r, 1100));
+        if (geoCache[key]) return geoCache[key];
+        const wait = 1100 - (Date.now() - lastGeoAt);
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
+        lastGeoAt = Date.now();
         try {
             const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q=' + encodeURIComponent(q);
             const res = await fetch(url, { headers: { 'User-Agent': 'TCGVault/1.0 (https://tcg-vault.it)' } });
             const data = await res.json().catch(() => []);
             const hit = Array.isArray(data) && data[0];
-            geoCache[key] = hit ? { lat: Number(hit.lat), lng: Number(hit.lon), label: hit.display_name || q } : null;
+            if (hit) {
+                geoCache[key] = { lat: Number(hit.lat), lng: Number(hit.lon), label: hit.display_name || q };
+            }
+            return geoCache[key] || null;
         } catch (err) {
             console.error('Geocode:', err.message);
-            geoCache[key] = null;
+            return null;
         }
-        return geoCache[key];
     });
     return geoChain;
 }
@@ -2085,7 +2090,7 @@ app.get('/api/profiles/:userId', async (req, res) => {
 });
 
 app.get('/api/geo/lookup', async (req, res) => {
-    if (!rateLimit('geo:' + (req.ip || 'x'), 30, 60000)) {
+    if (!rateLimit('geo:' + (req.ip || 'x'), 60, 60000)) {
         return res.status(429).json({ success: false, error: 'Troppe ricerche mappa.' });
     }
     const geo = await geocodePlace(req.query.q);

@@ -981,11 +981,11 @@
                     </div>
                     <div class="form-group">
                         <label>Via e civico</label>
-                        <input type="text" id="profile-address" placeholder="Es. Via Roma 10" autocomplete="street-address" oninput="geocodeFieldsToMap('profile')">
+                        <input type="text" id="profile-address" placeholder="Es. Via Roma 10" autocomplete="street-address" oninput="geocodeFieldsToMap('profile')" onchange="geocodeFieldsToMapNow('profile')" onblur="geocodeFieldsToMapNow('profile')">
                     </div>
                     <div class="form-group">
                         <label>Città *</label>
-                        <input type="text" id="profile-city" placeholder="Es. Milano" autocomplete="address-level2" oninput="geocodeFieldsToMap('profile')">
+                        <input type="text" id="profile-city" placeholder="Es. Milano" autocomplete="address-level2" oninput="geocodeFieldsToMap('profile')" onchange="geocodeFieldsToMapNow('profile')" onblur="geocodeFieldsToMapNow('profile')">
                     </div>
                     <p id="profile-place-summary" style="font-size:0.9rem;color:var(--text-muted);margin:0 0 10px;"></p>
                     <div class="form-group">
@@ -1745,12 +1745,14 @@
                 });
             }
             if (radiusKm) slot.radiusKm = clampRadiusKm(radiusKm);
-            slot.marker.setLatLng([lat, lng]);
-            slot.circle.setLatLng([lat, lng]);
+            const next = [Number(lat), Number(lng)];
+            slot.marker.setLatLng(next);
+            slot.circle.setLatLng(next);
             slot.circle.setRadius(slot.radiusKm * 1000);
-            slot.map.setView([lat, lng], 13);
-            try { slot.map.fitBounds(slot.circle.getBounds(), { padding: [18, 18], maxZoom: 14 }); } catch (e) {}
-            setTimeout(() => { try { slot.map.invalidateSize(); } catch (e) {} }, 150);
+            try { slot.map.invalidateSize(); } catch (e) {}
+            try { slot.map.flyTo(next, 13, { duration: 0.55 }); } catch (e) {
+                slot.map.setView(next, 13);
+            }
             return slot;
         }
 
@@ -1929,17 +1931,34 @@
         }
 
         const geocodeFieldTimers = {};
+        const geocodeFieldSeq = {};
         function geocodeFieldsToMap(kind) {
             clearTimeout(geocodeFieldTimers[kind]);
-            geocodeFieldTimers[kind] = setTimeout(() => geocodeFieldsToMapNow(kind), 400);
+            geocodeFieldTimers[kind] = setTimeout(() => geocodeFieldsToMapNow(kind), 550);
+        }
+
+        async function resolvePlace(city, address) {
+            let geo = null;
+            if (city.length >= 2) {
+                geo = await lookupGeo(city + ', Italia');
+                if (address.length >= 3) {
+                    const street = await lookupGeo(address + ', ' + city + ', Italia');
+                    if (street) geo = street;
+                }
+            } else if (address.length >= 5) {
+                geo = await lookupGeo(address + ', Italia');
+            }
+            return geo;
         }
 
         async function geocodeFieldsToMapNow(kind) {
             const address = String((document.getElementById(kind + '-address') || {}).value || '').trim();
             const city = String((document.getElementById(kind + '-city') || {}).value || '').trim();
             if (city.length < 2 && address.length < 5) return;
-            const geo = await lookupGeo([address, city, 'Italia'].filter(Boolean).join(', '));
-            if (!geo) return;
+            const seq = (geocodeFieldSeq[kind] = (geocodeFieldSeq[kind] || 0) + 1);
+            const geo = await resolvePlace(city, address);
+            if (seq !== geocodeFieldSeq[kind]) return;
+            if (!geo || !Number(geo.lat) || !Number(geo.lng)) return;
             const km = clampRadiusKm((document.getElementById(kind + '-radius') || {}).value);
             moveAreaMap(kind + '-area-map', geo.lat, geo.lng, km, {
                 editable: true,
@@ -1976,15 +1995,22 @@
             const q = String(query || '').trim();
             if (q.length < 2) return null;
             const key = q.toLowerCase();
-            if (geoLookupCache[key] !== undefined) return geoLookupCache[key];
+            if (geoLookupCache[key]) return geoLookupCache[key];
             try {
                 const res = await fetch('/api/geo/lookup?q=' + encodeURIComponent(q));
+                if (res.status === 429) {
+                    await new Promise(r => setTimeout(r, 1200));
+                    const retry = await fetch('/api/geo/lookup?q=' + encodeURIComponent(q));
+                    const again = await retry.json().catch(() => null);
+                    if (again && again.found) geoLookupCache[key] = again;
+                    return geoLookupCache[key] || null;
+                }
                 const data = await res.json();
-                geoLookupCache[key] = data && data.found ? data : null;
+                if (data && data.found) geoLookupCache[key] = data;
+                return geoLookupCache[key] || null;
             } catch (e) {
-                geoLookupCache[key] = null;
+                return null;
             }
-            return geoLookupCache[key];
         }
 
         async function ensureSellerGeo(ids) {
