@@ -5,6 +5,12 @@ const path = require('path');
 const crypto = require('crypto');
 const app = express();
 
+const IS_SANDBOX = String(process.env.APP_ENV || '').toLowerCase() === 'sandbox';
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, IS_SANDBOX ? 'data-sandbox' : 'data');
+function dataFile(name) {
+    return path.join(DATA_DIR, name);
+}
+
 const stripe = process.env.STRIPE_SECRET_KEY
     ? require('stripe')(process.env.STRIPE_SECRET_KEY)
     : null;
@@ -20,7 +26,7 @@ app.use((req, res, next) => {
 
 function persistOrdersToDisk() {
     try {
-        const file = path.join(__dirname, 'data', 'orders.json');
+        const file = dataFile('orders.json');
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, JSON.stringify(ordersDB, null, 2));
     } catch (err) {
@@ -31,7 +37,7 @@ function persistOrdersToDisk() {
 
 function loadOrdersFromDisk() {
     try {
-        const file = path.join(__dirname, 'data', 'orders.json');
+        const file = dataFile('orders.json');
         if (!fs.existsSync(file)) return;
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
         if (Array.isArray(parsed)) ordersDB = parsed;
@@ -159,6 +165,22 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 
 app.use(express.json({ limit: '256kb' }));
 
+const SANDBOX_BANNER = '<div id="tcg-sandbox-banner" style="position:sticky;top:0;z-index:99999;background:#f5c518;color:#111;text-align:center;font:600 13px/1.45 system-ui,sans-serif;padding:8px 12px">SANDBOX — ambiente di prova, non il sito live</div>';
+
+app.use((req, res, next) => {
+    if (!IS_SANDBOX || req.method !== 'GET') return next();
+    const rel = req.path === '/' ? 'index.html' : req.path.replace(/^\/+/, '');
+    if (!rel.endsWith('.html')) return next();
+    const publicRoot = path.resolve(path.join(__dirname, 'public'));
+    const file = path.resolve(path.join(publicRoot, rel));
+    if (!file.startsWith(publicRoot + path.sep) && file !== publicRoot) return next();
+    if (!fs.existsSync(file)) return next();
+    let html = fs.readFileSync(file, 'utf8');
+    if (/<body[\s>]/i.test(html)) html = html.replace(/<body([^>]*)>/i, '<body$1>' + SANDBOX_BANNER);
+    else html = SANDBOX_BANNER + html;
+    res.type('html').send(html);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 let messagesDB = [];
@@ -176,7 +198,7 @@ const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || 'francesco_delduca@iclou
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
 
-const MESSAGES_FILE = path.join(__dirname, 'data', 'messages.json');
+const MESSAGES_FILE = dataFile('messages.json');
 
 function loadMessagesFromDisk() {
     try {
@@ -348,7 +370,7 @@ function geocodePlace(query, street, city) {
 
 function loadJsonObject(fileName) {
     try {
-        const file = path.join(__dirname, 'data', fileName);
+        const file = dataFile(fileName);
         if (!fs.existsSync(file)) return {};
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
         return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
@@ -429,7 +451,7 @@ function persistJsonFile(fileName, data, immediate) {
     const flush = () => {
         slot.timer = null;
         try {
-            const file = path.join(__dirname, 'data', fileName);
+            const file = dataFile(fileName);
             fs.mkdirSync(path.dirname(file), { recursive: true });
             fs.writeFileSync(file, JSON.stringify(slot.data, null, 2));
         } catch (err) {
@@ -447,7 +469,7 @@ function persistJsonFile(fileName, data, immediate) {
 
 function loadJsonArray(fileName) {
     try {
-        const file = path.join(__dirname, 'data', fileName);
+        const file = dataFile(fileName);
         if (!fs.existsSync(file)) return [];
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
         return Array.isArray(parsed) ? parsed : [];
@@ -780,7 +802,7 @@ async function loadOrdersFromSupabase() {
         if (Array.isArray(rows) && rows.length) {
             ordersDB = rows.map(rowToOrder);
             try {
-                const file = path.join(__dirname, 'data', 'orders.json');
+                const file = dataFile('orders.json');
                 fs.mkdirSync(path.dirname(file), { recursive: true });
                 fs.writeFileSync(file, JSON.stringify(ordersDB, null, 2));
             } catch (err) {}
@@ -3358,6 +3380,11 @@ Promise.all([
     releaseMatureHolds();
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
+        console.log('Ambiente:', IS_SANDBOX ? 'SANDBOX' : 'produzione');
+        console.log('Dati locali:', DATA_DIR);
+        if (IS_SANDBOX && !fs.existsSync(path.join(__dirname, '.env.sandbox'))) {
+            console.log('Attenzione: manca .env.sandbox — Supabase/Stripe sono quelli del live. Copia .env.sandbox.example in .env.sandbox con un progetto di test.');
+        }
         console.log('Stripe:', stripe ? 'configurato' : 'manca STRIPE_SECRET_KEY');
         console.log('Webhook:', process.env.STRIPE_WEBHOOK_SECRET ? 'configurato' : 'manca STRIPE_WEBHOOK_SECRET');
     });

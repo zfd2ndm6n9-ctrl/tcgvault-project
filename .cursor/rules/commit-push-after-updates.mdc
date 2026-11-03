@@ -8,7 +8,8 @@ alwaysApply: true
 Francesco ha chiesto di fare **commit + push su `origin` dopo ogni modifica completata**, senza aspettare un messaggio a parte.
 
 - Committa e fai push al termine di ogni intervento sul codice (bugfix, feature, UI).
+- Su branch `sandbox` fai push di `sandbox`; su `main` fai push di `main`. Prove e feedback restano su `sandbox` finché Francesco non chiede la promozione.
 - Messaggi in inglese, 1-2 frasi sul perché, come lo storico del repo.
-- Non committare segreti, `.env`, o `data/*.json`.
+- Non committare segreti, `.env`, `.env.sandbox`, o `data/*.json` / `data-sandbox/`.
 - Non usare force-push, `--no-verify`, né amend se il commit è già su remote.
 - Se non c’è nulla da committare, non creare commit vuoti.

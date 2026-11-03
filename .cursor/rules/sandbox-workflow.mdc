@@ -1,0 +1,23 @@
+---
+description: Experimental work stays on the sandbox branch until Francesco promotes it to production.
+alwaysApply: true
+---
+
+# Sandbox vs produzione
+
+TCG Vault ha due linee:
+
+- **`main`**: file originali / sito live. Non sperimentare qui.
+- **`sandbox`**: prove, feedback, bugfix da backtestare. Cartella locale `C:\Users\calog\Downloads\tcgvault-sandbox` (git worktree).
+
+## Come lavorare
+
+- Feature nuove, tentativi, test da feedback: commit e push su **`sandbox`**.
+- Avvio locale di prova: `npm run sandbox` (porta **4243**, fascia gialla SANDBOX, dati in `data-sandbox/`).
+- Produzione locale: `npm start` (porta **4242**).
+- Quando Francesco dice che è backtestato / di lanciarlo: `npm run promote-sandbox` (merge `sandbox` → `main` + push). Non copiare i file a mano.
+
+## Dati
+
+- Senza `.env.sandbox` i test usano lo stesso Supabase/Stripe del live. Per non toccare i dati veri, copia `.env.sandbox.example` in `.env.sandbox` con un progetto di test e chiavi `sk_test_`.
+- Non committare `.env`, `.env.sandbox`, `data/`, `data-sandbox/`.

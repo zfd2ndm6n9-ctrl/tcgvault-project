@@ -4,7 +4,9 @@
   "description": "TCG Vault App",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "sandbox": "node sandbox.js",
+    "promote-sandbox": "node scripts/promote-sandbox.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
