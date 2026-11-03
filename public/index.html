@@ -396,11 +396,24 @@
             width: 100%; height: 230px; border-radius: 12px; margin-top: 8px;
             border: 1px solid var(--border-color); z-index: 1; background: #1a2336;
         }
-        .zone-chip {
+        .zone-bar {
             display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-            margin: 0 0 16px; font-size: 0.88rem; color: var(--text-muted);
+            margin: 0 0 14px;
         }
-        .zone-chip button { font-size: 0.82rem; padding: 6px 10px; width: auto; }
+        .zone-pill {
+            border: 1px solid var(--border-color); background: var(--panel-solid);
+            color: var(--text-main); border-radius: 999px; padding: 7px 12px;
+            cursor: pointer; font-size: 0.82rem; font-weight: 650; width: auto;
+        }
+        .zone-pill.active {
+            border-color: var(--accent-neon); color: var(--accent-neon);
+            background: rgba(0, 255, 136, 0.1);
+        }
+        .zone-bar input {
+            flex: 1; min-width: 160px; background: var(--panel-solid);
+            border: 1px solid var(--border-color); border-radius: 10px;
+            padding: 8px 12px; color: var(--text-main); font-size: 15px; outline: none;
+        }
         .account-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 8px; }
         .badge-type {
             font-size: 0.66rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
@@ -625,14 +638,14 @@
             </div>
 
             <div id="wizard-step-3" class="wizard-step" style="display: none;">
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Inserisci via e città, poi tocca la mappa per piantare il segnalino della tua zona. Il raggio filtra il catalogo al posto dei vecchi filtri località.</p>
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Scrivi via e città: la mappa si sposta lì. Poi conferma o sposta il segnalino. In catalogo si parte da Tutta Italia; questa zona è quella che gli altri vedono sui tuoi annunci.</p>
                 <div class="form-group">
                     <label>Via e civico *</label>
-                    <input type="text" id="wizard-address" placeholder="Es. Via Dante 15" autocomplete="street-address" onblur="geocodeWizardToMap()">
+                    <input type="text" id="wizard-address" placeholder="Es. Via Dante 15" autocomplete="street-address" oninput="geocodeFieldsToMap('wizard')" onblur="geocodeFieldsToMapNow('wizard')">
                 </div>
                 <div class="form-group">
                     <label>Città *</label>
-                    <input type="text" id="wizard-city" placeholder="Es. Milano" autocomplete="address-level2" onblur="geocodeWizardToMap()">
+                    <input type="text" id="wizard-city" placeholder="Es. Milano" autocomplete="address-level2" oninput="geocodeFieldsToMap('wizard')" onblur="geocodeFieldsToMapNow('wizard')">
                 </div>
                 <div class="form-group">
                     <label>Raggio della tua zona: <span id="wizard-radius-label">20</span> km</label>
@@ -750,9 +763,13 @@
             <input type="text" id="search-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFiltersDebounced()" aria-label="Cerca prodotto">
             <button type="button" class="btn-filters" onclick="openFiltersPanel()">Filtri</button>
         </div>
-        <div class="zone-chip" id="zone-chip">
-            <span id="zone-chip-text">Zona: imposta il segnalino nel profilo per filtrare gli annunci vicini.</span>
-            <button type="button" class="btn-outline" onclick="openZoneEditor()">Modifica zona</button>
+        <div class="zone-bar" id="zone-bar">
+            <button type="button" class="zone-pill active" data-km="all" onclick="setBrowseRadius('all')">Tutta Italia</button>
+            <button type="button" class="zone-pill" data-km="10" onclick="setBrowseRadius(10)">10 km</button>
+            <button type="button" class="zone-pill" data-km="20" onclick="setBrowseRadius(20)">20 km</button>
+            <button type="button" class="zone-pill" data-km="40" onclick="setBrowseRadius(40)">40 km</button>
+            <button type="button" class="zone-pill" data-km="80" onclick="setBrowseRadius(80)">80 km</button>
+            <input type="text" id="browse-city" placeholder="Scrivi città o via per restringere..." oninput="onBrowsePlaceInput()">
         </div>
 
         <div class="rules-banner">
@@ -826,7 +843,18 @@
                 <h2>Filtri</h2>
                 <button class="close-btn" onclick="closeFiltersPanel()">&times;</button>
             </div>
-            <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 14px;">La zona e il raggio si impostano sulla mappa del profilo (segnalino). Qui restano tipo, prezzo e stato.</p>
+            <div class="filter-group" style="margin-bottom:12px;">
+                <label>Zona (posizione profilo venditore)</label>
+                <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;text-transform:none;letter-spacing:0;font-weight:500;">Partenza: tutta Italia. Restringi il cerchio o scrivi una città: gli annunci usano il pin del venditore.</p>
+                <div class="zone-bar" style="margin:0 0 8px;">
+                    <button type="button" class="zone-pill active" data-km="all" onclick="setBrowseRadius('all')">Tutta Italia</button>
+                    <button type="button" class="zone-pill" data-km="10" onclick="setBrowseRadius(10)">10 km</button>
+                    <button type="button" class="zone-pill" data-km="20" onclick="setBrowseRadius(20)">20 km</button>
+                    <button type="button" class="zone-pill" data-km="40" onclick="setBrowseRadius(40)">40 km</button>
+                    <button type="button" class="zone-pill" data-km="80" onclick="setBrowseRadius(80)">80 km</button>
+                </div>
+                <div id="browse-area-map" class="area-map" style="display:none;height:190px;"></div>
+            </div>
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>Tipo Articolo</label>
                 <select id="type-filter" class="filter-select" onchange="applyFilters()">
@@ -953,18 +981,18 @@
                     </div>
                     <div class="form-group">
                         <label>Via e civico</label>
-                        <input type="text" id="profile-address" placeholder="Es. Via Roma 10" autocomplete="street-address">
+                        <input type="text" id="profile-address" placeholder="Es. Via Roma 10" autocomplete="street-address" oninput="geocodeFieldsToMap('profile')">
                     </div>
                     <div class="form-group">
                         <label>Città *</label>
-                        <input type="text" id="profile-city" placeholder="Es. Milano" autocomplete="address-level2">
+                        <input type="text" id="profile-city" placeholder="Es. Milano" autocomplete="address-level2" oninput="geocodeFieldsToMap('profile')">
                     </div>
                     <p id="profile-place-summary" style="font-size:0.9rem;color:var(--text-muted);margin:0 0 10px;"></p>
                     <div class="form-group">
                         <label>Raggio zona: <span id="profile-radius-label">20</span> km</label>
                         <input type="range" id="profile-radius" min="5" max="80" step="5" value="20" oninput="onAreaRadiusInput('profile')">
                     </div>
-                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Tocca la mappa per piantare il segnalino. Si salva da solo su Supabase e filtra il catalogo.</p>
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Scrivi via e città: la mappa ci va da sola. Puoi ancora spostare il segnalino.</p>
                     <div id="profile-area-map" class="area-map"></div>
                     <div class="form-group">
                         <label>Numero di Cellulare (Facoltativo)</label>
@@ -1707,6 +1735,25 @@
             try { slot.map.fitBounds(slot.circle.getBounds(), { padding: [18, 18], maxZoom: 13 }); } catch (e) {}
         }
 
+        function moveAreaMap(containerId, lat, lng, radiusKm, opts) {
+            const slot = areaMaps[containerId];
+            if (!slot) {
+                return mountAreaMap(containerId, {
+                    lat, lng, radiusKm: radiusKm || 20,
+                    editable: !!(opts && opts.editable),
+                    onChange: opts && opts.onChange
+                });
+            }
+            if (radiusKm) slot.radiusKm = clampRadiusKm(radiusKm);
+            slot.marker.setLatLng([lat, lng]);
+            slot.circle.setLatLng([lat, lng]);
+            slot.circle.setRadius(slot.radiusKm * 1000);
+            slot.map.setView([lat, lng], 13);
+            try { slot.map.fitBounds(slot.circle.getBounds(), { padding: [18, 18], maxZoom: 14 }); } catch (e) {}
+            setTimeout(() => { try { slot.map.invalidateSize(); } catch (e) {} }, 150);
+            return slot;
+        }
+
         function onAreaRadiusInput(kind) {
             const slider = document.getElementById(kind + '-radius');
             const label = document.getElementById(kind + '-radius-label');
@@ -1716,13 +1763,15 @@
             if (kind === 'profile' && currentUser) {
                 currentUser.radius_km = km;
                 persistAreaToServer();
-                updateZoneChip();
-                applyFilters();
             }
             if (kind === 'wizard' && currentUser) {
                 currentUser.radius_km = km;
                 const pin = readAreaMap('wizard-area-map');
                 if (pin) { currentUser.lat = pin.lat; currentUser.lng = pin.lng; persistAreaToServer(); }
+            }
+            if (kind === 'browse') {
+                browseZone.radiusKm = km;
+                applyFilters();
             }
         }
 
@@ -1777,55 +1826,130 @@
                     lng: currentUser.lng,
                     radius_km: payload.radius_km
                 }));
-                updateZoneChip();
             }, 500);
         }
 
-        function updateZoneChip() {
-            const text = document.getElementById('zone-chip-text');
-            if (!text) return;
-            if (currentUser && Number(currentUser.lat) && Number(currentUser.lng)) {
-                const km = clampRadiusKm(currentUser.radius_km);
-                const city = currentUser.city || 'zona impostata';
-                text.textContent = 'Zona: ' + city + ' · raggio ' + km + ' km (dal segnalino del profilo)';
-            } else if (currentUser) {
-                text.textContent = 'Segna la tua zona sulla mappa del profilo: da lì si filtrano gli annunci.';
-            } else {
-                text.textContent = 'Accedi e segna la zona nel wizard: il catalogo si allinea al tuo raggio.';
-            }
+        let browseZone = { mode: 'all', lat: null, lng: null, radiusKm: 20, query: '' };
+
+        function syncBrowsePills() {
+            const km = browseZone.mode === 'all' ? 'all' : String(browseZone.radiusKm);
+            document.querySelectorAll('.zone-pill').forEach(el => {
+                el.classList.toggle('active', el.getAttribute('data-km') === km);
+            });
         }
 
-        function openZoneEditor() {
-            if (!currentUser) { openAuthModal(); return; }
-            if (!currentUser.lat) {
-                showOverlay('onboarding-wizard-modal');
-                nextWizardStep(3);
+        function pinOnChangeFor(kind) {
+            return pin => {
+                if (!currentUser) return;
+                currentUser.lat = pin.lat;
+                currentUser.lng = pin.lng;
+                currentUser.radius_km = pin.radiusKm;
+                persistAreaToServer();
+            };
+        }
+
+        async function setBrowseRadius(km) {
+            if (km === 'all') {
+                browseZone.mode = 'all';
+                const mapEl = document.getElementById('browse-area-map');
+                if (mapEl) mapEl.style.display = 'none';
+                syncBrowsePills();
+                applyFilters();
                 return;
             }
-            openProfileModal();
+            browseZone.mode = 'radius';
+            browseZone.radiusKm = Number(km);
+            const ok = await ensureBrowseCenter();
+            if (!ok) {
+                browseZone.mode = 'all';
+                syncBrowsePills();
+                return;
+            }
+            syncBrowsePills();
+            refreshBrowseMap();
+            applyFilters();
         }
 
-        async function geocodeWizardToMap() {
-            const address = (document.getElementById('wizard-address') || {}).value || '';
-            const city = (document.getElementById('wizard-city') || {}).value || '';
-            const q = [address, city, 'Italia'].filter(Boolean).join(', ');
-            if (q.length < 3) return;
-            const geo = await lookupGeo(q);
-            if (!geo) return;
-            const km = clampRadiusKm((document.getElementById('wizard-radius') || {}).value);
-            mountAreaMap('wizard-area-map', {
-                lat: geo.lat, lng: geo.lng, radiusKm: km, editable: true,
-                onChange: pin => {
-                    if (!currentUser) return;
-                    currentUser.lat = pin.lat;
-                    currentUser.lng = pin.lng;
-                    currentUser.radius_km = pin.radiusKm;
-                    persistAreaToServer();
+        async function ensureBrowseCenter() {
+            if (Number(browseZone.lat) && Number(browseZone.lng)) return true;
+            const typed = String((document.getElementById('browse-city') || {}).value || '').trim();
+            if (typed.length >= 2) {
+                const geo = await lookupGeo(typed + ', Italia');
+                if (geo) {
+                    browseZone.lat = geo.lat;
+                    browseZone.lng = geo.lng;
+                    browseZone.query = typed;
+                    return true;
                 }
+            }
+            if (currentUser && Number(currentUser.lat) && Number(currentUser.lng)) {
+                browseZone.lat = currentUser.lat;
+                browseZone.lng = currentUser.lng;
+                const inp = document.getElementById('browse-city');
+                if (inp && !inp.value && currentUser.city) inp.value = currentUser.city;
+                return true;
+            }
+            showNotification('Scrivi una città (o via) per restringere il cerchio.', 'error');
+            return false;
+        }
+
+        function refreshBrowseMap() {
+            const mapEl = document.getElementById('browse-area-map');
+            if (!mapEl || browseZone.mode === 'all' || !browseZone.lat) return;
+            mapEl.style.display = 'block';
+            moveAreaMap('browse-area-map', browseZone.lat, browseZone.lng, browseZone.radiusKm, {
+                editable: true,
+                onChange: pin => {
+                    browseZone.lat = pin.lat;
+                    browseZone.lng = pin.lng;
+                    browseZone.radiusKm = pin.radiusKm;
+                    applyFilters();
+                }
+            });
+        }
+
+        let browsePlaceTimer = null;
+        function onBrowsePlaceInput() {
+            clearTimeout(browsePlaceTimer);
+            browsePlaceTimer = setTimeout(geocodeBrowsePlace, 400);
+        }
+
+        async function geocodeBrowsePlace() {
+            const typed = String((document.getElementById('browse-city') || {}).value || '').trim();
+            browseZone.query = typed;
+            if (typed.length < 2) return;
+            const geo = await lookupGeo(typed + ', Italia');
+            if (!geo) return;
+            browseZone.lat = geo.lat;
+            browseZone.lng = geo.lng;
+            if (browseZone.mode === 'all') browseZone.mode = 'radius';
+            syncBrowsePills();
+            refreshBrowseMap();
+            applyFilters();
+        }
+
+        const geocodeFieldTimers = {};
+        function geocodeFieldsToMap(kind) {
+            clearTimeout(geocodeFieldTimers[kind]);
+            geocodeFieldTimers[kind] = setTimeout(() => geocodeFieldsToMapNow(kind), 400);
+        }
+
+        async function geocodeFieldsToMapNow(kind) {
+            const address = String((document.getElementById(kind + '-address') || {}).value || '').trim();
+            const city = String((document.getElementById(kind + '-city') || {}).value || '').trim();
+            if (city.length < 2 && address.length < 5) return;
+            const geo = await lookupGeo([address, city, 'Italia'].filter(Boolean).join(', '));
+            if (!geo) return;
+            const km = clampRadiusKm((document.getElementById(kind + '-radius') || {}).value);
+            moveAreaMap(kind + '-area-map', geo.lat, geo.lng, km, {
+                editable: true,
+                onChange: pinOnChangeFor(kind)
             });
             if (currentUser) {
                 currentUser.lat = geo.lat;
                 currentUser.lng = geo.lng;
+                if (address) currentUser.address = address;
+                if (city) currentUser.city = city;
                 currentUser.radius_km = km;
                 persistAreaToServer();
             }
@@ -2057,8 +2181,6 @@
                     if (saved.lng) currentUser.lng = Number(saved.lng);
                     if (saved.radius_km) currentUser.radius_km = clampRadiusKm(saved.radius_km);
                 }
-                updateZoneChip();
-
                 if (accountReady() && (!currentUser.name || !currentUser.address || !currentUser.city || !currentUser.lat)) {
                     showOverlay('onboarding-wizard-modal');
                 } else {
@@ -2066,7 +2188,6 @@
                 }
             } else {
                 currentUser = null;
-                updateZoneChip();
                 hideOverlay('onboarding-wizard-modal');
             }
             updateHeaderUI();
@@ -2112,7 +2233,7 @@
                             persistAreaToServer();
                         }
                     });
-                    geocodeWizardToMap();
+                    geocodeFieldsToMapNow('wizard');
                 }, 80);
             }
         }
@@ -2183,9 +2304,8 @@
             }
 
             hideOverlay('onboarding-wizard-modal');
-            showNotification('🎉 Zona salvata: il catalogo usa il tuo segnalino e raggio.');
+            showNotification('🎉 Profilo e zona salvati. In catalogo parti da Tutta Italia.');
             updateHeaderUI();
-            updateZoneChip();
             loadCardsFromSupabase();
         }
 
@@ -2199,7 +2319,14 @@
         }
         function openSideMenu() { showOverlay('side-overlay'); }
         function closeSideMenu() { hideOverlay('side-overlay'); }
-        function openFiltersPanel() { showOverlay('filters-overlay'); }
+        function openFiltersPanel() {
+            showOverlay('filters-overlay');
+            setTimeout(() => {
+                refreshBrowseMap();
+                const slot = areaMaps['browse-area-map'];
+                if (slot) try { slot.map.invalidateSize(); } catch (e) {}
+            }, 200);
+        }
         function closeFiltersPanel() { hideOverlay('filters-overlay'); }
         function openVaultBot() { showOverlay('vaultbot-modal'); }
         function closeVaultBot() { hideOverlay('vaultbot-modal'); }
@@ -3149,8 +3276,6 @@
             if (summary) summary.textContent = place ? ('In vetrina: ' + place) : '';
             showNotification('Profilo aggiornato!');
             updateHeaderUI();
-            updateZoneChip();
-            applyFilters();
         }
 
         function previewProfileAvatar(input) {
@@ -3327,13 +3452,13 @@
             const maxPriceInput = document.getElementById('price-clean-input').value;
             const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
             const sortBy = document.getElementById('sort-filter').value;
-            const originLat = currentUser && Number(currentUser.lat);
-            const originLng = currentUser && Number(currentUser.lng);
-            const useRadius = !!(originLat && originLng);
-            const radiusKm = clampRadiusKm(currentUser && currentUser.radius_km);
+            const useRadius = browseZone.mode === 'radius' && Number(browseZone.lat) && Number(browseZone.lng);
+            const originLat = browseZone.lat;
+            const originLng = browseZone.lng;
+            const radiusKm = Number(browseZone.radiusKm) || 20;
 
             const sellerIds = [...new Set(allCards.map(c => String(c.user_id || '')).filter(Boolean))];
-            if (useRadius) await ensureSellerGeo(sellerIds);
+            await ensureSellerGeo(sellerIds);
 
             let filtered = allCards.filter(card => {
                 const matchesSearch = (card.title || '').toLowerCase().includes(searchQuery);
@@ -3367,7 +3492,6 @@
             else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
             renderCardsToContainer(filtered, document.getElementById('product-list'));
-            updateZoneChip();
         }
 
         function renderCardsToContainer(cards, container) {
