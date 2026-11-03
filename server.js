@@ -98,6 +98,44 @@ function publicOrderFor(order, viewerId) {
     return row;
 }
 
+function escrowSenderName(order, step) {
+    return ['escrow', step, String(order.sellerId || ''), String(order.buyerId || ''), order.deliveryMethod === 'meetup' ? 'meetup' : 'shipping'].join('|');
+}
+
+function pushOrderEscrowMessages(order, step, sellerText, buyerText) {
+    const title = order.cardTitle || 'Articolo TCG';
+    const base = {
+        senderId: 'SYSTEM_ESCROW',
+        cardId: order.cardId || null,
+        isEscrowAlert: true,
+        deliveryMethod: order.deliveryMethod || 'shipping',
+        orderId: order.id,
+        sellerId: order.sellerId,
+        buyerId: order.buyerId,
+        escrowStep: step,
+        senderName: escrowSenderName(order, step)
+    };
+    if (sellerText && order.sellerId && order.sellerId !== 'unknown') {
+        messagesDB.push({
+            ...base,
+            id: 'msg-' + Date.now() + '-s-' + Math.random().toString(36).slice(2, 8),
+            receiverId: String(order.sellerId),
+            text: String(sellerText).replace(/\{title\}/g, title),
+            timestamp: new Date().toISOString()
+        });
+    }
+    if (buyerText && order.buyerId) {
+        messagesDB.push({
+            ...base,
+            id: 'msg-' + Date.now() + '-b-' + Math.random().toString(36).slice(2, 8),
+            receiverId: String(order.buyerId),
+            text: String(buyerText).replace(/\{title\}/g, title),
+            timestamp: new Date().toISOString()
+        });
+    }
+    persistMessagesToDisk();
+}
+
 async function fulfillPaidOrder(order) {
     if (!order || order.escrowNotified) return order;
     order.status = 'paid';
@@ -105,37 +143,21 @@ async function fulfillPaidOrder(order) {
     order.escrowNotified = true;
     const isMeetup = order.deliveryMethod === 'meetup';
     if (isMeetup && !order.meetupCode) order.meetupCode = generateMeetupCode();
-    if (order.sellerId && order.sellerId !== 'unknown') {
-        const sellerText = isMeetup
-            ? `🤝 VENDITA IN INCONTRO: "${order.cardTitle || 'Articolo TCG'}" per €${Number(order.amount).toFixed(2)}. Proponi un luogo pubblico (mai casa) e un orario. Codice svincolo (mostralo al compratore solo sul posto): ${order.meetupCode}.`
-            : `📦 VENDITA EFFETTUATA! Il tuo prodotto "${order.cardTitle || 'Articolo TCG'}" è stato acquistato per €${Number(order.amount).toFixed(2)}. I fondi sono al sicuro in Escrow. Clicca qui per inserire corriere e tracciamento.`;
-        messagesDB.push({
-            id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-            senderId: 'SYSTEM_ESCROW',
-            receiverId: order.sellerId,
-            cardId: order.cardId || null,
-            text: sellerText,
-            isEscrowAlert: true,
-            deliveryMethod: order.deliveryMethod || 'shipping',
-            orderId: order.id,
-            timestamp: new Date().toISOString()
-        });
-        if (order.buyerId) {
-            messagesDB.push({
-                id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-                senderId: 'SYSTEM_ESCROW',
-                receiverId: order.buyerId,
-                cardId: order.cardId || null,
-                text: isMeetup
-                    ? `🤝 Incontro prenotato per "${order.cardTitle || 'Articolo TCG'}". Luogo pubblico, ispeziona le carte, poi conferma con il codice a 6 cifre che ti mostra il venditore. I fondi restano 7 giorni in hold.`
-                    : `📦 Pagamento ricevuto per "${order.cardTitle || 'Articolo TCG'}". Quando arriva il pacco tracciato, conferma la ricezione dal tuo profilo ordini.`,
-                isEscrowAlert: true,
-                deliveryMethod: order.deliveryMethod || 'shipping',
-                orderId: order.id,
-                timestamp: new Date().toISOString()
-            });
-        }
-        persistMessagesToDisk();
+    const euro = Number(order.amount).toFixed(2);
+    if (isMeetup) {
+        pushOrderEscrowMessages(
+            order,
+            'paid_meetup',
+            `🤝 VENDITA IN INCONTRO: "{title}" per €${euro}. Cosa fare: proponi un luogo pubblico (mai casa) e un orario. Codice svincolo (mostralo al compratore solo sul posto): ${order.meetupCode}.`,
+            `🤝 Incontro prenotato per "{title}" (€${euro}). Cosa fare: aspetta luogo e orario dal venditore. Sul posto ispeziona le carte, poi conferma col codice a 6 cifre. I fondi restano 7 giorni in hold.`
+        );
+    } else {
+        pushOrderEscrowMessages(
+            order,
+            'paid_shipping',
+            `📦 VENDITA: "{title}" pagato €${euro}. I fondi sono in Escrow. Cosa fare: inserisci corriere e numero di tracking.`,
+            `📦 Pagamento ricevuto per "{title}" (€${euro}). Cosa fare: aspetta il tracking del venditore. Quando arriva il pacco, conferma la ricezione.`
+        );
     }
     persistOrdersToDisk();
     await markCardsSold(order.cardIds && order.cardIds.length ? order.cardIds : [order.cardId]);
@@ -833,7 +855,19 @@ function messageToRow(m) {
     };
 }
 
+function parseEscrowSenderName(raw) {
+    const parts = String(raw || '').split('|');
+    if (parts[0] !== 'escrow') return null;
+    return {
+        escrowStep: parts[1] || '',
+        sellerId: parts[2] || '',
+        buyerId: parts[3] || '',
+        deliveryMethod: parts[4] === 'meetup' ? 'meetup' : 'shipping'
+    };
+}
+
 function rowToMessage(r) {
+    const meta = parseEscrowSenderName(r.sender_name);
     return {
         id: r.id,
         senderId: r.sender_id,
@@ -844,7 +878,11 @@ function rowToMessage(r) {
         senderName: r.sender_name,
         isEscrowAlert: !!r.is_escrow_alert,
         orderId: r.order_id,
-        timestamp: r.created_at
+        timestamp: r.created_at,
+        escrowStep: meta && meta.escrowStep,
+        sellerId: meta && meta.sellerId,
+        buyerId: meta && meta.buyerId,
+        deliveryMethod: meta ? meta.deliveryMethod : undefined
     };
 }
 
@@ -2385,6 +2423,15 @@ app.post('/api/orders/:orderId/ship', async (req, res) => {
     order.trackingLink = generateTrackingLink(order.carrier, order.trackingNumber);
     order.status = 'shipped';
     persistOrdersToDisk();
+    const trackBit = order.trackingLink
+        ? `${order.carrier} ${order.trackingNumber} (${order.trackingLink})`
+        : `${order.carrier} ${order.trackingNumber}`;
+    pushOrderEscrowMessages(
+        order,
+        'shipped',
+        `📦 Hai registrato la spedizione di "{title}": ${trackBit}. Cosa fare: aspetta che il compratore confermi la ricezione. Poi i fondi restano 7 giorni in hold.`,
+        `📦 Il venditore ha spedito "{title}": ${trackBit}. Cosa fare: quando arriva il pacco, conferma la ricezione da ordini o da questo pulsante.`
+    );
 
     res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
 });
@@ -2412,18 +2459,12 @@ app.post('/api/orders/:orderId/meetup', async (req, res) => {
     order.meetupAt = at;
     order.status = 'meetup_arranged';
     persistOrdersToDisk();
-    messagesDB.push({
-        id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-        senderId: 'SYSTEM_ESCROW',
-        receiverId: order.buyerId,
-        cardId: order.cardId || null,
-        text: `🤝 Incontro proposto: ${place} — ${at}. Ispeziona le carte sul posto e conferma con il codice a 6 cifre. Mai a casa, solo luogo pubblico.`,
-        isEscrowAlert: true,
-        deliveryMethod: 'meetup',
-        orderId: order.id,
-        timestamp: new Date().toISOString()
-    });
-    persistMessagesToDisk();
+    pushOrderEscrowMessages(
+        order,
+        'meetup_arranged',
+        `🤝 Hai proposto l'incontro per "{title}": ${place} — ${at}. Cosa fare: vai sul posto, fai ispezionare le carte e mostra il codice ${order.meetupCode} solo allora.`,
+        `🤝 Incontro proposto per "{title}": ${place} — ${at}. Cosa fare: luogo pubblico (mai casa), ispeziona le carte, poi conferma col codice a 6 cifre che ti mostra il venditore.`
+    );
     res.json({ success: true, order: publicOrderFor(order, auth.id) });
 });
 
@@ -2471,6 +2512,22 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
     syncWalletTotals(seller);
     persistOrdersToDisk();
     persistWalletsToDisk();
+    const holdLabel = holdDays + ' giorni';
+    if (method === 'meetup') {
+        pushOrderEscrowMessages(
+            order,
+            'completed',
+            `✅ Il compratore ha confermato l'incontro per "{title}". €${Number(amount).toFixed(2)} in hold ${holdLabel}, poi prelevi dal portafoglio (IBAN).`,
+            `✅ Incontro confermato per "{title}". I fondi restano in hold ${holdLabel}. Se c'è un problema: support@tcgvault.com.`
+        );
+    } else {
+        pushOrderEscrowMessages(
+            order,
+            'completed',
+            `✅ Il compratore ha confermato la ricezione di "{title}". €${Number(amount).toFixed(2)} in hold ${holdLabel}, poi prelevi dal portafoglio (IBAN).`,
+            `✅ Hai confermato la ricezione di "{title}". I fondi restano in hold ${holdLabel}. Se il pacco è sbagliato: support@tcgvault.com.`
+        );
+    }
 
     res.json({
         success: true,

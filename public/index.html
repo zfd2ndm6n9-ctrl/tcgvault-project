@@ -3944,7 +3944,8 @@
                 } else {
                     const conversationsMap = {};
                     messages.forEach(m => {
-                        const otherUserId = m.senderId === currentUser.id ? m.receiverId : m.senderId;
+                        const otherUserId = chatPeerId(m, currentUser.id);
+                        if (!otherUserId || otherUserId === 'SYSTEM_ESCROW') return;
                         if (!conversationsMap[otherUserId] || new Date(m.timestamp) > new Date(conversationsMap[otherUserId].timestamp)) {
                             conversationsMap[otherUserId] = m;
                         }
@@ -4055,6 +4056,59 @@
             showOverlay('seller-public-profile-modal');
         }
 
+        function parseEscrowMeta(m) {
+            const parts = String((m && m.senderName) || '').split('|');
+            if (parts[0] === 'escrow') {
+                return {
+                    step: parts[1] || m.escrowStep || '',
+                    sellerId: parts[2] || m.sellerId || '',
+                    buyerId: parts[3] || m.buyerId || '',
+                    method: parts[4] === 'meetup' ? 'meetup' : (m.deliveryMethod || 'shipping')
+                };
+            }
+            return {
+                step: m && m.escrowStep || '',
+                sellerId: m && m.sellerId || '',
+                buyerId: m && m.buyerId || '',
+                method: (m && m.deliveryMethod) || (/incontro/i.test(String(m && m.text || '')) ? 'meetup' : 'shipping')
+            };
+        }
+
+        function chatPeerId(m, myId) {
+            const meta = parseEscrowMeta(m);
+            if (String(m.senderId) === 'SYSTEM_ESCROW') {
+                if (meta.sellerId && meta.buyerId) {
+                    return String(meta.sellerId) === String(myId) ? meta.buyerId : meta.sellerId;
+                }
+                return String(m.receiverId) === String(myId) ? '' : String(m.receiverId);
+            }
+            return String(m.senderId) === String(myId) ? String(m.receiverId) : String(m.senderId);
+        }
+
+        function renderEscrowChatCard(m) {
+            const oid = escapeHtml(String(m.orderId || ''));
+            const meta = parseEscrowMeta(m);
+            const isSeller = String(meta.sellerId) === String(currentUser.id);
+            let action = `<button onclick="openProfileTabFromMenu('my-orders')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Vedi ordini</button>`;
+            if (isSeller && meta.step === 'paid_shipping') {
+                action = `<button onclick="openEscrowGuideModal('${oid}', 'shipping')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">📦 Inserisci tracking</button>`;
+            } else if (isSeller && meta.step === 'paid_meetup') {
+                action = `<button onclick="openEscrowGuideModal('${oid}', 'meetup')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🤝 Proponi incontro</button>`;
+            } else if (!isSeller && meta.step === 'shipped') {
+                action = `<button onclick="confirmOrderReceipt('${oid}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Conferma ricezione</button>`;
+            } else if (!isSeller && meta.step === 'meetup_arranged') {
+                action = `<button onclick="confirmMeetupOrder('${oid}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Conferma incontro (codice)</button>`;
+            } else if (isSeller && meta.step === 'completed') {
+                action = `<button onclick="openProfileTabFromMenu('wallet-escrow')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Apri portafoglio</button>`;
+            }
+            return `
+                <div class="escrow-alert-msg">
+                    <div>${escapeHtml(m.text)}</div>
+                    <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">${action}</div>
+                </div>
+            `;
+        }
+
         function closeChat() {
             document.getElementById('chatModal').style.display = 'none';
             if (chatInterval) clearInterval(chatInterval);
@@ -4132,10 +4186,10 @@
                 const container = document.getElementById('chatMessages');
                 if (!Array.isArray(messages)) return;
 
-                const relevant = messages.filter(m => 
+                const relevant = messages.filter(m =>
                     (String(m.senderId) === String(currentUser.id) && String(m.receiverId) === String(activeChatReceiverId)) ||
                     (String(m.senderId) === String(activeChatReceiverId) && String(m.receiverId) === String(currentUser.id)) ||
-                    (String(m.receiverId) === String(currentUser.id) && m.senderId === 'SYSTEM_ESCROW')
+                    (m.senderId === 'SYSTEM_ESCROW' && String(m.receiverId) === String(currentUser.id) && String(chatPeerId(m, currentUser.id)) === String(activeChatReceiverId))
                 );
 
                 if (relevant.length === 0) {
@@ -4145,17 +4199,7 @@
 
                 const newHtml = relevant.map(m => {
                     if (m.senderId === 'SYSTEM_ESCROW') {
-                        const isMeet = m.deliveryMethod === 'meetup' || /incontro/i.test(String(m.text || ''));
-                        const isSellerAlert = /VENDITA IN INCONTRO|VENDITA EFFETTUATA|inserire corriere/i.test(String(m.text || ''));
-                        const action = isSellerAlert
-                            ? `<button onclick="openEscrowGuideModal('${escapeHtml(String(m.orderId || ''))}', '${isMeet ? 'meetup' : 'shipping'}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">${isMeet ? '🤝 Proponi incontro' : '📦 Guida Spedizione & Tracking'}</button>`
-                            : `<button onclick="openProfileTabFromMenu('my-orders')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Vedi i tuoi ordini</button>`;
-                        return `
-                            <div class="escrow-alert-msg">
-                                <div>${escapeHtml(m.text)}</div>
-                                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">${action}</div>
-                            </div>
-                        `;
+                        return renderEscrowChatCard(m);
                     }
                     const isMe = String(m.senderId) === String(currentUser.id);
                     return `<div class="${isMe ? 'user-msg' : 'bot-msg'}">${escapeHtml(m.text)}</div>`;
