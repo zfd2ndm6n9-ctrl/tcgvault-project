@@ -15,7 +15,12 @@ TCG Vault ha due linee:
 - Feature nuove, tentativi, test da feedback: commit e push su **`sandbox`**.
 - Avvio locale di prova: `npm run sandbox` (porta **4243**, fascia gialla SANDBOX, dati in `data-sandbox/`).
 - Produzione locale: `npm start` (porta **4242**).
-- Quando Francesco dice che è backtestato / di lanciarlo: `npm run promote-sandbox` (merge `sandbox` → `main` + push). Non copiare i file a mano.
+- Quando Francesco dice che è backtestato / di lanciarlo: un click su GitHub **Actions → Promote sandbox to live → Run workflow**, oppure in locale `npm run promote-sandbox`. Merge `sandbox` → `main` + push. Render sul servizio live (branch `main`) pubblica a tutti. Non copiare i file a mano.
+
+## Online (Render)
+
+- Live: servizio esistente di **tcg-vault.it**, branch **`main`**, autodeploy ON.
+- Sandbox pubblica: secondo Web Service sullo stesso repo, branch **`sandbox`**, start `npm run sandbox`, env `APP_ENV=sandbox`. URL tipo `https://….onrender.com` o `sandbox.tcg-vault.it`.
 
 ## Dati
 

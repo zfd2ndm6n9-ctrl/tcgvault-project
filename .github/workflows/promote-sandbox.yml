@@ -1,0 +1,23 @@
+name: Promote sandbox to live
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge sandbox into main
+        run: |
+          git config user.name "tcgvault-promote"
+          git config user.email "support@tcgvault.com"
+          git fetch origin sandbox main
+          git checkout main
+          git merge origin/sandbox -m "Promote sandbox tests to production"
+          git push origin main
