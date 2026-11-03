@@ -72,7 +72,18 @@ async function markCardsSold(cardIds) {
 }
 
 function generateMeetupCode() {
-    return String(100000 + crypto.randomInt(900000));
+    return 'TCG-meet-' + crypto.randomBytes(8).toString('hex');
+}
+
+function meetupQrImageUrl(token) {
+    if (!token) return '';
+    return 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(String(token));
+}
+
+function meetupTokenMatch(order, raw) {
+    const token = String(raw || '').trim();
+    if (!token || !order) return false;
+    return token === String(order.meetupCode || '') || token === String(order.meetupQrToken || '');
 }
 
 function accountAgeDays(user) {
@@ -94,7 +105,20 @@ function assertMeetupAllowed(auth, amount) {
 function publicOrderFor(order, viewerId) {
     const row = Object.assign({}, order);
     const isSeller = String(order.sellerId) === String(viewerId);
-    if (!isSeller) delete row.meetupCode;
+    const isBuyer = String(order.buyerId) === String(viewerId);
+    if (isSeller) {
+        delete row.meetupCode;
+        delete row.meetupQrToken;
+        delete row.meetupQrUrl;
+    } else if (isBuyer && (row.meetupCode || row.meetupQrToken)) {
+        const token = row.meetupQrToken || row.meetupCode;
+        row.meetupQrToken = token;
+        row.meetupQrUrl = meetupQrImageUrl(token);
+    } else {
+        delete row.meetupCode;
+        delete row.meetupQrToken;
+        delete row.meetupQrUrl;
+    }
     return row;
 }
 
@@ -142,14 +166,17 @@ async function fulfillPaidOrder(order) {
     order.paidAt = new Date().toISOString();
     order.escrowNotified = true;
     const isMeetup = order.deliveryMethod === 'meetup';
-    if (isMeetup && !order.meetupCode) order.meetupCode = generateMeetupCode();
+    if (isMeetup) {
+        if (!order.meetupCode) order.meetupCode = generateMeetupCode();
+        order.meetupQrToken = order.meetupQrToken || order.meetupCode;
+    }
     const euro = Number(order.amount).toFixed(2);
     if (isMeetup) {
         pushOrderEscrowMessages(
             order,
             'paid_meetup',
-            `🤝 VENDITA IN INCONTRO: "{title}" per €${euro}. Cosa fare: proponi un luogo pubblico (mai casa) e un orario. Codice svincolo (mostralo al compratore solo sul posto): ${order.meetupCode}.`,
-            `🤝 Incontro prenotato per "{title}" (€${euro}). Cosa fare: aspetta luogo e orario dal venditore. Sul posto ispeziona le carte, poi conferma col codice a 6 cifre. I fondi restano 7 giorni in hold.`
+            `🤝 VENDITA IN INCONTRO: "{title}" per €${euro}. Cosa fare: proponi un luogo pubblico (mai casa), poi sul posto ispeziona insieme e scansiona il QR del compratore (come il check-in tornei). Dopo lo scan i fondi restano 7 giorni in hold.`,
+            `🤝 Incontro prenotato per "{title}" (€${euro}). Cosa fare: aspetta luogo e orario. Sul posto ispeziona le carte, poi mostra il QR (lo trovi negli ordini). Il venditore lo scansiona e i fondi restano 7 giorni in hold.`
         );
     } else {
         pushOrderEscrowMessages(
@@ -759,7 +786,7 @@ function orderToRow(o) {
         created_at: o.createdAt || new Date().toISOString(),
         delivery_method: o.deliveryMethod || 'shipping',
         hold_until: o.holdUntil || null,
-        meetup_code: o.meetupCode || null,
+        meetup_code: o.meetupQrToken || o.meetupCode || null,
         meetup_place: o.meetupPlace || null,
         meetup_at: o.meetupAt || null
     };
@@ -786,6 +813,7 @@ function rowToOrder(r) {
         deliveryMethod: r.delivery_method || 'shipping',
         holdUntil: r.hold_until || null,
         meetupCode: r.meetup_code || null,
+        meetupQrToken: r.meetup_code || null,
         meetupPlace: r.meetup_place || null,
         meetupAt: r.meetup_at || null
     };
@@ -2351,6 +2379,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
             meetupCode: deliveryMethod === 'meetup' ? generateMeetupCode() : null,
             createdAt: new Date().toISOString()
         };
+        if (newOrder.meetupCode) newOrder.meetupQrToken = newOrder.meetupCode;
         ordersDB.push(newOrder);
         persistOrdersToDisk();
 
@@ -2462,11 +2491,74 @@ app.post('/api/orders/:orderId/meetup', async (req, res) => {
     pushOrderEscrowMessages(
         order,
         'meetup_arranged',
-        `🤝 Hai proposto l'incontro per "{title}": ${place} — ${at}. Cosa fare: vai sul posto, fai ispezionare le carte e mostra il codice ${order.meetupCode} solo allora.`,
-        `🤝 Incontro proposto per "{title}": ${place} — ${at}. Cosa fare: luogo pubblico (mai casa), ispeziona le carte, poi conferma col codice a 6 cifre che ti mostra il venditore.`
+        `🤝 Hai proposto l'incontro per "{title}": ${place} — ${at}. Cosa fare: sul posto ispeziona le carte e scansiona il QR del compratore. Dopo lo scan i fondi restano 7 giorni in hold.`,
+        `🤝 Incontro proposto per "{title}": ${place} — ${at}. Cosa fare: luogo pubblico (mai casa), ispeziona, poi mostra il QR. Il venditore lo scansiona come al check-in tornei.`
     );
     res.json({ success: true, order: publicOrderFor(order, auth.id) });
 });
+
+function settleCompletedOrder(order, method) {
+    if (order.status === 'completed') return { already: true, amount: Number(order.amount || 0) };
+    const holdDays = WALLET_HOLD_DAYS;
+    order.status = 'completed';
+    order.completedAt = new Date().toISOString();
+    order.deliveryMethod = method;
+    order.holdUntil = new Date(Date.now() + holdDays * 24 * 60 * 60 * 1000).toISOString();
+    const seller = getOrCreateWalletUser(order.sellerId);
+    const amount = Number(order.amount || 0);
+    seller.heldWallet = Number(seller.heldWallet || 0) + amount;
+    seller.walletUpdatedAt = order.completedAt;
+    syncWalletTotals(seller);
+    persistOrdersToDisk();
+    persistWalletsToDisk();
+    return { already: false, amount, holdDays, heldWallet: seller.heldWallet, availableWallet: seller.availableWallet };
+}
+
+app.post('/api/orders/meetup-scan', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const token = String((req.body && req.body.qrToken) || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'QR mancante.' });
+    const order = ordersDB.find(o =>
+        String(o.sellerId) === String(auth.id) &&
+        o.deliveryMethod === 'meetup' &&
+        o.status !== 'pending_payment' &&
+        meetupTokenMatch(o, token)
+    );
+    if (!order && isAdminEmail(auth.email)) {
+        const adminHit = ordersDB.find(o => o.deliveryMethod === 'meetup' && meetupTokenMatch(o, token));
+        if (!adminHit) return res.status(404).json({ success: false, error: 'QR non valido.' });
+        return finishMeetupScan(res, auth, adminHit);
+    }
+    if (!order) return res.status(404).json({ success: false, error: 'QR non valido per le tue vendite.' });
+    return finishMeetupScan(res, auth, order);
+});
+
+function finishMeetupScan(res, auth, order) {
+    if (order.status === 'completed') {
+        return res.json({ success: true, alreadyCompleted: true, message: 'Incontro già confermato. Fondi in hold.', order: publicOrderFor(order, auth.id) });
+    }
+    if (order.status !== 'paid' && order.status !== 'meetup_arranged') {
+        return res.status(400).json({ success: false, error: 'Questo ordine non è pronto per lo scan.' });
+    }
+    const settled = settleCompletedOrder(order, 'meetup');
+    const holdLabel = (settled.holdDays || WALLET_HOLD_DAYS) + ' giorni';
+    if (!settled.already) {
+        pushOrderEscrowMessages(
+            order,
+            'completed',
+            `✅ Hai scansionato il QR di "{title}". €${Number(settled.amount).toFixed(2)} in hold ${holdLabel}, poi prelevi dal portafoglio (IBAN).`,
+            `✅ Il venditore ha scansionato il tuo QR per "{title}". I fondi restano in hold ${holdLabel}. Se c'è un problema: support@tcgvault.com.`
+        );
+    }
+    return res.json({
+        success: true,
+        message: 'QR ok. Fondi in hold ' + holdLabel + ', poi prelevabili.',
+        order: publicOrderFor(order, auth.id),
+        heldWallet: settled.heldWallet,
+        sellerWallet: settled.availableWallet
+    });
+}
 
 app.post('/api/orders/:orderId/complete', async (req, res) => {
     const auth = await requireAuth(req, res);
@@ -2488,53 +2580,28 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
 
     const method = order.deliveryMethod || 'shipping';
     if (method === 'meetup') {
-        const code = String((req.body && req.body.meetupCode) || '').replace(/\s+/g, '');
-        if (order.status !== 'meetup_arranged') {
-            return res.status(400).json({ success: false, error: 'Il venditore deve prima proporre luogo e orario.' });
-        }
-        if (!order.meetupCode || code !== String(order.meetupCode)) {
-            return res.status(400).json({ success: false, error: 'Codice incontro non valido. Chiedilo al venditore sul posto dopo aver ispezionato le carte.' });
-        }
+        return res.status(400).json({ success: false, error: 'Per l\'incontro il venditore deve scansionare il tuo QR sul posto (come il check-in tornei).' });
     } else if (order.status !== 'shipped') {
         return res.status(400).json({ success: false, error: 'Conferma la ricezione solo dopo la spedizione tracciata.' });
     }
 
-    const holdDays = WALLET_HOLD_DAYS;
-    order.status = 'completed';
-    order.completedAt = new Date().toISOString();
-    order.deliveryMethod = method;
-    order.holdUntil = new Date(Date.now() + holdDays * 24 * 60 * 60 * 1000).toISOString();
-
-    const seller = getOrCreateWalletUser(order.sellerId);
-    const amount = Number(order.amount || 0);
-    seller.heldWallet = Number(seller.heldWallet || 0) + amount;
-    seller.walletUpdatedAt = order.completedAt;
-    syncWalletTotals(seller);
-    persistOrdersToDisk();
-    persistWalletsToDisk();
+    const settled = settleCompletedOrder(order, method);
+    const holdDays = settled.holdDays || WALLET_HOLD_DAYS;
+    const amount = settled.amount;
     const holdLabel = holdDays + ' giorni';
-    if (method === 'meetup') {
-        pushOrderEscrowMessages(
-            order,
-            'completed',
-            `✅ Il compratore ha confermato l'incontro per "{title}". €${Number(amount).toFixed(2)} in hold ${holdLabel}, poi prelevi dal portafoglio (IBAN).`,
-            `✅ Incontro confermato per "{title}". I fondi restano in hold ${holdLabel}. Se c'è un problema: support@tcgvault.com.`
-        );
-    } else {
-        pushOrderEscrowMessages(
-            order,
-            'completed',
-            `✅ Il compratore ha confermato la ricezione di "{title}". €${Number(amount).toFixed(2)} in hold ${holdLabel}, poi prelevi dal portafoglio (IBAN).`,
-            `✅ Hai confermato la ricezione di "{title}". I fondi restano in hold ${holdLabel}. Se il pacco è sbagliato: support@tcgvault.com.`
-        );
-    }
+    pushOrderEscrowMessages(
+        order,
+        'completed',
+        `✅ Il compratore ha confermato la ricezione di "{title}". €${Number(amount).toFixed(2)} in hold ${holdLabel}, poi prelevi dal portafoglio (IBAN).`,
+        `✅ Hai confermato la ricezione di "{title}". I fondi restano in hold ${holdLabel}. Se il pacco è sbagliato: support@tcgvault.com.`
+    );
 
     res.json({
         success: true,
         message: 'Ricezione confermata. I fondi restano in hold ' + holdDays + ' giorni anti-chargeback, poi diventano prelevabili.',
         order: publicOrderFor(order, auth.id),
-        sellerWallet: seller.availableWallet,
-        heldWallet: seller.heldWallet
+        sellerWallet: settled.availableWallet,
+        heldWallet: settled.heldWallet
     });
 });
 
@@ -2844,7 +2911,7 @@ function answerVaultBot(message) {
         return 'Pagamenti: il checkout usa Stripe. I fondi restano in Escrow fino a conferma di consegna o scambio a mano, poi passano nel wallet del venditore. Per completare l\'ordine servono Nome completo, indirizzo di fatturazione e la spunta obbligatoria «Accetto i Termini e le Condizioni».';
     }
     if (/(spediz|corriere|pacco|poste|inpost|gls|dhl|ups|brt)/.test(q)) {
-        return 'Spedizioni: i corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS. I metodi non tracciati fanno decadere la protezione Escrow. Lo scambio a mano è consentito usando la città del profilo.';
+        return 'Spedizioni: i corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS. I metodi non tracciati fanno decadere la protezione Escrow. Lo scambio a mano: il compratore mostra un QR (come al check-in tornei), il venditore lo scansiona e i fondi restano 7 giorni in hold.';
     }
     if (/(ordine|wallet|prelievo|iban|vendita|acquisto)/.test(q)) {
         return 'Gestione ordini: dopo il pagamento l\'ordine è protetto. L\'acquirente riceve il prodotto con spedizione tracciata o scambio a mano; il venditore vede i fondi nel wallet e può richiedere il prelievo via IBAN a consegna confermata.';

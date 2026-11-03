@@ -1185,6 +1185,36 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="meetup-qr-modal">
+        <div class="modal-content" style="max-width:380px;text-align:center;">
+            <div class="modal-header">
+                <h2>QR incontro</h2>
+                <button class="close-btn" onclick="closeMeetupQrModal()">&times;</button>
+            </div>
+            <p style="font-size:0.88rem;color:var(--text-muted);">Ispeziona le carte, poi mostra questo QR al venditore. Come il check-in tornei: dopo lo scan i fondi restano 7 giorni in hold.</p>
+            <img id="meetup-qr-img" alt="QR incontro" style="width:280px;height:280px;background:#fff;padding:8px;border-radius:12px;margin:8px auto;">
+            <p id="meetup-qr-token" style="font-size:0.75rem;color:var(--text-muted);word-break:break-all;"></p>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="meetup-scan-modal">
+        <div class="modal-content" style="max-width:420px;">
+            <div class="modal-header">
+                <h2>Scansiona QR compratore</h2>
+                <button class="close-btn" onclick="closeMeetupScanModal()">&times;</button>
+            </div>
+            <p style="font-size:0.88rem;color:var(--text-muted);">Stessa tecnica dei tornei. Inquadra il QR, oppure incolla il codice. Dopo lo scan i soldi restano in hold 7 giorni.</p>
+            <div id="meetup-reader" style="width:100%;max-width:320px;margin:10px auto;"></div>
+            <button type="button" class="btn-outline" onclick="toggleMeetupScanner()">Avvia / ferma fotocamera</button>
+            <div class="form-group" style="margin-top:12px;">
+                <label>Codice QR</label>
+                <input id="meetup-qr-manual" class="filter-input" placeholder="TCG-meet-...">
+            </div>
+            <button type="button" class="btn-submit" onclick="submitMeetupScan(document.getElementById('meetup-qr-manual').value)">Registra scan</button>
+            <p id="meetup-scan-msg" style="font-size:0.85rem;margin-top:10px;"></p>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="auth-modal">
         <div class="modal-content auth-card">
             <div class="modal-header">
@@ -1389,6 +1419,11 @@
         let unreadMessagesCount = parseInt(localStorage.getItem('tcg_unread_msg_count') || '0');
         let selectedCategory = '';
         let currentUser = null;
+        let myOrdersCache = [];
+        let meetupScanner = null;
+        let meetupScanning = false;
+        let lastMeetupScanToken = '';
+        let lastMeetupScanAt = 0;
         let selectedCard = null;
         let selectedCatalog = null;
         let catalogSearchTimer = null;
@@ -3060,9 +3095,9 @@
             };
             const nextIt = {
                 paid: isMeetup
-                    ? (isBuyer ? 'Aspetta luogo e orario dal venditore.' : 'Proponi un luogo pubblico e un orario.')
+                    ? (isBuyer ? 'Aspetta luogo e orario. Sul posto mostra il QR dopo l\'ispezione.' : 'Proponi un luogo pubblico, poi scansiona il QR del compratore.')
                     : (isBuyer ? 'Aspetta il tracking del venditore.' : 'Inserisci corriere e tracking.'),
-                meetup_arranged: isBuyer ? 'Sul posto ispeziona e conferma col codice.' : 'Mostra il codice solo sul posto, dopo l\'ispezione.',
+                meetup_arranged: isBuyer ? 'Sul posto ispeziona e mostra il QR.' : 'Scansiona il QR del compratore. I fondi vanno in hold 7 giorni.',
                 shipped: isBuyer ? 'Quando arriva il pacco, conferma la ricezione.' : 'In attesa che il compratore confermi la ricezione.',
                 completed: 'Fondi in hold 7 giorni, poi prelevabili dal portafoglio.'
             };
@@ -3072,8 +3107,11 @@
             if (isBuyer && o.status === 'shipped') {
                 action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmOrderReceipt('${safeId}')">Conferma ricezione</button>`;
             }
-            if (isBuyer && isMeetup && o.status === 'meetup_arranged') {
-                action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmMeetupOrder('${safeId}')">Conferma incontro (codice)</button>`;
+            if (isBuyer && isMeetup && (o.status === 'paid' || o.status === 'meetup_arranged') && (o.meetupQrUrl || o.meetupCode || o.meetupQrToken)) {
+                action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="showMeetupQr('${safeId}')">Mostra QR</button>`;
+            }
+            if (!isBuyer && isMeetup && (o.status === 'paid' || o.status === 'meetup_arranged')) {
+                action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="openMeetupScanModal()">Scansiona QR</button>`;
             }
             if (!isBuyer && !isMeetup && o.status === 'paid') {
                 extra = `<div style="display:flex;flex-wrap:wrap;gap:8px;width:100%;margin-top:4px;">
@@ -3092,7 +3130,7 @@
             const trackLine = o.trackingNumber
                 ? `<div style="font-size: 0.8rem;">Tracking: <b>${escapeHtml(o.carrier || '')}</b> ${o.trackingLink ? `<a href="${escapeHtml(o.trackingLink)}" target="_blank" rel="noopener">${escapeHtml(o.trackingNumber)}</a>` : escapeHtml(o.trackingNumber)}</div>`
                 : '';
-            const codeLine = (!isBuyer && o.meetupCode) ? `<div style="font-size: 0.8rem;">Codice svincolo: <b>${escapeHtml(o.meetupCode)}</b> (solo sul posto)</div>` : '';
+            const qrLine = (isBuyer && o.meetupQrUrl) ? `<div style="margin-top:8px;"><img src="${escapeHtml(o.meetupQrUrl)}" alt="QR incontro" style="width:120px;height:120px;background:#fff;padding:4px;border-radius:8px;"></div>` : '';
             const meetLine = o.meetupPlace ? `<div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(o.meetupPlace)} — ${escapeHtml(o.meetupAt || '')}</div>` : '';
             const titleLine = o.cardTitle ? `<div style="font-size: 0.88rem; margin-bottom: 2px;">${escapeHtml(o.cardTitle)}</div>` : '';
             return `
@@ -3102,7 +3140,7 @@
                         ${titleLine}
                         <div style="font-size: 0.8rem; color: var(--text-muted);">€ ${Number(o.amount || 0).toFixed(2)} · ${isMeetup ? 'Incontro' : 'Spedizione'}</div>
                         <div style="font-size: 0.8rem; margin-top: 4px;">${escapeHtml(nextIt[o.status] || '')}</div>
-                        ${codeLine}${meetLine}${trackLine}
+                        ${qrLine}${meetLine}${trackLine}
                     </div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">${action}</div>
                     ${extra}
@@ -3115,6 +3153,7 @@
                 const res = await fetch(`${window.location.origin}/api/orders/${currentUser.id}`);
                 const orders = await res.json();
                 const container = document.getElementById('my-orders-container');
+                myOrdersCache = orders || [];
                 const live = (orders || []).filter(o => o.status && o.status !== 'pending_payment');
                 if (!live.length) {
                     container.innerHTML = '<p style="color: var(--text-muted);">Nessun ordine pagato. I checkout non completati non compaiono qui.</p>';
@@ -4093,11 +4132,13 @@
             if (isSeller && meta.step === 'paid_shipping') {
                 action = `<button onclick="openEscrowGuideModal('${oid}', 'shipping')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">📦 Inserisci tracking</button>`;
             } else if (isSeller && meta.step === 'paid_meetup') {
-                action = `<button onclick="openEscrowGuideModal('${oid}', 'meetup')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🤝 Proponi incontro</button>`;
+                action = `<button onclick="openEscrowGuideModal('${oid}', 'meetup')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">🤝 Proponi luogo</button><button onclick="openMeetupScanModal()" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">📷 Scansiona QR</button>`;
+            } else if (isSeller && meta.step === 'meetup_arranged') {
+                action = `<button onclick="openMeetupScanModal()" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">📷 Scansiona QR</button>`;
             } else if (!isSeller && meta.step === 'shipped') {
                 action = `<button onclick="confirmOrderReceipt('${oid}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Conferma ricezione</button>`;
-            } else if (!isSeller && meta.step === 'meetup_arranged') {
-                action = `<button onclick="confirmMeetupOrder('${oid}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Conferma incontro (codice)</button>`;
+            } else if (!isSeller && (meta.step === 'meetup_arranged' || meta.step === 'paid_meetup')) {
+                action = `<button onclick="showMeetupQr('${oid}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Mostra QR</button>`;
             } else if (isSeller && meta.step === 'completed') {
                 action = `<button onclick="openProfileTabFromMenu('wallet-escrow')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Apri portafoglio</button>`;
             }
@@ -4377,24 +4418,106 @@
             }
         }
 
-        async function confirmMeetupOrder(orderId) {
-            const meetupCode = prompt('Inserisci il codice a 6 cifre mostrato dal venditore, dopo aver ispezionato le carte:');
-            if (!meetupCode) return;
+        function meetupQrUrlFromOrder(o) {
+            if (o && o.meetupQrUrl) return o.meetupQrUrl;
+            const token = o && (o.meetupQrToken || o.meetupCode);
+            if (!token) return '';
+            return 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(token);
+        }
+
+        function showMeetupQr(orderId) {
+            const o = (myOrdersCache || []).find(x => String(x.id) === String(orderId));
+            const url = meetupQrUrlFromOrder(o);
+            const token = o && (o.meetupQrToken || o.meetupCode);
+            if (!url) {
+                showNotification('QR non disponibile. Riapri Acquisti e vendite.', 'error');
+                openProfileTabFromMenu('my-orders');
+                return;
+            }
+            document.getElementById('meetup-qr-img').src = url;
+            document.getElementById('meetup-qr-token').textContent = token || '';
+            showOverlay('meetup-qr-modal');
+        }
+
+        function closeMeetupQrModal() { hideOverlay('meetup-qr-modal'); }
+
+        function loadMeetupQrLib() {
+            if (window.Html5Qrcode) return Promise.resolve();
+            return new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+                s.onload = resolve;
+                s.onerror = reject;
+                document.head.appendChild(s);
+            });
+        }
+
+        async function openMeetupScanModal() {
+            showOverlay('meetup-scan-modal');
+            const msg = document.getElementById('meetup-scan-msg');
+            if (msg) msg.textContent = '';
+            try { await loadMeetupQrLib(); } catch (e) {
+                if (msg) msg.textContent = 'Scanner non caricato. Incolla il codice a mano.';
+            }
+        }
+
+        async function closeMeetupScanModal() {
+            hideOverlay('meetup-scan-modal');
+            if (meetupScanning && meetupScanner) {
+                try { await meetupScanner.stop(); } catch (e) {}
+                meetupScanning = false;
+            }
+        }
+
+        async function toggleMeetupScanner() {
+            const msg = document.getElementById('meetup-scan-msg');
             try {
-                const res = await fetch('/api/orders/' + encodeURIComponent(orderId) + '/complete', {
+                await loadMeetupQrLib();
+                if (meetupScanning && meetupScanner) {
+                    await meetupScanner.stop();
+                    meetupScanning = false;
+                    return;
+                }
+                meetupScanner = new Html5Qrcode('meetup-reader');
+                meetupScanning = true;
+                await meetupScanner.start({ facingMode: 'environment' }, { fps: 8, qrbox: 220 }, (text) => {
+                    document.getElementById('meetup-qr-manual').value = text;
+                    submitMeetupScan(text);
+                });
+            } catch (e) {
+                meetupScanning = false;
+                if (msg) msg.textContent = 'Fotocamera non disponibile. Incolla il codice.';
+            }
+        }
+
+        async function submitMeetupScan(token) {
+            const clean = String(token || '').trim();
+            const msg = document.getElementById('meetup-scan-msg');
+            const now = Date.now();
+            if (clean && clean === lastMeetupScanToken && now - lastMeetupScanAt < 2000) return;
+            lastMeetupScanToken = clean;
+            lastMeetupScanAt = now;
+            if (!clean) {
+                if (msg) msg.textContent = 'Inquadra o incolla il QR.';
+                return;
+            }
+            try {
+                const res = await fetch('/api/orders/meetup-scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ meetupCode })
+                    body: JSON.stringify({ qrToken: clean })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showNotification(data.message || 'Incontro confermato.');
+                    if (msg) msg.textContent = data.message || 'QR ok. Fondi in hold 7 giorni.';
+                    showNotification(data.message || 'QR ok. Fondi in hold 7 giorni.');
                     loadMyOrders();
-                } else {
-                    showNotification(data.error || 'Codice non valido.', 'error');
+                    setTimeout(() => closeMeetupScanModal(), 900);
+                } else if (msg) {
+                    msg.textContent = data.error || 'QR non valido.';
                 }
             } catch (e) {
-                showNotification('Errore di comunicazione.', 'error');
+                if (msg) msg.textContent = 'Errore di comunicazione.';
             }
         }
 
