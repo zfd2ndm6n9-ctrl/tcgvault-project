@@ -763,10 +763,6 @@
             <input type="text" id="search-input" placeholder="Es. Charizard, Mazzo Commander..." oninput="applyFiltersDebounced()" aria-label="Cerca prodotto">
             <button type="button" class="btn-filters" onclick="openFiltersPanel()">Filtri</button>
         </div>
-        <div class="zone-bar" id="zone-bar">
-            <input type="text" id="browse-city" placeholder="Es. Via Dante 15, Milano" oninput="onBrowsePlaceInput()">
-        </div>
-        <div id="browse-area-map" class="area-map" style="display:none;margin-bottom:16px;"></div>
 
         <div class="rules-banner">
             <strong>Compratori:</strong> ordine minimo €20,00 e articoli di un solo venditore.
@@ -838,6 +834,11 @@
             <div class="modal-header">
                 <h2>Filtri</h2>
                 <button class="close-btn" onclick="closeFiltersPanel()">&times;</button>
+            </div>
+            <div class="filter-group" style="margin-bottom:12px;">
+                <label>Posizione venditore</label>
+                <input type="text" id="filter-city" class="filter-input" placeholder="Es. Milano" oninput="onFilterCityInput()">
+                <p style="font-size:0.8rem;color:var(--text-muted);margin:6px 0 0;text-transform:none;letter-spacing:0;font-weight:500;">Filtra gli annunci in base alla città/zona che il venditore ha impostato sul profilo.</p>
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>Tipo Articolo</label>
@@ -1836,43 +1837,13 @@
             };
         }
 
-        function refreshBrowseMap() {
-            const mapEl = document.getElementById('browse-area-map');
-            if (!mapEl) return;
-            if (!browseZone.lat || !String(browseZone.query || '').trim()) {
-                mapEl.style.display = 'none';
-                return;
-            }
-            mapEl.style.display = 'block';
-            moveAreaMap('browse-area-map', browseZone.lat, browseZone.lng, 20, {
-                editable: false,
-                showCircle: false
-            });
-        }
-
-        let browsePlaceTimer = null;
-        function onBrowsePlaceInput() {
-            clearTimeout(browsePlaceTimer);
-            browsePlaceTimer = setTimeout(geocodeBrowsePlace, 400);
-        }
-
-        async function geocodeBrowsePlace() {
-            const typed = String((document.getElementById('browse-city') || {}).value || '').trim();
-            browseZone.query = typed;
-            if (typed.length < 2) {
-                browseZone.lat = null;
-                browseZone.lng = null;
-                refreshBrowseMap();
+        let filterCityTimer = null;
+        function onFilterCityInput() {
+            clearTimeout(filterCityTimer);
+            filterCityTimer = setTimeout(() => {
+                browseZone.query = String((document.getElementById('filter-city') || {}).value || '').trim();
                 applyFilters();
-                return;
-            }
-            const parsed = parsePlaceQuery(typed);
-            const geo = await lookupGeo(parsed.q, { street: parsed.street, city: parsed.city });
-            if (!geo) return;
-            browseZone.lat = geo.lat;
-            browseZone.lng = geo.lng;
-            refreshBrowseMap();
-            applyFilters();
+            }, 220);
         }
 
         const geocodeFieldTimers = {};
@@ -3432,6 +3403,7 @@
             const maxPriceInput = document.getElementById('price-clean-input').value;
             const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
             const sortBy = document.getElementById('sort-filter').value;
+            browseZone.query = String((document.getElementById('filter-city') || {}).value || browseZone.query || '').trim();
             const cityQuery = String(browseZone.query || '').trim().toLowerCase();
 
             const sellerIds = [...new Set(allCards.map(c => String(c.user_id || '')).filter(Boolean))];
