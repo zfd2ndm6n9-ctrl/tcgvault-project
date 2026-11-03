@@ -1,14 +1,14 @@
 ---
-description: After every completed code change, commit and push without waiting to be asked.
+description: After every completed code change, commit and push to live main without waiting to be asked.
 alwaysApply: true
 ---
 
 # Commit e push dopo ogni aggiornamento
 
-Francesco ha chiesto di fare **commit + push su `origin` dopo ogni modifica completata**, senza aspettare un messaggio a parte.
+Francesco ha chiesto di fare **commit + push su `origin/main` (live Render)** dopo ogni modifica completata, senza aspettare un messaggio a parte.
 
 - Committa e fai push al termine di ogni intervento sul codice (bugfix, feature, UI).
-- Su branch `sandbox` fai push di `sandbox`; su `main` fai push di `main`. Prove e feedback restano su `sandbox` finché Francesco non chiede la promozione.
+- Destinazione sempre **`main`**. Non pushare su `sandbox` salvo richiesta esplicita.
 - Messaggi in inglese, 1-2 frasi sul perché, come lo storico del repo.
 - Non committare segreti, `.env`, `.env.sandbox`, o `data/*.json` / `data-sandbox/`.
 - Non usare force-push, `--no-verify`, né amend se il commit è già su remote.

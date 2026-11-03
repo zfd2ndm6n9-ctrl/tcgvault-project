@@ -1,28 +1,22 @@
 ---
-description: Experimental work stays on the sandbox branch until Francesco promotes it to production.
+description: Ship every completed change to live Render (branch main). Do not park work on sandbox.
 alwaysApply: true
 ---
 
-# Sandbox vs produzione
+# Produzione (live)
 
-TCG Vault ha due linee:
+Francesco ha chiesto di **mandare sempre le modifiche sul live Render**, non sulla linea sandbox.
 
-- **`main`**: file originali / sito live. Non sperimentare qui.
-- **`sandbox`**: prove, feedback, bugfix da backtestare. Cartella locale `C:\Users\calog\Downloads\tcgvault-sandbox` (git worktree).
+- **`main`**: sito live tcg-vault.it. Commit e push qui dopo ogni intervento.
+- Render: servizio tcg-vault.it, branch **`main`**, autodeploy ON. Non copiare i file a mano.
 
 ## Come lavorare
 
-- Feature nuove, tentativi, test da feedback: commit e push su **`sandbox`**.
-- Avvio locale di prova: `npm run sandbox` (porta **4243**, fascia gialla SANDBOX, dati in `data-sandbox/`).
-- Produzione locale: `npm start` (porta **4242**).
-- Quando Francesco dice che è backtestato / di lanciarlo: un click su GitHub **Actions → Promote sandbox to live → Run workflow**, oppure in locale `npm run promote-sandbox`. Merge `sandbox` → `main` + push. Render sul servizio live (branch `main`) pubblica a tutti. Non copiare i file a mano.
-
-## Online (Render)
-
-- Live: servizio esistente di **tcg-vault.it**, branch **`main`**, autodeploy ON.
-- Sandbox pubblica: secondo Web Service sullo stesso repo, branch **`sandbox`**, start `npm run sandbox`, env `APP_ENV=sandbox`. URL tipo `https://….onrender.com` o `sandbox.tcg-vault.it`.
+- Bugfix, feature, UI, feedback: commit + push su **`origin/main`**.
+- Avvio locale produzione: `npm start` (porta **4242**).
+- `npm run sandbox` resta solo per una prova locale isolata (porta **4243**, fascia gialla, `data-sandbox/`). Non usarlo come destinazione dei push.
 
 ## Dati
 
-- Senza `.env.sandbox` i test usano lo stesso Supabase/Stripe del live. Per non toccare i dati veri, copia `.env.sandbox.example` in `.env.sandbox` con un progetto di test e chiavi `sk_test_`.
 - Non committare `.env`, `.env.sandbox`, `data/`, `data-sandbox/`.
+- Su Render deve esserci `SUPABASE_SERVICE_ROLE_KEY` (già impostata).
