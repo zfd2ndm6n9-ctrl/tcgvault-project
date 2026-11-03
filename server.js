@@ -567,6 +567,8 @@ try {
 const CART_MIN_ORDER = 20;
 const WALLET_HOLD_DAYS = 7;
 const PLATFORM_FEE_RATE = 0.05;
+const SHOP_PLAN_EUR = 15;
+const SHOP_PLAN_CENTS = 1500;
 
 function platformChargeCents(listedEuro) {
     const base = Math.round(Number(listedEuro || 0) * 100);
@@ -2688,8 +2690,8 @@ function answerVaultBot(message) {
     if (/(ospite|guest|login|registr|account|profilo)/.test(q)) {
         return 'Puoi sfogliare il catalogo da ospite. Per vendere, chattare, salvare, offrire o comprare serve l\'accesso. Il profilo salva nome, email e address su Supabase.';
     }
-    if (/(negozio|partner|saas|abbonamento|9,99|9.99|area negozi|promo|coupon|codice)/.test(q)) {
-        return 'Area Negozi: marketplace e caricamento carte restano gratuiti. I servizi avanzati (tornei, check-in QR, dashboard) si sbloccano con SaaS €9,99/mese oppure con un codice promozionale valido, senza pagamento. L\'Admin Supremo genera i codici dal menu Admin.';
+    if (/(negozio|partner|saas|abbonamento|15|9,99|9.99|area negozi|promo|coupon|codice)/.test(q)) {
+        return 'Area Negozi: marketplace e vendita carte restano gratuiti. Un unico piano negozio da €15,00/mese (o codice promo) sblocca tornei, QR, vetrina partner, boost locale, buylist, codici sconto store e ritiro in sede. La commissione 5% e la soglia catalogo €50 restano uguali per tutti.';
     }
     if (/(torneo|eventi|qr|iscriv)/.test(q)) {
         return 'Tornei: i giocatori vedono gli eventi dei negozi partner, si iscrivono con un click e ricevono un QR personale da mostrare in store. I negozi abbonati creano i tornei e scansionano i QR al check-in dalla dashboard negozio.';
@@ -2713,7 +2715,7 @@ app.get('/api/shops/status/:userId', (req, res) => {
             activeUntil: sub.activeUntil || null,
             unlimited: !!sub.unlimited || (!sub.activeUntil && active),
             planSource: sub.planSource || (active ? 'paid' : null),
-            priceMonthly: 9.99
+            priceMonthly: SHOP_PLAN_EUR
         } : null
     });
 });
@@ -2737,14 +2739,14 @@ app.post('/api/shops/subscribe', async (req, res) => {
     if (stripe) {
         try {
             const paymentIntent = await stripe.paymentIntents.create({
-                amount: 999,
+                amount: SHOP_PLAN_CENTS,
                 currency: 'eur',
                 automatic_payment_methods: { enabled: true },
                 metadata: { type: 'shop_saas', userId: String(userId) }
             });
             sub.pendingPaymentIntentId = paymentIntent.id;
             persistShopsToDisk();
-            return res.json({ success: true, requiresPayment: true, clientSecret: paymentIntent.client_secret, price: 9.99 });
+            return res.json({ success: true, requiresPayment: true, clientSecret: paymentIntent.client_secret, price: SHOP_PLAN_EUR });
         } catch (err) {
             return res.status(400).json({ success: false, error: err.message });
         }
@@ -2856,6 +2858,9 @@ app.post('/api/shops/confirm', async (req, res) => {
             const pi = await stripe.paymentIntents.retrieve(paymentIntentId || sub.pendingPaymentIntentId);
             if (pi.status !== 'succeeded') {
                 return res.status(400).json({ success: false, error: 'Pagamento abbonamento non confermato.' });
+            }
+            if (Number(pi.amount) < SHOP_PLAN_CENTS - 1) {
+                return res.status(400).json({ success: false, error: 'Importo abbonamento non valido.' });
             }
         }
         sub.status = 'active';
@@ -3038,7 +3043,7 @@ app.post('/api/tournaments', async (req, res) => {
     const shopId = auth.id;
     const { shopName, title, game, date, time, location, maxPlayers, fee, description } = req.body || {};
     if (!isShopActive(shopId)) {
-        return res.status(403).json({ success: false, error: 'Serve l\'abbonamento Area Negozi (€9,99/mese) per creare tornei.' });
+        return res.status(403).json({ success: false, error: 'Serve l\'abbonamento Area Negozi (€15,00/mese) per creare tornei.' });
     }
     if (!title || !date) {
         return res.status(400).json({ success: false, error: 'Titolo e data sono obbligatori.' });

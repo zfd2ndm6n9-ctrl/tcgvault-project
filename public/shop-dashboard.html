@@ -107,7 +107,7 @@
             currentUser = { id: session.user.id, email: session.user.email, name: session.user.email.split('@')[0] };
             const st = await fetch('/api/shops/status/' + encodeURIComponent(currentUser.id)).then(r => r.json());
             if (!st.active) {
-                gate.innerHTML = '<p class="muted">Dashboard riservata ai negozi abbonati (€9,99/mese). <a href="shops.html">Attiva il piano</a>. Catalogo e vendita carte restano gratuiti.</p>';
+                gate.innerHTML = '<p class="muted">Dashboard riservata ai negozi abbonati (€15,00/mese). <a href="shops.html">Attiva il piano</a>. Catalogo e vendita carte restano gratuiti. Commissione 5% e soglia €50 restano invariate.</p>';
                 return;
             }
             shopName = (st.subscription && st.subscription.shopName) || currentUser.name;

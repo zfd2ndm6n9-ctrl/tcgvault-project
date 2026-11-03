@@ -41,17 +41,17 @@
 
         <div class="card">
             <h2>Partner store TCG Vault</h2>
-            <p class="muted">Il caricamento carte e il marketplace restano <strong style="color:var(--accent)">gratuiti per tutti</strong>. L'abbonamento SaaS sblocca i servizi avanzati per i negozi fisici.</p>
-            <div class="price">€ 9,99 <span style="font-size:1rem;color:var(--muted);">/ mese</span></div>
+            <p class="muted">Il marketplace e la vendita carte restano <strong style="color:var(--accent)">gratuiti per tutti</strong>. Un unico piano negozio sblocca gli strumenti per il locale. La commissione del 5% e la soglia catalogo di €50,00 <strong>non cambiano</strong>.</p>
+            <div class="price">€ 15,00 <span style="font-size:1rem;color:var(--muted);">/ mese</span></div>
         </div>
 
         <div class="card">
-            <h2>Cosa include l'abbonamento</h2>
+            <h2>Cosa include il piano</h2>
             <div class="grid">
-                <div class="pill"><strong>Tornei ed eventi</strong><span class="muted">Crea, pubblica e lancia tornei dalla dashboard negozio.</span></div>
-                <div class="pill"><strong>Check-in QR</strong><span class="muted">Scansiona i QR dei partecipanti in loco in pochi secondi.</span></div>
-                <div class="pill"><strong>Iscrizioni B2C</strong><span class="muted">I giocatori si iscrivono dal menu Tornei e arrivano già registrati.</span></div>
-                <div class="pill"><strong>Visibilità partner</strong><span class="muted">Il tuo store compare come organizzatore degli eventi.</span></div>
+                <div class="pill"><strong>Tornei, QR, iscrizioni</strong><span class="muted">Eventi, check-in in store e giocatori già registrati dal sito.</span></div>
+                <div class="pill"><strong>Vetrina e pin zona</strong><span class="muted">Pagina pubblica, orari, ritiro in sede e pin Partner sulla mappa.</span></div>
+                <div class="pill"><strong>Evidenza locale</strong><span class="muted">Annunci in cima nella tua città e avvisi «torneo vicino a te».</span></div>
+                <div class="pill"><strong>Buylist e sconti store</strong><span class="muted">Listino «cerco/pago» e coupon solo sui tuoi annunci (sconto a tuo carico, fee 5% invariata).</span></div>
             </div>
         </div>
 
@@ -64,7 +64,7 @@
             <input id="promo-code" placeholder="Es. TESTFREE2026" autocomplete="off" spellcheck="false">
             <button class="btn btn-outline" type="button" onclick="redeemPromo()">Riscatta codice e sblocca il piano</button>
             <div id="payment-element"></div>
-            <button class="btn" id="subscribe-btn" onclick="startSubscribe()">Attiva abbonamento €9,99/mese</button>
+            <button class="btn" id="subscribe-btn" onclick="startSubscribe()">Attiva abbonamento €15,00/mese</button>
             <p class="err" id="sub-msg"></p>
             <button class="btn btn-outline" style="margin-top:8px;" onclick="window.location.href='shop-dashboard.html'">Apri dashboard negozio</button>
         </div>
@@ -92,7 +92,7 @@
                     ? 'Piano SaaS attivo senza scadenza (codice promo o sblocco illimitato).'
                     : 'Abbonamento attivo fino al ' + new Date(st.subscription.activeUntil).toLocaleDateString('it-IT') + '.';
             } else {
-                document.getElementById('sub-status').innerText = 'Nessun piano attivo. Il marketplace resta gratis; i tornei QR richiedono €9,99/mese o un codice promozionale.';
+                document.getElementById('sub-status').innerText = 'Nessun piano attivo. Il marketplace resta gratis; gli strumenti negozio richiedono €15,00/mese o un codice promozionale.';
             }
             if (st.subscription && st.subscription.shopName) document.getElementById('shop-name').value = st.subscription.shopName;
         }
@@ -141,7 +141,7 @@
             document.getElementById('payment-element').innerHTML = '';
             elements.create('payment').mount('#payment-element');
             document.getElementById('subscribe-btn').onclick = confirmSubscribe;
-            document.getElementById('subscribe-btn').innerText = 'Conferma pagamento €9,99';
+            document.getElementById('subscribe-btn').innerText = 'Conferma pagamento €15,00';
         }
 
         async function confirmSubscribe() {
