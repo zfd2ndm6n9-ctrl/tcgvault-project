@@ -764,13 +764,18 @@
             <button type="button" class="btn-filters" onclick="openFiltersPanel()">Filtri</button>
         </div>
         <div class="zone-bar" id="zone-bar">
-            <button type="button" class="zone-pill active" data-km="all" onclick="setBrowseRadius('all')">Tutta Italia</button>
-            <button type="button" class="zone-pill" data-km="10" onclick="setBrowseRadius(10)">10 km</button>
-            <button type="button" class="zone-pill" data-km="20" onclick="setBrowseRadius(20)">20 km</button>
-            <button type="button" class="zone-pill" data-km="40" onclick="setBrowseRadius(40)">40 km</button>
-            <button type="button" class="zone-pill" data-km="80" onclick="setBrowseRadius(80)">80 km</button>
-            <input type="text" id="browse-city" placeholder="Scrivi città o via per restringere..." oninput="onBrowsePlaceInput()">
+            <label for="browse-radius" style="margin:0;">Raggio</label>
+            <select id="browse-radius" class="filter-select" onchange="onBrowseRadiusSelect(this.value)" style="width:auto;min-width:140px;">
+                <option value="all" selected>Tutta Italia</option>
+                <option value="5">5 km</option>
+                <option value="10">10 km</option>
+                <option value="20">20 km</option>
+                <option value="40">40 km</option>
+                <option value="80">80 km</option>
+            </select>
+            <input type="text" id="browse-city" placeholder="Città o via..." oninput="onBrowsePlaceInput()">
         </div>
+        <div id="browse-area-map" class="area-map" style="display:none;margin-bottom:16px;"></div>
 
         <div class="rules-banner">
             <strong>Compratori:</strong> ordine minimo €20,00 e articoli di un solo venditore.
@@ -844,16 +849,16 @@
                 <button class="close-btn" onclick="closeFiltersPanel()">&times;</button>
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
-                <label>Zona (posizione profilo venditore)</label>
-                <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;text-transform:none;letter-spacing:0;font-weight:500;">Partenza: tutta Italia. Restringi il cerchio o scrivi una città: gli annunci usano il pin del venditore.</p>
-                <div class="zone-bar" style="margin:0 0 8px;">
-                    <button type="button" class="zone-pill active" data-km="all" onclick="setBrowseRadius('all')">Tutta Italia</button>
-                    <button type="button" class="zone-pill" data-km="10" onclick="setBrowseRadius(10)">10 km</button>
-                    <button type="button" class="zone-pill" data-km="20" onclick="setBrowseRadius(20)">20 km</button>
-                    <button type="button" class="zone-pill" data-km="40" onclick="setBrowseRadius(40)">40 km</button>
-                    <button type="button" class="zone-pill" data-km="80" onclick="setBrowseRadius(80)">80 km</button>
-                </div>
-                <div id="browse-area-map" class="area-map" style="display:none;height:190px;"></div>
+                <label>Zona</label>
+                <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;text-transform:none;letter-spacing:0;font-weight:500;">Stesso raggio della tendina in catalogo. Gli annunci usano il pin del venditore.</p>
+                <select id="filter-browse-radius" class="filter-select" onchange="onBrowseRadiusSelect(this.value)">
+                    <option value="all" selected>Tutta Italia</option>
+                    <option value="5">5 km</option>
+                    <option value="10">10 km</option>
+                    <option value="20">20 km</option>
+                    <option value="40">40 km</option>
+                    <option value="80">80 km</option>
+                </select>
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>Tipo Articolo</label>
@@ -1835,9 +1840,14 @@
 
         function syncBrowsePills() {
             const km = browseZone.mode === 'all' ? 'all' : String(browseZone.radiusKm);
-            document.querySelectorAll('.zone-pill').forEach(el => {
-                el.classList.toggle('active', el.getAttribute('data-km') === km);
+            ['browse-radius', 'filter-browse-radius'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = km;
             });
+        }
+
+        function onBrowseRadiusSelect(value) {
+            setBrowseRadius(value === 'all' ? 'all' : Number(value));
         }
 
         function pinOnChangeFor(kind) {
