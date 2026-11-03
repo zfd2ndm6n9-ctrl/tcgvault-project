@@ -86,16 +86,7 @@ function meetupTokenMatch(order, raw) {
     return token === String(order.meetupCode || '') || token === String(order.meetupQrToken || '');
 }
 
-function accountAgeDays(user) {
-    const t = Date.parse(user && user.createdAt);
-    if (!Number.isFinite(t)) return 0;
-    return (Date.now() - t) / (24 * 60 * 60 * 1000);
-}
-
 function assertMeetupAllowed(auth, amount) {
-    if (accountAgeDays(auth) < MEETUP_MIN_ACCOUNT_DAYS) {
-        return 'L\'incontro di persona è disponibile dopo 7 giorni dalla creazione account. Usa la spedizione tracciata.';
-    }
     if (Number(amount) > MEETUP_MAX_AMOUNT) {
         return 'Sopra €' + MEETUP_MAX_AMOUNT + ' l\'incontro non è consentito: solo spedizione tracciata.';
     }
@@ -720,7 +711,6 @@ function platformChargeCents(listedEuro) {
     const wantNet = base + Math.round(base * PLATFORM_FEE_RATE);
     return Math.ceil((wantNet + 25) / 0.985);
 }
-const MEETUP_MIN_ACCOUNT_DAYS = 7;
 const MEETUP_MAX_AMOUNT = 150;
 const HOLD_RELEASED_AT = '1970-01-01T00:00:00.000Z';
 const SINGLE_CARD_TYPE = 'Carta Singola';
