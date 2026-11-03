@@ -274,28 +274,42 @@
                 return;
             }
 
-            const first = cart[0];
-            const response = await fetch('/api/create-payment-intent', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    cardIds: cart.map(c => c.id),
-                    cardId: cart[0] && cart[0].id,
-                    deliveryMethod: (document.querySelector('input[name="delivery-method"]:checked') || {}).value || 'shipping'
-                })
+            await mountStripePayment();
+            document.querySelectorAll('input[name="delivery-method"]').forEach(r => {
+                r.addEventListener('change', () => mountStripePayment());
             });
-            const data = await response.json();
-            if (!data.clientSecret) {
-                document.getElementById('payment-message').innerText = data.error?.message || 'Impossibile avviare il pagamento.';
-                return;
+        }
+
+        async function mountStripePayment() {
+            const msg = document.getElementById('payment-message');
+            const mount = document.getElementById('payment-element');
+            if (!cart.length) return;
+            try {
+                const response = await fetch('/api/create-payment-intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cardIds: cart.map(c => c.id),
+                        cardId: cart[0] && cart[0].id,
+                        deliveryMethod: (document.querySelector('input[name="delivery-method"]:checked') || {}).value || 'shipping'
+                    })
+                });
+                const data = await response.json();
+                if (!data.clientSecret) {
+                    if (msg) msg.innerText = (data.error && data.error.message) || data.error || 'Impossibile avviare il pagamento.';
+                    return;
+                }
+                clientSecret = data.clientSecret;
+                window.__pendingOrderId = data.orderId || null;
+                if (mount) mount.innerHTML = '';
+                elements = stripe.elements({
+                    appearance: { theme: 'night', variables: { colorPrimary: '#00ff88', colorBackground: '#131b2e', colorText: '#f8fafc', borderRadius: '10px' } },
+                    clientSecret
+                });
+                elements.create('payment', stripePaymentOptions()).mount('#payment-element');
+            } catch (err) {
+                if (msg) msg.innerText = 'Pagamento non avviato. Ricarica la pagina e riprova.';
             }
-            clientSecret = data.clientSecret;
-            window.__pendingOrderId = data.orderId || null;
-            elements = stripe.elements({
-                appearance: { theme: 'night', variables: { colorPrimary: '#00ff88', colorBackground: '#131b2e', colorText: '#f8fafc', borderRadius: '10px' } },
-                clientSecret
-            });
-            elements.create('payment', stripePaymentOptions()).mount('#payment-element');
         }
 
         document.getElementById('payment-form').addEventListener('submit', async (e) => {
@@ -311,41 +325,63 @@
                 msg.innerText = 'Devi accettare i Termini e le Condizioni.';
                 return;
             }
-            if (!stripe || !elements) return;
+            if (!stripe || !elements || !clientSecret) {
+                msg.innerText = 'Carta non pronta. Ricarica la pagina.';
+                return;
+            }
             const btn = document.getElementById('submit-payment-btn');
             btn.disabled = true;
             btn.innerText = 'Elaborazione...';
-            const { error } = await stripe.confirmPayment({
-                elements,
-                confirmParams: {
-                    return_url: window.location.origin + '/index.html?payment_success=true',
-                    payment_method_data: {
-                        billing_details: {
-                            name: billing.name,
-                            email: billing.email,
-                            phone: billing.phone,
-                            address: billing.address
+            msg.innerText = '';
+            try {
+                const submitted = await elements.submit();
+                if (submitted && submitted.error) {
+                    msg.innerText = submitted.error.message;
+                    return;
+                }
+                const result = await stripe.confirmPayment({
+                    elements,
+                    clientSecret,
+                    confirmParams: {
+                        return_url: window.location.origin + '/index.html?payment_success=true',
+                        payment_method_data: {
+                            billing_details: {
+                                name: billing.name,
+                                email: billing.email,
+                                phone: billing.phone,
+                                address: billing.address
+                            }
                         }
-                    }
-                },
-                redirect: 'if_required'
-            });
-            if (error) {
-                msg.innerText = error.message;
-                btn.disabled = false;
-                btn.innerText = 'Conferma e Paga';
-                return;
+                    },
+                    redirect: 'if_required'
+                });
+                if (result.error) {
+                    msg.innerText = result.error.message;
+                    return;
+                }
+                const pi = result.paymentIntent;
+                if (pi && pi.status && pi.status !== 'succeeded') {
+                    msg.innerText = 'Autorizza il pagamento nella finestra della banca (SMS o app), poi attendi. Se non compare nulla, riprova.';
+                    return;
+                }
+                await fetch('/api/payments/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        orderId: window.__pendingOrderId,
+                        paymentIntentId: clientSecret ? String(clientSecret).split('_secret')[0] : null
+                    })
+                });
+                localStorage.removeItem('tcg_cart');
+                window.location.href = 'index.html?payment_success=true';
+            } catch (err) {
+                msg.innerText = (err && err.message) || 'Pagamento interrotto. Riprova.';
+            } finally {
+                if (btn.innerText === 'Elaborazione...') {
+                    btn.disabled = false;
+                    btn.innerText = 'Conferma e Paga';
+                }
             }
-            await fetch('/api/payments/confirm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    orderId: window.__pendingOrderId,
-                    paymentIntentId: clientSecret ? String(clientSecret).split('_secret')[0] : null
-                })
-            });
-            localStorage.removeItem('tcg_cart');
-            window.location.href = 'index.html?payment_success=true';
         });
 
         init();

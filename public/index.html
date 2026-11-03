@@ -3901,33 +3901,51 @@
                 showNotification('Accetta i Termini e le Condizioni per ordinare.', 'error');
                 return;
             }
-            if (!stripe || !elements) return;
+            if (!stripe || !elements || !clientSecret) {
+                if (payMsg) payMsg.innerText = 'Carta non pronta. Chiudi e riapri il pagamento.';
+                return;
+            }
 
             const submitBtn = document.getElementById('submit-payment-btn');
             submitBtn.disabled = true;
             submitBtn.innerText = 'Elaborazione...';
 
-            const { error } = await stripe.confirmPayment({
-                elements,
-                confirmParams: {
-                    return_url: window.location.href.split('?')[0] + '?payment_success=true',
-                    payment_method_data: {
-                        billing_details: {
-                            name: billing.name,
-                            email: billing.email,
-                            phone: billing.phone,
-                            address: billing.address
+            try {
+                const submitted = await elements.submit();
+                if (submitted && submitted.error) {
+                    if (payMsg) payMsg.innerText = submitted.error.message;
+                    showNotification(submitted.error.message, 'error');
+                    return;
+                }
+                const result = await stripe.confirmPayment({
+                    elements,
+                    clientSecret,
+                    confirmParams: {
+                        return_url: window.location.href.split('?')[0] + '?payment_success=true',
+                        payment_method_data: {
+                            billing_details: {
+                                name: billing.name,
+                                email: billing.email,
+                                phone: billing.phone,
+                                address: billing.address
+                            }
                         }
-                    }
-                },
-                redirect: 'if_required'
-            });
+                    },
+                    redirect: 'if_required'
+                });
 
-            if (error) {
-                document.getElementById('payment-message').innerText = error.message;
-                submitBtn.disabled = false;
-                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
-            } else {
+                if (result.error) {
+                    if (payMsg) payMsg.innerText = result.error.message;
+                    showNotification(result.error.message, 'error');
+                    return;
+                }
+                const pi = result.paymentIntent;
+                if (pi && pi.status && pi.status !== 'succeeded') {
+                    const waitText = 'Autorizza il pagamento nella finestra della banca (SMS o app), poi attendi.';
+                    if (payMsg) payMsg.innerText = waitText;
+                    showNotification(waitText, 'error');
+                    return;
+                }
                 const paymentIntentId = clientSecret ? String(clientSecret).split('_secret')[0] : null;
                 await fetch('/api/payments/confirm', {
                     method: 'POST',
@@ -3944,8 +3962,13 @@
                 closeStripeCheckoutModal();
                 showNotification(`💳 Pagamento completato! Fondi custoditi in Escrow.`);
                 loadCardsFromSupabase();
+            } catch (err) {
+                const text = (err && err.message) || 'Pagamento interrotto. Riprova.';
+                if (payMsg) payMsg.innerText = text;
+                showNotification(text, 'error');
+            } finally {
                 submitBtn.disabled = false;
-                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard.price).toFixed(2);
+                submitBtn.innerText = 'Conferma e Paga € ' + Number(selectedCard && selectedCard.price ? selectedCard.price : 0).toFixed(2);
             }
         });
 
