@@ -2025,7 +2025,13 @@ app.post('/api/listings', async (req, res) => {
     const category = String(body.category || '');
     const type = String(body.type || '');
     const price = Number(String(body.price || '').replace(',', '.'));
-    const location = String(body.location || '').trim();
+    let location = String(body.location || '').trim();
+    if (!location) {
+        const extra = extraFor(auth.id);
+        const mem = usersDB.find(u => u && String(u.id) === String(auth.id)) || {};
+        const fromProfile = [mem.address || extra.address, mem.city || extra.city].filter(Boolean).join(', ');
+        location = fromProfile || String(mem.city || extra.city || '').trim();
+    }
     const condition = String(body.condition || '').trim();
     const imageUrl = String(body.image_url || '').trim();
     const rawDesc = String(body.description || '').trim().slice(0, 2000);
@@ -2033,8 +2039,11 @@ app.post('/api/listings', async (req, res) => {
     if (!['Pokemon', 'Yugioh', 'Magic', 'OnePiece', 'Lorcana', 'Altro'].includes(category)) {
         return res.status(400).json({ success: false, error: 'Categoria non valida.' });
     }
-    if (!type || !location || !condition || !imageUrl || !(price > 0)) {
-        return res.status(400).json({ success: false, error: 'Compila prezzo, località, condizione e foto.' });
+    if (!type || !condition || !imageUrl || !(price > 0)) {
+        return res.status(400).json({ success: false, error: 'Compila prezzo, condizione e foto.' });
+    }
+    if (!location) {
+        return res.status(400).json({ success: false, error: 'Imposta via e città sul profilo: la posizione di vendita è quella.' });
     }
     if (listingOffTopic(type + ' ' + rawDesc + ' ' + String(body.title || ''))) {
         return res.status(400).json({ success: false, error: 'Annuncio fuori tema: qui si vendono solo TCG e accessori.' });

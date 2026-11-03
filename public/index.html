@@ -805,7 +805,7 @@
                 <div id="side-user-actions" style="display:none;">
                     <button class="btn-outline side-link" id="side-profile-btn" onclick="closeSideMenu(); openProfileTabFromMenu('info')">👤 Il Mio Profilo</button>
                     <button class="btn-outline side-link" id="messages-btn-nav" onclick="closeSideMenu(); openMyMessagesModal()">💬 Messaggi</button>
-                    <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('my-orders')">📦 I Miei Ordini</button>
+                    <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('my-orders')">📦 Acquisti e vendite</button>
                     <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('wallet-escrow')">💰 Portafoglio</button>
                     <button class="btn-outline side-link" onclick="closeSideMenu(); openProfileTabFromMenu('my-listings')">📋 I Miei Annunci</button>
                     <button class="btn-outline side-link" onclick="closeSideMenu(); logoutSupabase()">Esci</button>
@@ -935,7 +935,7 @@
             <div class="profile-nav">
                 <button class="profile-tab active" onclick="switchProfileTab('info', this)">Profilo</button>
                 <button class="profile-tab" onclick="switchProfileTab('my-listings', this)">Annunci</button>
-                <button class="profile-tab" onclick="switchProfileTab('my-orders', this)">📦 I Miei Ordini</button>
+                <button class="profile-tab" onclick="switchProfileTab('my-orders', this)">📦 Acquisti e vendite</button>
                 <button class="profile-tab" onclick="switchProfileTab('wallet-escrow', this)">Portafoglio & Prelievo</button>
                 <button class="profile-tab" onclick="switchProfileTab('reviews-tab', this)">Recensioni</button>
                 <button class="profile-tab" onclick="switchProfileTab('bot-support', this)">VaultBot</button>
@@ -1006,16 +1006,16 @@
             </div>
 
             <div id="tab-my-orders" class="tab-content" style="display: none;">
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Storico dei tuoi ordini d'acquisto protetti da Escrow.</p>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Acquisti e vendite nello stesso elenco. Da qui spedisci, proponi l'incontro, confermi la ricezione: i fondi restano in escrow finché il compratore conferma.</p>
                 <div id="my-orders-container" style="display: flex; flex-direction: column; gap: 12px;">
-                    <p style="color: var(--text-muted);">Nessun ordine effettuato.</p>
+                    <p style="color: var(--text-muted);">Nessun ordine pagato.</p>
                 </div>
             </div>
 
             <div id="tab-wallet-escrow" class="tab-content" style="display: none;">
                 <div style="margin-bottom: 25px;">
                     <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
-                    <p style="font-size: 0.9rem; color: var(--text-muted);">Solo i fondi fuori hold si possono prelevare. Il modo semplice è il bonifico IBAN (1–3 giorni). Stripe Express è facoltativo, solo se vuoi l'accredito automatico.</p>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;"><strong>1.</strong> Il compratore paga: i soldi restano in escrow. <strong>2.</strong> Spedisci o incontri; lui conferma. <strong>3.</strong> 7 giorni di hold, poi prelevi. Il modo semplice è il bonifico IBAN (1–3 giorni). Stripe Express è facoltativo.</p>
                     <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 8px;">€ <span id="wallet-balance">0.00</span></div>
                     <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">In hold anti-truffa: € <span id="wallet-held">0.00</span></p>
                     <p id="payout-pending-msg" style="font-size: 0.9rem; color: var(--accent-neon); margin-bottom: 12px;"></p>
@@ -1338,8 +1338,9 @@
                     <input type="number" step="0.01" id="sell-price" required>
                 </div>
                 <div class="form-group">
-                    <label>📍 Indirizzo / Località dell'Oggetto *</label>
-                    <input type="text" id="sell-location" placeholder="Es. Via Roma 10, Milano" required>
+                    <label>Posizione di vendita</label>
+                    <p id="sell-location-summary" style="font-size:0.9rem;color:var(--accent-neon);margin:0;">La zona è quella del tuo profilo (pin).</p>
+                    <p style="font-size:0.78rem;color:var(--text-muted);margin:6px 0 0;">Per cambiarla: Profilo → via, città e segnalino. I compratori filtrano da lì.</p>
                 </div>
                 <div class="form-group">
                     <label>Condizione *</label>
@@ -2301,7 +2302,7 @@
             const labels = {
                 info: 'Profilo',
                 'my-listings': 'Annunci',
-                'my-orders': 'I Miei Ordini',
+                'my-orders': 'Acquisti e vendite',
                 'wallet-escrow': 'Portafoglio',
                 'reviews-tab': 'Recensioni',
                 'bot-support': 'VaultBot',
@@ -2796,6 +2797,13 @@
                 showNotification('Inserisci un prezzo valido.', 'error');
                 return;
             }
+            const sellPlace = formatProfilePlace(currentUser) || [currentUser.address, currentUser.city].filter(Boolean).join(', ');
+            if (!String(sellPlace || '').trim()) {
+                showNotification('Prima imposta via e città sul profilo: è la posizione di vendita.', 'error');
+                closeSellModal();
+                openProfileModal();
+                return;
+            }
             const fileInput = document.getElementById('sell-image-file');
             if (!fileInput.files || !fileInput.files[0]) {
                 showNotification('Seleziona un\'immagine per la carta.', 'error');
@@ -2842,7 +2850,7 @@
                     type,
                     title: document.getElementById('sell-title').value,
                     price,
-                    location: document.getElementById('sell-location').value,
+                    location: sellPlace,
                     condition: document.getElementById('sell-condition').value,
                     image_url: imageUrl,
                     description: document.getElementById('sell-description').value,
@@ -3039,6 +3047,68 @@
             if (tabName === 'wallet-escrow') refreshConnectStatus();
         }
 
+        function orderCardHtml(o) {
+            const oid = String(o.id || '');
+            const isBuyer = String(o.buyerId) === String(currentUser.id);
+            const isMeetup = o.deliveryMethod === 'meetup';
+            const role = isBuyer ? 'Acquisto' : 'Vendita';
+            const statusIt = {
+                paid: 'Pagato / in escrow',
+                meetup_arranged: 'Incontro proposto',
+                shipped: 'Spedito',
+                completed: 'Completato (hold 7 giorni)'
+            };
+            const nextIt = {
+                paid: isMeetup
+                    ? (isBuyer ? 'Aspetta luogo e orario dal venditore.' : 'Proponi un luogo pubblico e un orario.')
+                    : (isBuyer ? 'Aspetta il tracking del venditore.' : 'Inserisci corriere e tracking.'),
+                meetup_arranged: isBuyer ? 'Sul posto ispeziona e conferma col codice.' : 'Mostra il codice solo sul posto, dopo l\'ispezione.',
+                shipped: isBuyer ? 'Quando arriva il pacco, conferma la ricezione.' : 'In attesa che il compratore confermi la ricezione.',
+                completed: 'Fondi in hold 7 giorni, poi prelevabili dal portafoglio.'
+            };
+            const safeId = escapeHtml(oid);
+            let action = `<button class="btn-outline" onclick="openChatModal('${isBuyer ? o.sellerId : o.buyerId}', 'Gestione Ordine Escrow', '${isBuyer ? o.sellerId : o.buyerId}')">💬 Chat</button>`;
+            let extra = '';
+            if (isBuyer && o.status === 'shipped') {
+                action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmOrderReceipt('${safeId}')">Conferma ricezione</button>`;
+            }
+            if (isBuyer && isMeetup && o.status === 'meetup_arranged') {
+                action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmMeetupOrder('${safeId}')">Conferma incontro (codice)</button>`;
+            }
+            if (!isBuyer && !isMeetup && o.status === 'paid') {
+                extra = `<div style="display:flex;flex-wrap:wrap;gap:8px;width:100%;margin-top:4px;">
+                    <input id="ship-carrier-${safeId}" class="filter-input" placeholder="Corriere (Poste, BRT, GLS…)" style="flex:1;min-width:140px;">
+                    <input id="ship-track-${safeId}" class="filter-input" placeholder="Numero tracking" style="flex:1;min-width:140px;">
+                    <button type="button" class="btn-submit" style="width:auto;padding:8px 12px;" onclick="shipOrder('${safeId}')">Registra spedizione</button>
+                </div>`;
+            }
+            if (!isBuyer && isMeetup && o.status === 'paid') {
+                extra = `<div style="display:flex;flex-wrap:wrap;gap:8px;width:100%;margin-top:4px;">
+                    <input id="meet-place-${safeId}" class="filter-input" placeholder="Luogo pubblico (mai casa)" style="flex:1;min-width:140px;">
+                    <input id="meet-at-${safeId}" class="filter-input" placeholder="Giorno e ora" style="flex:1;min-width:140px;">
+                    <button type="button" class="btn-submit" style="width:auto;padding:8px 12px;" onclick="submitMeetup('${safeId}')">Proponi incontro</button>
+                </div>`;
+            }
+            const trackLine = o.trackingNumber
+                ? `<div style="font-size: 0.8rem;">Tracking: <b>${escapeHtml(o.carrier || '')}</b> ${o.trackingLink ? `<a href="${escapeHtml(o.trackingLink)}" target="_blank" rel="noopener">${escapeHtml(o.trackingNumber)}</a>` : escapeHtml(o.trackingNumber)}</div>`
+                : '';
+            const codeLine = (!isBuyer && o.meetupCode) ? `<div style="font-size: 0.8rem;">Codice svincolo: <b>${escapeHtml(o.meetupCode)}</b> (solo sul posto)</div>` : '';
+            const meetLine = o.meetupPlace ? `<div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(o.meetupPlace)} — ${escapeHtml(o.meetupAt || '')}</div>` : '';
+            const titleLine = o.cardTitle ? `<div style="font-size: 0.88rem; margin-bottom: 2px;">${escapeHtml(o.cardTitle)}</div>` : '';
+            return `
+                <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+                    <div style="flex:1;min-width:200px;">
+                        <div style="font-weight: bold; color: var(--accent-neon); margin-bottom: 4px;">${role} · ${escapeHtml(statusIt[o.status] || o.status)}</div>
+                        ${titleLine}
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">€ ${Number(o.amount || 0).toFixed(2)} · ${isMeetup ? 'Incontro' : 'Spedizione'}</div>
+                        <div style="font-size: 0.8rem; margin-top: 4px;">${escapeHtml(nextIt[o.status] || '')}</div>
+                        ${codeLine}${meetLine}${trackLine}
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">${action}</div>
+                    ${extra}
+                </div>`;
+        }
+
         async function loadMyOrders() {
             if (!currentUser) return;
             try {
@@ -3050,39 +3120,12 @@
                     container.innerHTML = '<p style="color: var(--text-muted);">Nessun ordine pagato. I checkout non completati non compaiono qui.</p>';
                     return;
                 }
-                const statusIt = {
-                    paid: 'Pagato / in escrow',
-                    meetup_arranged: 'Incontro proposto',
-                    shipped: 'Spedito',
-                    completed: 'Completato (hold 7 giorni)'
-                };
-                container.innerHTML = live.map(o => {
-                    const isBuyer = String(o.buyerId) === String(currentUser.id);
-                    const isMeetup = o.deliveryMethod === 'meetup';
-                    const role = isBuyer ? 'Acquisto' : 'Vendita';
-                    let action = `<button class="btn-outline" onclick="openChatModal('${isBuyer ? o.sellerId : o.buyerId}', 'Gestione Ordine Escrow', '${isBuyer ? o.sellerId : o.buyerId}')">💬 Chat</button>`;
-                    if (isBuyer && o.status === 'shipped') {
-                        action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmOrderReceipt('${o.id}')">Conferma ricezione</button>`;
-                    }
-                    if (isBuyer && isMeetup && o.status === 'meetup_arranged') {
-                        action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmMeetupOrder('${o.id}')">Conferma incontro (codice)</button>`;
-                    }
-                    if (!isBuyer && isMeetup && o.status === 'paid') {
-                        action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="proposeMeetup('${o.id}')">Proponi luogo</button>`;
-                    }
-                    const codeLine = (!isBuyer && o.meetupCode) ? `<div style="font-size: 0.8rem;">Codice svincolo: <b>${escapeHtml(o.meetupCode)}</b></div>` : '';
-                    const meetLine = (o.meetupPlace) ? `<div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(o.meetupPlace)} — ${escapeHtml(o.meetupAt || '')}</div>` : '';
-                    return `
-                    <div style="background: var(--bg-color); border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                        <div>
-                            <div style="font-weight: bold; color: var(--accent-neon); margin-bottom: 4px;">Ordine #${escapeHtml(o.id || 'N/D')}</div>
-                            <div style="font-size: 0.9rem; margin-bottom: 2px;">${role} · Stato: <b>${escapeHtml(statusIt[o.status] || o.status)}</b> · ${isMeetup ? 'Incontro' : 'Spedizione'}</div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted);">Totale: € ${Number(o.amount || 0).toFixed(2)}</div>
-                            ${codeLine}${meetLine}
-                        </div>
-                        <div style="display:flex;gap:8px;flex-wrap:wrap;">${action}</div>
-                    </div>`;
-                }).join('');
+                const sales = live.filter(o => String(o.sellerId) === String(currentUser.id));
+                const buys = live.filter(o => String(o.buyerId) === String(currentUser.id));
+                let html = '';
+                if (sales.length) html += '<h3 style="margin:8px 0 4px;font-size:1rem;">Le tue vendite</h3>' + sales.map(orderCardHtml).join('');
+                if (buys.length) html += '<h3 style="margin:16px 0 4px;font-size:1rem;">I tuoi acquisti</h3>' + buys.map(orderCardHtml).join('');
+                container.innerHTML = html;
             } catch (err) {
                 console.error('Errore ordini:', err);
             }
@@ -3375,7 +3418,7 @@
                         <h3 class="card-title">${card.title}</h3>
                         <div class="price">€ ${Number(card.price).toFixed(2)}</div>
                         <div class="account-badges" data-seller-id="${card.user_id}">${identityBadgesHtml(accountMetaCache[String(card.user_id)] || { accountType: 'privato', partner: false })}</div>
-                        <div class="card-location">📍 ${card.location || 'Indirizzo non specificato'}</div>
+                        <div class="card-location">📍 ${formatProfilePlace(currentUser) || card.location || 'Posizione dal profilo'}</div>
                         <div class="status-badge ${status.className}">${status.label}</div>
                         <button class="btn-edit-icon" onclick="openEditListingModal('${card.id}')">✏️ Modifica</button>
                         <button class="btn-delete-icon" onclick="deleteCard('${card.id}')">🗑️ Elimina</button>
@@ -4210,28 +4253,48 @@
             if (!carrier) return;
             const tracking = prompt("Inserisci il numero di tracciamento (Tracking Number):");
             if (!tracking) return;
+            shipOrder(orderId, carrier, tracking);
+        }
 
-            fetch(`${window.location.origin}/api/orders/${orderId}/ship`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ carrier, trackingNumber: tracking })
-            })
-            .then(res => res.json())
-            .then(data => {
+        async function shipOrder(orderId, carrier, tracking) {
+            const c = String(carrier != null ? carrier : ((document.getElementById('ship-carrier-' + orderId) || {}).value || '')).trim();
+            const t = String(tracking != null ? tracking : ((document.getElementById('ship-track-' + orderId) || {}).value || '')).trim();
+            if (!c || !t) {
+                showNotification('Inserisci corriere e numero tracking.', 'error');
+                return;
+            }
+            try {
+                const res = await fetch(`${window.location.origin}/api/orders/${orderId}/ship`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ carrier: c, trackingNumber: t })
+                });
+                const data = await res.json();
                 if (data.success) {
-                    showNotification('Spedizione registrata! L\'acquirente potrà confermare la ricezione.');
-                    closeChat();
+                    showNotification('Spedizione registrata. Il compratore potrà confermare la ricezione.');
+                    loadMyOrders();
                 } else {
                     showNotification(data.error || 'Errore.', 'error');
                 }
-            })
-            .catch(() => showNotification('Errore di comunicazione.', 'error'));
+            } catch (err) {
+                showNotification('Errore di comunicazione.', 'error');
+            }
         }
 
-        async function proposeMeetup(orderId) {
-            const place = prompt('Luogo pubblico (stazione, centro commerciale, negozio partner — mai casa):');
+        async function submitMeetup(orderId) {
+            const place = String(((document.getElementById('meet-place-' + orderId) || {}).value) || '').trim();
+            const at = String(((document.getElementById('meet-at-' + orderId) || {}).value) || '').trim();
+            if (!place || !at) {
+                showNotification('Luogo pubblico e orario sono obbligatori.', 'error');
+                return;
+            }
+            await proposeMeetup(orderId, place, at);
+        }
+
+        async function proposeMeetup(orderId, place, at) {
+            if (place == null) place = prompt('Luogo pubblico (stazione, centro commerciale, negozio partner — mai casa):');
             if (!place) return;
-            const at = prompt('Giorno e orario (es. sabato 16:00):');
+            if (at == null) at = prompt('Giorno e orario (es. sabato 16:00):');
             if (!at) return;
             try {
                 const res = await fetch('/api/orders/' + encodeURIComponent(orderId) + '/meetup', {
@@ -4293,8 +4356,14 @@
 
         function checkAuthAndOpenSellModal() { 
             if (!requireVerifiedUser()) return;
-            const sellLoc = document.getElementById('sell-location');
-            if (sellLoc) sellLoc.value = formatProfilePlace(currentUser) || currentUser.address || currentUser.city || '';
+            const sellPlace = formatProfilePlace(currentUser) || [currentUser.address, currentUser.city].filter(Boolean).join(', ');
+            const summary = document.getElementById('sell-location-summary');
+            if (!String(sellPlace || '').trim()) {
+                showNotification('Prima imposta via, città e pin sul profilo. Quella è la posizione di vendita.', 'error');
+                openProfileModal();
+                return;
+            }
+            if (summary) summary.textContent = 'In vetrina: ' + sellPlace;
             onSellCatalogFieldsChange();
             showOverlay('sell-modal');
         }
