@@ -245,10 +245,58 @@ function haversineKm(aLat, aLng, bLat, bLng) {
     return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
-function geocodePlace(query) {
+function geoTokens(text) {
+    return String(text || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/).filter(t => t.length > 1);
+}
+
+function scoreGeoHit(hit, street, city, tokens) {
+    const name = String(hit.display_name || '').toLowerCase();
+    const addr = hit.address || {};
+    let score = Number(hit.importance) || 0;
+    const cityNeed = String(city || '').toLowerCase().trim();
+    const cityNames = [addr.city, addr.town, addr.village, addr.municipality, addr.suburb, addr.county]
+        .filter(Boolean).map(v => String(v).toLowerCase());
+    if (cityNeed) {
+        if (cityNames.some(n => n === cityNeed || n.includes(cityNeed) || cityNeed.includes(n))) score += 10;
+        else if (name.includes(cityNeed)) score += 3;
+        else score -= 8;
+    }
+    const streetNeed = String(street || '').toLowerCase().trim();
+    if (streetNeed) {
+        const road = String(addr.road || '').toLowerCase();
+        const house = String(addr.house_number || '');
+        const streetCore = streetNeed.replace(/\b(via|viale|piazza|corso|largo|vicolo|strada)\b/g, '').trim();
+        if (road && (streetNeed.includes(road) || road.includes(streetCore.split(/\s+/)[0] || '___'))) score += 7;
+        const num = streetNeed.match(/\d+[a-z]?/i);
+        if (num && house && house.toLowerCase() === num[0].toLowerCase()) score += 5;
+        else if (num && name.includes(num[0].toLowerCase())) score += 2;
+    }
+    tokens.forEach(t => { if (name.includes(t)) score += 0.6; });
+    if (hit.class === 'building' || hit.type === 'house' || hit.type === 'yes') score += 1.5;
+    return score;
+}
+
+function hitToGeo(hit) {
+    return {
+        lat: Number(hit.lat),
+        lng: Number(hit.lon),
+        label: hit.display_name || ''
+    };
+}
+
+async function nominatimSearch(params) {
+    const url = 'https://nominatim.openstreetmap.org/search?' + params.toString();
+    const res = await fetch(url, { headers: { 'User-Agent': 'TCGVault/1.0 (https://tcg-vault.it)', Accept: 'application/json' } });
+    const data = await res.json().catch(() => []);
+    return Array.isArray(data) ? data : [];
+}
+
+function geocodePlace(query, street, city) {
     const q = String(query || '').trim();
-    if (q.length < 2) return Promise.resolve(null);
-    const key = q.toLowerCase();
+    const st = String(street || '').trim();
+    const ct = String(city || '').trim();
+    if (q.length < 2 && !(st && ct) && ct.length < 2) return Promise.resolve(null);
+    const key = [st, ct, q].join('|').toLowerCase();
     if (geoCache[key]) return Promise.resolve(geoCache[key]);
     geoChain = geoChain.then(async () => {
         if (geoCache[key]) return geoCache[key];
@@ -256,14 +304,40 @@ function geocodePlace(query) {
         if (wait > 0) await new Promise(r => setTimeout(r, wait));
         lastGeoAt = Date.now();
         try {
-            const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q=' + encodeURIComponent(q);
-            const res = await fetch(url, { headers: { 'User-Agent': 'TCGVault/1.0 (https://tcg-vault.it)' } });
-            const data = await res.json().catch(() => []);
-            const hit = Array.isArray(data) && data[0];
-            if (hit) {
-                geoCache[key] = { lat: Number(hit.lat), lng: Number(hit.lon), label: hit.display_name || q };
+            const tokens = geoTokens([st, ct, q].join(' '));
+            let hits = [];
+            if (st && ct) {
+                const structured = new URLSearchParams({
+                    format: 'json',
+                    addressdetails: '1',
+                    limit: '8',
+                    countrycodes: 'it',
+                    country: 'Italia',
+                    street: st,
+                    city: ct
+                });
+                hits = await nominatimSearch(structured);
+                lastGeoAt = Date.now();
             }
-            return geoCache[key] || null;
+            if (!hits.length) {
+                const wait2 = 1100 - (Date.now() - lastGeoAt);
+                if (wait2 > 0) await new Promise(r => setTimeout(r, wait2));
+                lastGeoAt = Date.now();
+                const free = new URLSearchParams({
+                    format: 'json',
+                    addressdetails: '1',
+                    limit: '8',
+                    countrycodes: 'it',
+                    q: (st && ct ? (st + ', ' + ct + ', Italia') : (q || [st, ct].filter(Boolean).join(', ') + ', Italia'))
+                });
+                hits = await nominatimSearch(free);
+            }
+            if (!hits.length) return null;
+            hits.sort((a, b) => scoreGeoHit(b, st, ct, tokens) - scoreGeoHit(a, st, ct, tokens));
+            const best = hits[0];
+            if (!best) return null;
+            geoCache[key] = hitToGeo(best);
+            return geoCache[key];
         } catch (err) {
             console.error('Geocode:', err.message);
             return null;
@@ -2095,7 +2169,7 @@ app.get('/api/geo/lookup', async (req, res) => {
     if (!rateLimit('geo:' + (req.ip || 'x'), 60, 60000)) {
         return res.status(429).json({ success: false, error: 'Troppe ricerche mappa.' });
     }
-    const geo = await geocodePlace(req.query.q);
+    const geo = await geocodePlace(req.query.q, req.query.street, req.query.city);
     if (!geo) return res.json({ success: true, found: false });
     res.json({ success: true, found: true, ...geo });
 });

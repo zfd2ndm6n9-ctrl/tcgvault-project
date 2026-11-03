@@ -764,7 +764,7 @@
             <button type="button" class="btn-filters" onclick="openFiltersPanel()">Filtri</button>
         </div>
         <div class="zone-bar" id="zone-bar">
-            <input type="text" id="browse-city" placeholder="Scrivi una città: la mappa si sposta lì" oninput="onBrowsePlaceInput()">
+            <input type="text" id="browse-city" placeholder="Es. Via Dante 15, Milano" oninput="onBrowsePlaceInput()">
         </div>
         <div id="browse-area-map" class="area-map" style="display:none;margin-bottom:16px;"></div>
 
@@ -1866,7 +1866,8 @@
                 applyFilters();
                 return;
             }
-            const geo = await lookupGeo(typed + ', Italia');
+            const parsed = parsePlaceQuery(typed);
+            const geo = await lookupGeo(parsed.q, { street: parsed.street, city: parsed.city });
             if (!geo) return;
             browseZone.lat = geo.lat;
             browseZone.lng = geo.lng;
@@ -1881,18 +1882,32 @@
             geocodeFieldTimers[kind] = setTimeout(() => geocodeFieldsToMapNow(kind), 550);
         }
 
-        async function resolvePlace(city, address) {
-            let geo = null;
-            if (city.length >= 2) {
-                geo = await lookupGeo(city + ', Italia');
-                if (address.length >= 3) {
-                    const street = await lookupGeo(address + ', ' + city + ', Italia');
-                    if (street) geo = street;
-                }
-            } else if (address.length >= 5) {
-                geo = await lookupGeo(address + ', Italia');
+        function parsePlaceQuery(raw) {
+            const t = String(raw || '').trim().replace(/\s+/g, ' ');
+            if (!t) return { street: '', city: '', q: '' };
+            const bits = t.split(',').map(s => s.trim()).filter(Boolean);
+            if (bits.length >= 2) {
+                const city = bits[bits.length - 1].replace(/\bitalia\b/i, '').replace(/\b\d{5}\b/, '').trim();
+                const street = bits.slice(0, -1).join(', ');
+                return { street, city, q: street + ', ' + city + ', Italia' };
             }
-            return geo;
+            const words = t.split(/\s+/);
+            const numIdx = words.findIndex(w => /^\d+[a-z]?$/i.test(w));
+            if (/^(via|viale|piazza|corso|largo|vicolo|strada)\b/i.test(t) && numIdx >= 0 && numIdx < words.length - 1) {
+                const street = words.slice(0, numIdx + 1).join(' ');
+                const city = words.slice(numIdx + 1).join(' ');
+                return { street, city, q: street + ', ' + city + ', Italia' };
+            }
+            return { street: '', city: t, q: t + ', Italia' };
+        }
+
+        async function resolvePlace(city, address) {
+            if (address.length >= 3 && city.length >= 2) {
+                return lookupGeo(address + ', ' + city + ', Italia', { street: address, city });
+            }
+            if (city.length >= 2) return lookupGeo(city + ', Italia', { city });
+            if (address.length >= 5) return lookupGeo(address + ', Italia', { street: address });
+            return null;
         }
 
         async function geocodeFieldsToMapNow(kind) {
@@ -1935,21 +1950,24 @@
 
         const sellerGeoCache = {};
         const geoLookupCache = {};
-        async function lookupGeo(query) {
+        async function lookupGeo(query, parts) {
             const q = String(query || '').trim();
-            if (q.length < 2) return null;
-            const key = q.toLowerCase();
+            const street = String((parts && parts.street) || '').trim();
+            const city = String((parts && parts.city) || '').trim();
+            if (q.length < 2 && !street && city.length < 2) return null;
+            const key = [street, city, q].join('|').toLowerCase();
             if (geoLookupCache[key]) return geoLookupCache[key];
+            const qs = new URLSearchParams({ q });
+            if (street) qs.set('street', street);
+            if (city) qs.set('city', city);
+            const url = '/api/geo/lookup?' + qs.toString();
             try {
-                const res = await fetch('/api/geo/lookup?q=' + encodeURIComponent(q));
+                let res = await fetch(url);
                 if (res.status === 429) {
                     await new Promise(r => setTimeout(r, 1200));
-                    const retry = await fetch('/api/geo/lookup?q=' + encodeURIComponent(q));
-                    const again = await retry.json().catch(() => null);
-                    if (again && again.found) geoLookupCache[key] = again;
-                    return geoLookupCache[key] || null;
+                    res = await fetch(url);
                 }
-                const data = await res.json();
+                const data = await res.json().catch(() => null);
                 if (data && data.found) geoLookupCache[key] = data;
                 return geoLookupCache[key] || null;
             } catch (e) {
