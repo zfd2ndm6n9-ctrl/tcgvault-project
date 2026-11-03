@@ -114,7 +114,11 @@ function publicOrderFor(order, viewerId) {
 }
 
 function escrowSenderName(order, step) {
-    return ['escrow', step, String(order.sellerId || ''), String(order.buyerId || ''), order.deliveryMethod === 'meetup' ? 'meetup' : 'shipping'].join('|');
+    const parts = ['escrow', step, String(order.sellerId || ''), String(order.buyerId || ''), order.deliveryMethod === 'meetup' ? 'meetup' : 'shipping'];
+    if (order.trackingLink) {
+        parts.push(encodeURIComponent(order.carrier || ''), encodeURIComponent(order.trackingNumber || ''), encodeURIComponent(order.trackingLink));
+    }
+    return parts.join('|');
 }
 
 function pushOrderEscrowMessages(order, step, sellerText, buyerText) {
@@ -166,15 +170,15 @@ async function fulfillPaidOrder(order) {
         pushOrderEscrowMessages(
             order,
             'paid_meetup',
-            `🤝 VENDITA IN INCONTRO: "{title}" per €${euro}. Cosa fare: proponi un luogo pubblico (mai casa), poi sul posto ispeziona insieme e scansiona il QR del compratore (come il check-in tornei). Dopo lo scan i fondi restano 7 giorni in hold.`,
-            `🤝 Incontro prenotato per "{title}" (€${euro}). Cosa fare: aspetta luogo e orario. Sul posto ispeziona le carte, poi mostra il QR (lo trovi negli ordini). Il venditore lo scansiona e i fondi restano 7 giorni in hold.`
+            `Incontro pagato · {title} · €${euro}. Proponi un luogo pubblico, poi scansiona il QR del compratore.`,
+            `Hai pagato {title} · €${euro} (incontro). Aspetta luogo e orario, ispeziona, poi mostra il QR.`
         );
     } else {
         pushOrderEscrowMessages(
             order,
             'paid_shipping',
-            `📦 VENDITA: "{title}" pagato €${euro}. I fondi sono in Escrow. Cosa fare: inserisci corriere e numero di tracking.`,
-            `📦 Pagamento ricevuto per "{title}" (€${euro}). Cosa fare: aspetta il tracking del venditore. Quando arriva il pacco, conferma la ricezione.`
+            `Vendita pagata · {title} · €${euro}. I fondi sono in escrow. Inserisci corriere e tracking.`,
+            `Hai pagato {title} · €${euro}. Aspetta il tracking, poi conferma quando arriva il pacco.`
         );
     }
     persistOrdersToDisk();
@@ -876,11 +880,15 @@ function messageToRow(m) {
 function parseEscrowSenderName(raw) {
     const parts = String(raw || '').split('|');
     if (parts[0] !== 'escrow') return null;
+    const dec = (v) => { try { return decodeURIComponent(v || ''); } catch (e) { return v || ''; } };
     return {
         escrowStep: parts[1] || '',
         sellerId: parts[2] || '',
         buyerId: parts[3] || '',
-        deliveryMethod: parts[4] === 'meetup' ? 'meetup' : 'shipping'
+        deliveryMethod: parts[4] === 'meetup' ? 'meetup' : 'shipping',
+        carrier: dec(parts[5]),
+        trackingNumber: dec(parts[6]),
+        trackingLink: dec(parts[7])
     };
 }
 
@@ -900,7 +908,10 @@ function rowToMessage(r) {
         escrowStep: meta && meta.escrowStep,
         sellerId: meta && meta.sellerId,
         buyerId: meta && meta.buyerId,
-        deliveryMethod: meta ? meta.deliveryMethod : undefined
+        deliveryMethod: meta ? meta.deliveryMethod : undefined,
+        carrier: meta && meta.carrier,
+        trackingNumber: meta && meta.trackingNumber,
+        trackingLink: meta && meta.trackingLink
     };
 }
 
@@ -1304,8 +1315,26 @@ function isPlausibleIban(value) {
     return /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/.test(normalizeIban(value));
 }
 
+function syncHeldFromCompletedOrders(userId) {
+    const user = getOrCreateWalletUser(userId);
+    let held = 0;
+    ordersDB.forEach(o => {
+        if (String(o.sellerId) !== String(userId) || o.status !== 'completed') return;
+        const amt = Number(o.amount || 0);
+        const t = Date.parse(o.holdUntil);
+        if (Number.isFinite(t) && t > Date.now()) held += amt;
+    });
+    if (held > Number(user.heldWallet || 0)) {
+        user.heldWallet = held;
+        syncWalletTotals(user);
+        persistWalletsToDisk();
+    }
+    return user;
+}
+
 function walletPublic(userId) {
     releaseMatureHolds();
+    syncHeldFromCompletedOrders(userId);
     const user = getOrCreateWalletUser(userId);
     const pending = pendingIbanInfo(user);
     return {
@@ -2442,14 +2471,12 @@ app.post('/api/orders/:orderId/ship', async (req, res) => {
     order.trackingLink = generateTrackingLink(order.carrier, order.trackingNumber);
     order.status = 'shipped';
     persistOrdersToDisk();
-    const trackBit = order.trackingLink
-        ? `${order.carrier} ${order.trackingNumber} (${order.trackingLink})`
-        : `${order.carrier} ${order.trackingNumber}`;
+    const trackLabel = [order.carrier, order.trackingNumber].filter(Boolean).join(' · ');
     pushOrderEscrowMessages(
         order,
         'shipped',
-        `📦 Hai registrato la spedizione di "{title}": ${trackBit}. Cosa fare: aspetta che il compratore confermi la ricezione. Poi i fondi restano 7 giorni in hold.`,
-        `📦 Il venditore ha spedito "{title}": ${trackBit}. Cosa fare: quando arriva il pacco, conferma la ricezione da ordini o da questo pulsante.`
+        `Spedito {title} con ${trackLabel}. Aspetta che il compratore confermi. Poi 7 giorni di hold.`,
+        `Spedito {title} con ${trackLabel}. Quando arriva, conferma la ricezione.`
     );
 
     res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
@@ -2481,8 +2508,8 @@ app.post('/api/orders/:orderId/meetup', async (req, res) => {
     pushOrderEscrowMessages(
         order,
         'meetup_arranged',
-        `🤝 Hai proposto l'incontro per "{title}": ${place} — ${at}. Cosa fare: sul posto ispeziona le carte e scansiona il QR del compratore. Dopo lo scan i fondi restano 7 giorni in hold.`,
-        `🤝 Incontro proposto per "{title}": ${place} — ${at}. Cosa fare: luogo pubblico (mai casa), ispeziona, poi mostra il QR. Il venditore lo scansiona come al check-in tornei.`
+        `Incontro proposto per {title}: ${place} — ${at}. Sul posto scansiona il QR del compratore.`,
+        `Incontro per {title}: ${place} — ${at}. Luogo pubblico, ispeziona, poi mostra il QR.`
     );
     res.json({ success: true, order: publicOrderFor(order, auth.id) });
 });
@@ -2537,8 +2564,8 @@ function finishMeetupScan(res, auth, order) {
         pushOrderEscrowMessages(
             order,
             'completed',
-            `✅ Hai scansionato il QR di "{title}". €${Number(settled.amount).toFixed(2)} in hold ${holdLabel}, poi prelevi dal portafoglio (IBAN).`,
-            `✅ Il venditore ha scansionato il tuo QR per "{title}". I fondi restano in hold ${holdLabel}. Se c'è un problema: support@tcgvault.com.`
+            `QR ok per {title}. €${Number(settled.amount).toFixed(2)} in hold ${holdLabel}, poi prelievo IBAN.`,
+            `Incontro confermato per {title}. Fondi in hold ${holdLabel}. Problemi: support@tcgvault.com.`
         );
     }
     return res.json({
@@ -2582,8 +2609,8 @@ app.post('/api/orders/:orderId/complete', async (req, res) => {
     pushOrderEscrowMessages(
         order,
         'completed',
-        `✅ Il compratore ha confermato la ricezione di "{title}". €${Number(amount).toFixed(2)} in hold ${holdLabel}, poi prelevi dal portafoglio (IBAN).`,
-        `✅ Hai confermato la ricezione di "{title}". I fondi restano in hold ${holdLabel}. Se il pacco è sbagliato: support@tcgvault.com.`
+        `Ricezione confermata · {title}. €${Number(amount).toFixed(2)} in hold ${holdLabel}, poi prelievo IBAN.`,
+        `Ricezione confermata · {title}. Fondi in hold ${holdLabel}. Pacco sbagliato: support@tcgvault.com.`
     );
 
     res.json({

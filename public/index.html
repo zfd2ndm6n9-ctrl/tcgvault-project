@@ -3021,8 +3021,24 @@
 
         function closeSavedModal() { hideOverlay('saved-modal'); }
 
+        async function refreshWalletFromServer() {
+            if (!currentUser) return;
+            try {
+                const flags = await fetch('/api/users/' + encodeURIComponent(currentUser.id)).then(r => r.json());
+                if (!flags) return;
+                if (flags.availableWallet != null) currentUser.wallet = Number(flags.availableWallet) || 0;
+                else if (flags.wallet != null) currentUser.wallet = Number(flags.wallet) || 0;
+                if (flags.heldWallet != null) currentUser.heldWallet = Number(flags.heldWallet) || 0;
+                const bal = document.getElementById('wallet-balance');
+                const heldEl = document.getElementById('wallet-held');
+                if (bal) bal.innerText = (currentUser.wallet || 0).toFixed(2);
+                if (heldEl) heldEl.innerText = (currentUser.heldWallet || 0).toFixed(2);
+            } catch (e) {}
+        }
+
         function openProfileModal() {
             if (!currentUser) { openAuthModal(); return; }
+            refreshWalletFromServer();
             document.getElementById('profile-email').value = currentUser.email;
             document.getElementById('profile-name').value = currentUser.name || '';
             document.getElementById('profile-address').value = currentUser.address || '';
@@ -3085,7 +3101,10 @@
             if (tabName === 'reviews-tab') loadUserReviews();
             if (tabName === 'tos-faq') renderLegalContent('legal-accordion-profile');
             if (tabName === 'bot-support') openVaultBot();
-            if (tabName === 'wallet-escrow') refreshConnectStatus();
+            if (tabName === 'wallet-escrow') {
+                refreshConnectStatus();
+                refreshWalletFromServer();
+            }
         }
 
         function orderCardHtml(o) {
@@ -4127,11 +4146,15 @@
         function parseEscrowMeta(m) {
             const parts = String((m && m.senderName) || '').split('|');
             if (parts[0] === 'escrow') {
+                const dec = (v) => { try { return decodeURIComponent(v || ''); } catch (e) { return v || ''; } };
                 return {
                     step: parts[1] || m.escrowStep || '',
                     sellerId: parts[2] || m.sellerId || '',
                     buyerId: parts[3] || m.buyerId || '',
-                    method: parts[4] === 'meetup' ? 'meetup' : (m.deliveryMethod || 'shipping')
+                    method: parts[4] === 'meetup' ? 'meetup' : (m.deliveryMethod || 'shipping'),
+                    carrier: dec(parts[5]),
+                    trackingNumber: dec(parts[6]),
+                    trackingLink: dec(parts[7]) || m.trackingLink || ''
                 };
             }
             return {
@@ -4170,6 +4193,9 @@
                 action = `<button onclick="showMeetupQr('${oid}')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Mostra QR</button>`;
             } else if (isSeller && meta.step === 'completed') {
                 action = `<button onclick="openProfileTabFromMenu('wallet-escrow')" style="background: var(--admin-gold); color: #000; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Apri portafoglio</button>`;
+            }
+            if (meta.trackingLink) {
+                action += `<a href="${escapeHtml(meta.trackingLink)}" target="_blank" rel="noopener" style="background: transparent; color: var(--accent-neon); border: 1px solid var(--accent-neon); padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem; text-decoration:none;">Segui spedizione</a>`;
             }
             return `
                 <div class="escrow-alert-msg">
