@@ -20,9 +20,20 @@
         .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:22px; margin-bottom:16px; }
         .card h2 { margin:0 0 10px; font-size:1.05rem; }
         .muted { color:var(--muted); line-height:1.55; font-size:.92rem; }
-        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin:14px 0; }
-        .pill { background:rgba(0,255,136,.08); border:1px solid rgba(0,255,136,.25); border-radius:12px; padding:14px; }
-        .pill strong { display:block; color:var(--accent); margin-bottom:6px; }
+        .plan-acc { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+        .plan-acc details {
+            border: 1px solid var(--border); border-radius: 12px;
+            background: rgba(0,255,136,.05); overflow: hidden;
+        }
+        .plan-acc summary {
+            cursor: pointer; padding: 15px 16px; font-weight: 700; color: var(--accent);
+            list-style: none; display: flex; justify-content: space-between; align-items: center;
+            font-size: .95rem;
+        }
+        .plan-acc summary::-webkit-details-marker { display: none; }
+        .plan-acc summary::after { content: '+'; color: var(--muted); font-weight: 500; font-size: 1.2rem; line-height: 1; }
+        .plan-acc details[open] summary::after { content: '–'; }
+        .plan-acc p { padding: 0 16px 16px; margin: 0; }
         .price { font-size:2rem; font-weight:800; color:var(--accent); }
         .btn { background:var(--accent); color:#000; border:none; border-radius:10px; padding:12px 16px; font-weight:800; cursor:pointer; width:100%; }
         .btn-outline { background:transparent; border:1px solid var(--border); color:var(--text); }
@@ -47,11 +58,24 @@
 
         <div class="card">
             <h2>Cosa include il piano</h2>
-            <div class="grid">
-                <div class="pill"><strong>Tornei, QR, iscrizioni</strong><span class="muted">Eventi, check-in in store e giocatori già registrati dal sito.</span></div>
-                <div class="pill"><strong>Vetrina e pin zona</strong><span class="muted">Pagina pubblica, orari, ritiro in sede e pin Partner sulla mappa.</span></div>
-                <div class="pill"><strong>Evidenza locale</strong><span class="muted">Annunci in cima nella tua città e avvisi «torneo vicino a te».</span></div>
-                <div class="pill"><strong>Buylist e sconti store</strong><span class="muted">Listino «cerco/pago» e coupon solo sui tuoi annunci (sconto a tuo carico, fee 5% invariata).</span></div>
+            <p class="muted">Tocca un titolo per leggere i vantaggi.</p>
+            <div class="plan-acc">
+                <details>
+                    <summary>Tornei e check-in in negozio</summary>
+                    <p class="muted">Crei eventi (anche ricorrenti) dalla dashboard. I giocatori si iscrivono dal sito, arrivano già in lista e in store scansionano il QR in pochi secondi.</p>
+                </details>
+                <details>
+                    <summary>Vetrina, orari e ritiro in sede</summary>
+                    <p class="muted">Pagina pubblica del locale con pin sulla mappa, orari e «disponibile in negozio / ritiro in sede» sugli annunci.</p>
+                </details>
+                <details>
+                    <summary>Visibilità nella tua città</summary>
+                    <p class="muted">Annunci in evidenza in zona, badge Partner e avvisi «torneo vicino a te» a chi ha impostato quella città sul profilo.</p>
+                </details>
+                <details>
+                    <summary>Buylist e sconti del tuo store</summary>
+                    <p class="muted">Pubblichi un listino «cerco / pago X» e coupon validi solo sui tuoi annunci. Lo sconto è a carico del negozio.</p>
+                </details>
             </div>
         </div>
 

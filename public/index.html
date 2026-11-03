@@ -764,16 +764,7 @@
             <button type="button" class="btn-filters" onclick="openFiltersPanel()">Filtri</button>
         </div>
         <div class="zone-bar" id="zone-bar">
-            <label for="browse-radius" style="margin:0;">Raggio</label>
-            <select id="browse-radius" class="filter-select" onchange="onBrowseRadiusSelect(this.value)" style="width:auto;min-width:140px;">
-                <option value="all" selected>Tutta Italia</option>
-                <option value="5">5 km</option>
-                <option value="10">10 km</option>
-                <option value="20">20 km</option>
-                <option value="40">40 km</option>
-                <option value="80">80 km</option>
-            </select>
-            <input type="text" id="browse-city" placeholder="Città o via..." oninput="onBrowsePlaceInput()">
+            <input type="text" id="browse-city" placeholder="Scrivi una città: la mappa si sposta lì" oninput="onBrowsePlaceInput()">
         </div>
         <div id="browse-area-map" class="area-map" style="display:none;margin-bottom:16px;"></div>
 
@@ -847,18 +838,6 @@
             <div class="modal-header">
                 <h2>Filtri</h2>
                 <button class="close-btn" onclick="closeFiltersPanel()">&times;</button>
-            </div>
-            <div class="filter-group" style="margin-bottom:12px;">
-                <label>Zona</label>
-                <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;text-transform:none;letter-spacing:0;font-weight:500;">Stesso raggio della tendina in catalogo. Gli annunci usano il pin del venditore.</p>
-                <select id="filter-browse-radius" class="filter-select" onchange="onBrowseRadiusSelect(this.value)">
-                    <option value="all" selected>Tutta Italia</option>
-                    <option value="5">5 km</option>
-                    <option value="10">10 km</option>
-                    <option value="20">20 km</option>
-                    <option value="40">40 km</option>
-                    <option value="80">80 km</option>
-                </select>
             </div>
             <div class="filter-group" style="margin-bottom:12px;">
                 <label>Tipo Articolo</label>
@@ -1684,31 +1663,36 @@
             const lng = Number(opts.lng);
             const hasPin = Number.isFinite(lat) && Number.isFinite(lng);
             const radiusKm = clampRadiusKm(opts.radiusKm);
+            const showCircle = opts.showCircle !== false;
             const center = hasPin ? [lat, lng] : [41.9, 12.5];
             if (areaMaps[containerId]) {
                 areaMaps[containerId].map.remove();
                 delete areaMaps[containerId];
             }
-            const map = L.map(el, { scrollWheelZoom: true }).setView(center, hasPin ? 12 : 6);
+            const map = L.map(el, { scrollWheelZoom: true }).setView(center, hasPin ? 13 : 6);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '&copy; OpenStreetMap'
             }).addTo(map);
             const marker = L.marker(center, { draggable: editable, autoPan: true }).addTo(map);
-            const circle = L.circle(center, {
+            const circle = showCircle ? L.circle(center, {
                 radius: radiusKm * 1000,
                 color: '#00ff88',
                 fillColor: '#00ff88',
                 fillOpacity: 0.18,
                 weight: 2
-            }).addTo(map);
+            }).addTo(map) : null;
             function syncCircle() {
                 const p = marker.getLatLng();
-                circle.setLatLng(p);
-                circle.setRadius(areaMaps[containerId].radiusKm * 1000);
-                try { map.fitBounds(circle.getBounds(), { padding: [18, 18], maxZoom: 13 }); } catch (e) {}
+                if (circle) {
+                    circle.setLatLng(p);
+                    circle.setRadius(areaMaps[containerId].radiusKm * 1000);
+                    try { map.fitBounds(circle.getBounds(), { padding: [18, 18], maxZoom: 13 }); } catch (e) {}
+                } else {
+                    map.setView(p, 13);
+                }
             }
-            areaMaps[containerId] = { map, marker, circle, radiusKm, editable, onChange: opts.onChange || null };
+            areaMaps[containerId] = { map, marker, circle, radiusKm, editable, onChange: opts.onChange || null, showCircle };
             if (editable) {
                 map.on('click', e => {
                     marker.setLatLng(e.latlng);
@@ -1721,7 +1705,7 @@
                 });
             }
             if (hasPin) syncCircle();
-            setTimeout(() => { try { map.invalidateSize(); syncCircle(); } catch (e) {} }, 250);
+            setTimeout(() => { try { map.invalidateSize(); if (hasPin) syncCircle(); } catch (e) {} }, 250);
             return areaMaps[containerId];
         }
 
@@ -1736,6 +1720,7 @@
             const slot = areaMaps[containerId];
             if (!slot) return;
             slot.radiusKm = clampRadiusKm(km);
+            if (!slot.circle) return;
             slot.circle.setRadius(slot.radiusKm * 1000);
             try { slot.map.fitBounds(slot.circle.getBounds(), { padding: [18, 18], maxZoom: 13 }); } catch (e) {}
         }
@@ -1746,14 +1731,17 @@
                 return mountAreaMap(containerId, {
                     lat, lng, radiusKm: radiusKm || 20,
                     editable: !!(opts && opts.editable),
-                    onChange: opts && opts.onChange
+                    onChange: opts && opts.onChange,
+                    showCircle: opts && opts.showCircle
                 });
             }
             if (radiusKm) slot.radiusKm = clampRadiusKm(radiusKm);
             const next = [Number(lat), Number(lng)];
             slot.marker.setLatLng(next);
-            slot.circle.setLatLng(next);
-            slot.circle.setRadius(slot.radiusKm * 1000);
+            if (slot.circle) {
+                slot.circle.setLatLng(next);
+                slot.circle.setRadius(slot.radiusKm * 1000);
+            }
             try { slot.map.invalidateSize(); } catch (e) {}
             try { slot.map.flyTo(next, 13, { duration: 0.55 }); } catch (e) {
                 slot.map.setView(next, 13);
@@ -1836,19 +1824,7 @@
             }, 500);
         }
 
-        let browseZone = { mode: 'all', lat: null, lng: null, radiusKm: 20, query: '' };
-
-        function syncBrowsePills() {
-            const km = browseZone.mode === 'all' ? 'all' : String(browseZone.radiusKm);
-            ['browse-radius', 'filter-browse-radius'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.value = km;
-            });
-        }
-
-        function onBrowseRadiusSelect(value) {
-            setBrowseRadius(value === 'all' ? 'all' : Number(value));
-        }
+        let browseZone = { lat: null, lng: null, query: '' };
 
         function pinOnChangeFor(kind) {
             return pin => {
@@ -1860,63 +1836,17 @@
             };
         }
 
-        async function setBrowseRadius(km) {
-            if (km === 'all') {
-                browseZone.mode = 'all';
-                const mapEl = document.getElementById('browse-area-map');
-                if (mapEl) mapEl.style.display = 'none';
-                syncBrowsePills();
-                applyFilters();
-                return;
-            }
-            browseZone.mode = 'radius';
-            browseZone.radiusKm = Number(km);
-            const ok = await ensureBrowseCenter();
-            if (!ok) {
-                browseZone.mode = 'all';
-                syncBrowsePills();
-                return;
-            }
-            syncBrowsePills();
-            refreshBrowseMap();
-            applyFilters();
-        }
-
-        async function ensureBrowseCenter() {
-            if (Number(browseZone.lat) && Number(browseZone.lng)) return true;
-            const typed = String((document.getElementById('browse-city') || {}).value || '').trim();
-            if (typed.length >= 2) {
-                const geo = await lookupGeo(typed + ', Italia');
-                if (geo) {
-                    browseZone.lat = geo.lat;
-                    browseZone.lng = geo.lng;
-                    browseZone.query = typed;
-                    return true;
-                }
-            }
-            if (currentUser && Number(currentUser.lat) && Number(currentUser.lng)) {
-                browseZone.lat = currentUser.lat;
-                browseZone.lng = currentUser.lng;
-                const inp = document.getElementById('browse-city');
-                if (inp && !inp.value && currentUser.city) inp.value = currentUser.city;
-                return true;
-            }
-            showNotification('Scrivi una città (o via) per restringere il cerchio.', 'error');
-            return false;
-        }
-
         function refreshBrowseMap() {
             const mapEl = document.getElementById('browse-area-map');
-            if (!mapEl || browseZone.mode === 'all' || !browseZone.lat) return;
+            if (!mapEl) return;
+            if (!browseZone.lat || !String(browseZone.query || '').trim()) {
+                mapEl.style.display = 'none';
+                return;
+            }
             mapEl.style.display = 'block';
-            moveAreaMap('browse-area-map', browseZone.lat, browseZone.lng, browseZone.radiusKm, {
-                editable: true,
-                onChange: pin => {
-                    browseZone.lat = pin.lat;
-                    browseZone.lng = pin.lng;
-                    browseZone.radiusKm = pin.radiusKm;
-                    applyFilters();
-                }
+            moveAreaMap('browse-area-map', browseZone.lat, browseZone.lng, 20, {
+                editable: false,
+                showCircle: false
             });
         }
 
@@ -1929,13 +1859,17 @@
         async function geocodeBrowsePlace() {
             const typed = String((document.getElementById('browse-city') || {}).value || '').trim();
             browseZone.query = typed;
-            if (typed.length < 2) return;
+            if (typed.length < 2) {
+                browseZone.lat = null;
+                browseZone.lng = null;
+                refreshBrowseMap();
+                applyFilters();
+                return;
+            }
             const geo = await lookupGeo(typed + ', Italia');
             if (!geo) return;
             browseZone.lat = geo.lat;
             browseZone.lng = geo.lng;
-            if (browseZone.mode === 'all') browseZone.mode = 'radius';
-            syncBrowsePills();
             refreshBrowseMap();
             applyFilters();
         }
@@ -2355,14 +2289,7 @@
         }
         function openSideMenu() { showOverlay('side-overlay'); }
         function closeSideMenu() { hideOverlay('side-overlay'); }
-        function openFiltersPanel() {
-            showOverlay('filters-overlay');
-            setTimeout(() => {
-                refreshBrowseMap();
-                const slot = areaMaps['browse-area-map'];
-                if (slot) try { slot.map.invalidateSize(); } catch (e) {}
-            }, 200);
-        }
+        function openFiltersPanel() { showOverlay('filters-overlay'); }
         function closeFiltersPanel() { hideOverlay('filters-overlay'); }
         function openVaultBot() { showOverlay('vaultbot-modal'); }
         function closeVaultBot() { hideOverlay('vaultbot-modal'); }
@@ -3487,10 +3414,7 @@
             const maxPriceInput = document.getElementById('price-clean-input').value;
             const maxPrice = maxPriceInput === '' ? 999999999 : parseFloat(maxPriceInput);
             const sortBy = document.getElementById('sort-filter').value;
-            const useRadius = browseZone.mode === 'radius' && Number(browseZone.lat) && Number(browseZone.lng);
-            const originLat = browseZone.lat;
-            const originLng = browseZone.lng;
-            const radiusKm = Number(browseZone.radiusKm) || 20;
+            const cityQuery = String(browseZone.query || '').trim().toLowerCase();
 
             const sellerIds = [...new Set(allCards.map(c => String(c.user_id || '')).filter(Boolean))];
             await ensureSellerGeo(sellerIds);
@@ -3505,25 +3429,17 @@
                 if (statusFilter === 'available') matchesStatus = isListingBuyable(card);
                 if (statusFilter === 'sold') matchesStatus = isCardSold(card);
                 let matchesLocation = true;
-                if (useRadius) {
+                card._distanceKm = null;
+                if (cityQuery.length >= 2) {
                     const geo = sellerGeoCache[String(card.user_id)] || {};
-                    if (geo.lat && geo.lng) {
-                        const km = haversineKm(originLat, originLng, geo.lat, geo.lng);
-                        card._distanceKm = km;
-                        matchesLocation = km <= radiusKm;
-                    } else {
-                        card._distanceKm = null;
-                        matchesLocation = false;
-                    }
-                } else {
-                    card._distanceKm = null;
+                    const hay = [geo.city, geo.place, card.location].filter(Boolean).join(' ').toLowerCase();
+                    matchesLocation = hay.includes(cityQuery);
                 }
                 return matchesSearch && matchesLocation && matchesCategory && matchesType && matchesPrice && matchesStatus;
             });
 
             if (sortBy === 'price-asc') filtered.sort((a, b) => Number(a.price) - Number(b.price));
             else if (sortBy === 'price-desc') filtered.sort((a, b) => Number(b.price) - Number(a.price));
-            else if (useRadius) filtered.sort((a, b) => (a._distanceKm == null ? 9999 : a._distanceKm) - (b._distanceKm == null ? 9999 : b._distanceKm));
             else filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
             renderCardsToContainer(filtered, document.getElementById('product-list'));
