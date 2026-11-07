@@ -265,8 +265,24 @@ function pushOrderEscrowMessages(order, step, sellerText, buyerText) {
     persistMessagesToDisk();
 }
 
+function normalizeDeliveryMethod(raw) {
+    return String(raw || '').toLowerCase() === 'meetup' ? 'meetup' : 'shipping';
+}
+
+function applyDeliveryFromPaymentIntent(order, pi) {
+    if (!order || !pi) return;
+    const meta = (pi.metadata || {}).deliveryMethod;
+    if (meta) order.deliveryMethod = normalizeDeliveryMethod(meta);
+}
+
 async function fulfillPaidOrder(order) {
     if (!order || order.escrowNotified) return order;
+    if (stripe && order.paymentIntentId) {
+        try {
+            const pi = await stripe.paymentIntents.retrieve(order.paymentIntentId);
+            applyDeliveryFromPaymentIntent(order, pi);
+        } catch (err) {}
+    }
     order.status = 'paid';
     order.paidAt = new Date().toISOString();
     order.escrowNotified = true;
@@ -2814,6 +2830,7 @@ app.post('/api/payments/confirm', async (req, res) => {
             if (pi.status !== 'succeeded') {
                 return res.status(400).json({ success: false, error: 'Pagamento non confermato dal gateway.' });
             }
+            applyDeliveryFromPaymentIntent(order, pi);
         } else if (!stripe) {
             return res.status(400).json({ success: false, error: 'Impossibile verificare il pagamento.' });
         }
@@ -2866,6 +2883,33 @@ app.post('/api/orders/:orderId/ship', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Dati di spedizione salvati con successo!', order });
+});
+
+app.post('/api/orders/:orderId/as-meetup', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const order = ordersDB.find(o => o.id === req.params.orderId);
+    if (!order) return res.status(404).json({ success: false, error: 'Ordine non trovato.' });
+    const allowed = String(order.buyerId) === auth.id || String(order.sellerId) === auth.id || isAdminEmail(auth.email);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Operazione non autorizzata.' });
+    if (order.carrier || order.trackingNumber) {
+        return res.status(400).json({ success: false, error: 'Questa vendita ha già un tracking: non si può convertire in incontro.' });
+    }
+    if (order.status !== 'paid' && order.status !== 'meetup_arranged') {
+        return res.status(400).json({ success: false, error: 'Stato ordine non convertibile in incontro.' });
+    }
+    order.deliveryMethod = 'meetup';
+    if (!order.meetupCode) order.meetupCode = generateMeetupCode();
+    order.meetupQrToken = order.meetupQrToken || order.meetupCode;
+    persistOrdersToDisk();
+    const euro = Number(order.amount).toFixed(2);
+    pushOrderEscrowMessages(
+        order,
+        'paid_meetup',
+        `Incontro (corretto) · {title} · €${euro}. Proponi un luogo pubblico, poi scansiona il QR. Non inserire tracking.`,
+        `Incontro (corretto) · {title} · €${euro}. Aspetta luogo e orario, ispeziona, poi mostra il QR.`
+    );
+    res.json({ success: true, order: publicOrderFor(order, auth.id) });
 });
 
 app.post('/api/orders/:orderId/meetup', async (req, res) => {

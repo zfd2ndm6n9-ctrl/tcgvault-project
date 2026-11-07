@@ -63,13 +63,14 @@
             <div class="form-group" style="margin-top:14px;">
                 <label>Consegna *</label>
                 <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;color:var(--text-main);margin:8px 0;">
-                    <input type="radio" name="delivery-method" value="shipping" checked>
+                    <input type="radio" name="delivery-method" value="shipping">
                     <span>Spedizione tracciata</span>
                 </label>
                 <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;color:var(--text-main);">
                     <input type="radio" name="delivery-method" value="meetup">
                     <span>Incontro di persona</span>
                 </label>
+                <p style="font-size:0.8rem;color:var(--text-muted);margin:8px 0 0;">Scegli la consegna prima di pagare: il pagamento si crea su quella scelta.</p>
             </div>
             <div style="display:flex;justify-content:space-between;font-weight:800;font-size:1.15rem;">
                 <span>Totale</span>
@@ -280,16 +281,23 @@
                 return;
             }
 
-            await mountStripePayment();
             document.querySelectorAll('input[name="delivery-method"]').forEach(r => {
                 r.addEventListener('change', () => mountStripePayment());
             });
+            const msg = document.getElementById('payment-message');
+            if (msg) msg.innerText = 'Scegli spedizione o incontro, poi si carica il pagamento.';
         }
 
         async function mountStripePayment() {
             const msg = document.getElementById('payment-message');
             const mount = document.getElementById('payment-element');
             if (!cart.length) return;
+            const method = (document.querySelector('input[name="delivery-method"]:checked') || {}).value || '';
+            if (!method) {
+                if (msg) msg.innerText = 'Scegli spedizione tracciata o incontro di persona.';
+                return;
+            }
+            if (msg) msg.innerText = 'Preparazione pagamento (' + (method === 'meetup' ? 'incontro' : 'spedizione') + ')…';
             try {
                 const response = await fetch('/api/create-payment-intent', {
                     method: 'POST',
@@ -297,7 +305,7 @@
                     body: JSON.stringify({
                         cardIds: cart.map(c => c.id),
                         cardId: cart[0] && cart[0].id,
-                        deliveryMethod: (document.querySelector('input[name="delivery-method"]:checked') || {}).value || 'shipping'
+                        deliveryMethod: method
                     })
                 });
                 const data = await response.json();

@@ -1104,13 +1104,14 @@
             <div class="form-group" style="margin-bottom: 14px;">
                 <label>Consegna *</label>
                 <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;margin:8px 0;">
-                    <input type="radio" name="delivery-method" value="shipping" checked>
+                    <input type="radio" name="delivery-method" value="shipping">
                     <span>Spedizione tracciata</span>
                 </label>
                 <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;">
                     <input type="radio" name="delivery-method" value="meetup">
                     <span>Incontro di persona</span>
                 </label>
+                <p id="checkout-delivery-hint" style="font-size:0.8rem;color:var(--text-muted);margin:8px 0 0;">Scegli la consegna prima di pagare: il pagamento si crea su quella scelta.</p>
             </div>
             <form id="payment-form" style="margin-bottom: 15px;">
                 <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 12px;">Tutti i campi sono obbligatori, anche per incontro di persona.</p>
@@ -1433,6 +1434,8 @@
         let catalogSearchTimer = null;
         let catalogSearchSeq = 0;
         let pendingPaymentOrderId = null;
+        let checkoutPayIds = [];
+        let checkoutDeliveryBound = false;
         let elements = null;
         let clientSecret = null;
         let activeChatReceiverId = null;
@@ -3121,6 +3124,9 @@
             if (isBuyer && o.status === 'shipped') {
                 action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="confirmOrderReceipt('${safeId}')">Conferma ricezione</button>`;
             }
+            if (!isMeetup && o.status === 'paid' && !o.trackingNumber) {
+                action += `<button class="btn-outline" style="width:auto;padding:8px 12px;" onclick="convertOrderToMeetup('${safeId}')">Era un incontro</button>`;
+            }
             if (isBuyer && isMeetup && (o.status === 'paid' || o.status === 'meetup_arranged') && (o.meetupQrUrl || o.meetupCode || o.meetupQrToken)) {
                 action += `<button class="btn-submit" style="width:auto;padding:8px 12px;" onclick="showMeetupQr('${safeId}')">Mostra QR</button>`;
             }
@@ -3853,46 +3859,68 @@
             const payIds = (cart.length && String(cart[0].user_id) === String(selectedCard.user_id))
                 ? cart.map(c => c.id)
                 : [selectedCard.id];
-            const cleanPayIds = payIds.map(id => String(id).trim()).filter(id => id && id !== 'undefined');
-            if (!cleanPayIds.length) {
+            checkoutPayIds = payIds.map(id => String(id).trim()).filter(id => id && id !== 'undefined');
+            if (!checkoutPayIds.length) {
                 showNotification('ID articolo mancante. Ricarica la pagina e riprova.', 'error');
                 return;
             }
+            clientSecret = null;
+            pendingPaymentOrderId = null;
+            elements = null;
+            const mount = document.getElementById('payment-element');
+            if (mount) mount.innerHTML = '';
+            document.querySelectorAll('#stripe-checkout-modal input[name="delivery-method"]').forEach(r => { r.checked = false; });
+            const payMsg = document.getElementById('payment-message');
+            if (payMsg) payMsg.innerText = 'Scegli spedizione o incontro, poi si carica il pagamento.';
+            if (!checkoutDeliveryBound) {
+                checkoutDeliveryBound = true;
+                document.querySelectorAll('#stripe-checkout-modal input[name="delivery-method"]').forEach(r => {
+                    r.addEventListener('change', () => mountIndexCheckoutPayment());
+                });
+            }
+        }
 
+        async function mountIndexCheckoutPayment() {
+            const method = (document.querySelector('#stripe-checkout-modal input[name="delivery-method"]:checked') || {}).value || '';
+            const payMsg = document.getElementById('payment-message');
+            if (!method || !checkoutPayIds.length) {
+                if (payMsg) payMsg.innerText = 'Scegli spedizione tracciata o incontro di persona.';
+                return;
+            }
+            if (payMsg) payMsg.innerText = 'Preparazione pagamento (' + (method === 'meetup' ? 'incontro' : 'spedizione') + ')…';
             try {
                 const response = await fetch(`${window.location.origin}/api/create-payment-intent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        cardIds: cleanPayIds,
-                        cardId: cleanPayIds[0],
-                        deliveryMethod: (document.querySelector('#stripe-checkout-modal input[name="delivery-method"]:checked') || {}).value || 'shipping'
+                        cardIds: checkoutPayIds,
+                        cardId: checkoutPayIds[0],
+                        deliveryMethod: method
                     })
                 });
                 const data = await response.json();
-                
-                if (data.clientSecret) {
-                    clientSecret = data.clientSecret;
-                    pendingPaymentOrderId = data.orderId || null;
-                    
-                    const appearance = { 
+                if (!data.clientSecret) {
+                    showNotification('Errore Stripe: ' + (data.error?.message || 'Impossibile avviare il pagamento'), 'error');
+                    return;
+                }
+                clientSecret = data.clientSecret;
+                pendingPaymentOrderId = data.orderId || null;
+                const mount = document.getElementById('payment-element');
+                if (mount) mount.innerHTML = '';
+                elements = stripe.elements({
+                    appearance: {
                         theme: 'night',
                         variables: {
                             colorPrimary: '#00ff88',
                             colorBackground: '#131b2e',
                             colorText: '#f8fafc',
-                            borderRadius: '10px',
+                            borderRadius: '10px'
                         }
-                    };
-
-                    elements = stripe.elements({ appearance, clientSecret });
-                    
-                    const paymentElement = elements.create('payment', stripePaymentOptions());
-
-                    paymentElement.mount('#payment-element');
-                } else {
-                    showNotification('Errore Stripe: ' + (data.error?.message || 'Impossibile avviare il pagamento'), 'error');
-                }
+                    },
+                    clientSecret
+                });
+                elements.create('payment', stripePaymentOptions()).mount('#payment-element');
+                if (payMsg) payMsg.innerText = '';
             } catch (error) {
                 showNotification('Errore di connessione al server di pagamento.', 'error');
             }
@@ -4384,6 +4412,25 @@
             const tracking = prompt("Inserisci il numero di tracciamento (Tracking Number):");
             if (!tracking) return;
             shipOrder(orderId, carrier, tracking);
+        }
+
+        async function convertOrderToMeetup(orderId) {
+            try {
+                const res = await fetch('/api/orders/' + encodeURIComponent(orderId) + '/as-meetup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showNotification('Ordine convertito in incontro. Niente tracking: proponi luogo e scansiona il QR.');
+                    loadMyOrders();
+                } else {
+                    showNotification(data.error || 'Conversione non riuscita.', 'error');
+                }
+            } catch (err) {
+                showNotification('Errore di comunicazione.', 'error');
+            }
         }
 
         async function shipOrder(orderId, carrier, tracking) {
