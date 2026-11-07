@@ -1650,7 +1650,6 @@
 
         function isListingPending(card) {
             if (!card || isCardSold(card)) return false;
-            if (typeof card.description === 'string' && card.description.startsWith(PENDING_MARKER)) return true;
             return getSellerCatalogCents(card.user_id) < SELLER_MIN_CATALOG_CENTS;
         }
 
@@ -2673,6 +2672,8 @@
                 await applySoldOverlay(allCards);
 
                 rebuildSellerCatalogIndex();
+                if (currentUser) await syncSellerListingStatuses(currentUser.id);
+                rebuildSellerCatalogIndex();
                 validateAndCleanCart();
                 applyFilters();
             } catch (err) {
@@ -3453,9 +3454,23 @@
             return 'Sono VaultBot. Copro regole di carrello (€20, stesso venditore), soglia annunci €50, località da address, notifiche chat, Escrow Stripe, spedizioni e account. Dimmi cosa ti serve in modo più specifico.';
         }
 
-        function loadMyListings() {
+        async function loadMyListings() {
             const container = document.getElementById('my-listings-container');
             const ownerId = currentUser ? currentUser.id : '';
+            if (currentUser) {
+                try {
+                    const mine = await fetch('/api/my-cards').then(r => r.json());
+                    if (mine && mine.success && Array.isArray(mine.cards)) {
+                        mine.cards.forEach(card => {
+                            const i = allCards.findIndex(c => String(c.id) === String(card.id));
+                            if (i >= 0) allCards[i] = Object.assign({}, allCards[i], card);
+                            else allCards.unshift(card);
+                        });
+                        await applySoldOverlay(allCards);
+                        rebuildSellerCatalogIndex();
+                    }
+                } catch (e) {}
+            }
             const myCards = isAdmin() ? allCards : allCards.filter(c => String(c.user_id) === String(ownerId));
             const total = getSellerCatalogCents(ownerId) / 100;
             const thresholdEl = document.getElementById('seller-threshold-status');
@@ -3517,10 +3532,10 @@
                 const matchesType = !selectedType || (card.type || '').toLowerCase() === selectedType.toLowerCase();
                 const matchesPrice = (Number(card.price) || 0) <= maxPrice;
                 if (statusFilter !== 'sold' && isCardSold(card)) return false;
-                if (isListingPending(card)) return false;
                 let matchesStatus = true;
                 if (statusFilter === 'available') matchesStatus = isListingBuyable(card);
                 if (statusFilter === 'sold') matchesStatus = isCardSold(card);
+                if (!statusFilter && isListingPending(card)) matchesStatus = true;
                 let matchesLocation = true;
                 card._distanceKm = null;
                 if (cityQuery.length >= 2) {

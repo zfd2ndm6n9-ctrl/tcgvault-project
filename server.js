@@ -2589,6 +2589,27 @@ app.post('/api/listings', async (req, res) => {
     res.json({ success: true, card: inserted.row, title });
 });
 
+app.get('/api/my-cards', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    try {
+        const url = SUPABASE_URL + '/rest/v1/cards?user_id=eq.' + encodeURIComponent(auth.id) + '&select=*&order=created_at.desc';
+        const remote = await fetch(url, {
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY
+            }
+        });
+        const data = await remote.json().catch(() => []);
+        if (!remote.ok) {
+            return res.status(400).json({ success: false, error: 'Lettura annunci fallita.', cards: [] });
+        }
+        res.json({ success: true, cards: Array.isArray(data) ? data : [] });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message, cards: [] });
+    }
+});
+
 app.post('/api/users/profile', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
