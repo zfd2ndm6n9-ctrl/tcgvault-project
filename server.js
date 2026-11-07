@@ -1921,7 +1921,7 @@ async function catalogFetchJson(url) {
 }
 
 function listingNeedsCatalog(type) {
-    return type === SINGLE_CARD_TYPE || type === BOX_PRODUCT_TYPE || type === DECK_PRODUCT_TYPE;
+    return false;
 }
 
 async function tcgcsvGroups(catId) {

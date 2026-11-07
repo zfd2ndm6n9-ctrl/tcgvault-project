@@ -1356,16 +1356,16 @@
                         <option value="Accessori">Accessori</option>
                     </select>
                 </div>
-                <div class="form-group" id="catalog-search-wrap">
-                    <label>Cerca nel catalogo ufficiale *</label>
-                    <p id="catalog-hint" style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Scegli il nome ufficiale. Le foto le carichi tu sotto.</p>
+                <div class="form-group" id="catalog-search-wrap" style="display:none;">
+                    <label>Cerca nel catalogo ufficiale</label>
+                    <p id="catalog-hint" style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Opzionale.</p>
                     <input type="text" id="sell-catalog-q" placeholder="Es. Charizard" autocomplete="off" oninput="onCatalogQueryInput()">
                     <div id="catalog-results" style="max-height:220px;overflow:auto;margin-top:6px;"></div>
                     <p id="catalog-picked" style="font-size:0.85rem;color:var(--accent-neon);margin:8px 0 0;"></p>
                 </div>
                 <div class="form-group">
                     <label>Titolo del Prodotto *</label>
-                    <input type="text" id="sell-title" required placeholder="Si riempie dalla lista. Puoi aggiungere NM, PSA…">
+                    <input type="text" id="sell-title" required placeholder="Es. Charizard VMAX NM, ETB Scarlatto, Mazzo Pioneer…">
                 </div>
                 <div class="form-group">
                     <label>Prezzo (€) *</label>
@@ -2744,30 +2744,10 @@
 
         function onSellCatalogFieldsChange() {
             selectedCatalog = null;
-            const { ui, sealed, type, category } = catalogUiCopy();
             const wrap = document.getElementById('catalog-search-wrap');
             const title = document.getElementById('sell-title');
-            const picked = document.getElementById('catalog-picked');
-            const results = document.getElementById('catalog-results');
-            const hint = document.getElementById('catalog-hint');
-            const qInput = document.getElementById('sell-catalog-q');
-            if (picked) picked.textContent = '';
-            if (results) results.innerHTML = '';
-            if (hint) hint.textContent = ui.hint;
-            if (qInput) qInput.placeholder = sealed ? ui.sealed : ui.single;
-            const needsCatalog = type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo';
-            const altroBlocked = category === 'Altro' && needsCatalog;
-            if (wrap) wrap.style.display = needsCatalog ? 'block' : 'none';
-            if (qInput) qInput.style.display = altroBlocked ? 'none' : '';
-            if (title) {
-                title.readOnly = false;
-                if (needsCatalog) title.value = '';
-            }
-            if (altroBlocked && results) {
-                results.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">' + ui.emptySingle + '</p>';
-                return;
-            }
-            if (needsCatalog && qInput && qInput.value.trim().length >= 2) searchOfficialCards();
+            if (wrap) wrap.style.display = 'none';
+            if (title) title.readOnly = false;
         }
 
         function onCatalogQueryInput() {
@@ -2837,13 +2817,9 @@
             }
             
             const type = document.getElementById('sell-type').value;
-            const category = document.getElementById('sell-category').value;
-            if ((type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo') && category === 'Altro') {
-                showNotification('Per carte, box e mazzi scegli il gioco. «Altro TCG» è solo per lotti e accessori.', 'error');
-                return;
-            }
-            if ((type === 'Carta Singola' || type === 'Box / Bustina' || type === 'Mazzo Completo') && !(selectedCatalog && selectedCatalog.id)) {
-                showNotification('Seleziona il prodotto dalla lista del catalogo, poi carica la foto.', 'error');
+            const titleText = String((document.getElementById('sell-title') || {}).value || '').trim();
+            if (titleText.length < 3) {
+                showNotification('Inserisci un titolo.', 'error');
                 return;
             }
             const price = parseFloat(String(document.getElementById('sell-price').value).replace(',', '.'));
@@ -3422,7 +3398,7 @@
                     <details class="acc-item"><summary>2. Account, profilo e zona</summary><p class="tos-body faq-text"><strong>Dati:</strong> nome, email, via, città e segnalino sulla mappa devono essere veri e aggiornati: servono a spedizioni, incontri e al filtro zona del catalogo. La posizione (latitudine, longitudine, raggio) si salva sul profilo. L'utente custodisce le credenziali ed è responsabile di quanto avviene dal proprio account.<br><br><strong>Ospite:</strong> si può sfogliare il catalogo senza login. Per vendere, chattare, offrire, salvare o pagare serve un account verificato.</p></details>
                     <details class="acc-item"><summary>3. Acquisti, commissione 5% ed Escrow</summary><p class="tos-body faq-text"><strong>Carrello:</strong> ordine minimo 20,00€ verso lo stesso venditore (escluse spese di spedizione). Non si mescolano venditori in un unico pagamento. In checkout sono obbligatori dati di fatturazione e l'accettazione dei Termini.<br><br><strong>Commissione:</strong> la piattaforma applica il 5% sul prezzo listino, a carico del compratore insieme alle commissioni Stripe. Il venditore riceve l'importo listino. Questa percentuale è unica per privati e negozi e non è riducibile con l'abbonamento.<br><br><strong>Escrow:</strong> il pagamento transita da Stripe e resta vincolato fino a consegna o incontro confermato, poi va nel wallet del venditore.</p></details>
                     <details class="acc-item"><summary>4. Spedizione, incontro e prelievi</summary><p class="tos-body faq-text"><strong>Spedizione:</strong> solo corrieri tracciati (Poste Italiane/SDA, InPost, BRT, GLS, DHL, UPS). Senza tracking decade la protezione Escrow.<br><br><strong>Incontro:</strong> luogo pubblico, mai a domicilio; si può usare anche con un account nuovo; massimo 150,00€ (oltre, spedizione obbligatoria). Il compratore mostra un QR; il venditore lo scansiona (come il check-in tornei). TCG Vault non è presente all'incontro.<br><br><strong>Hold e prelievo:</strong> dopo la conferma i fondi restano in hold 7 giorni. Si preleva solo il saldo disponibile, con bonifico IBAN (1–3 giorni lavorativi) oppure Stripe Express facoltativo. I privati non necessitano di partita IVA.</p></details>
-                    <details class="acc-item"><summary>5. Vendite e annunci</summary><p class="tos-body faq-text"><strong>Soglia 50,00€:</strong> se il catalogo non venduto di un venditore è sotto 50,00€ gli annunci restano in attesa e si pubblicano tutti insieme al raggiungimento della soglia. La regola vale per tutti, anche per i negozi abbonati, e non è derogabile.<br><br><strong>Contenuto:</strong> carte, box, mazzi precon devono corrispondere al catalogo ufficiale; lotti e accessori restano a tema TCG. Foto e condizioni sono responsabilità del venditore. La zona visibile in vetrina è quella del profilo (città e segnalino), non un testo libero sull'annuncio.</p></details>
+                    <details class="acc-item"><summary>5. Vendite e annunci</summary><p class="tos-body faq-text"><strong>Soglia 50,00€:</strong> se il catalogo non venduto di un venditore è sotto 50,00€ gli annunci restano in attesa e si pubblicano tutti insieme al raggiungimento della soglia. La regola vale per tutti, anche per i negozi abbonati, e non è derogabile.<br><br><strong>Contenuto:</strong> solo TCG e accessori. Titolo, foto e condizioni sono responsabilità del venditore. La zona visibile in vetrina è quella del profilo (città e segnalino), non un testo libero sull'annuncio.</p></details>
                     <details class="acc-item"><summary>6. Piano negozio (€15,00/mese)</summary><p class="tos-body faq-text"><strong>Gratis per tutti:</strong> pubblicare e vendere sul marketplace non richiede abbonamento. Il piano unico da 15,00€ al mese (o codice promozionale) è riservato ai negozi e sblocca: tornei ed eventi (anche ricorrenti), iscrizioni giocatori, check-in QR, pagina pubblica con orari e ritiro in sede, pin Partner sulla mappa, evidenza locale degli annunci, buylist, codici sconto emessi dal negozio solo sui propri annunci (lo sconto è a carico del venditore; la commissione 5% resta), statistiche e avvisi di torneo in zona.<br><br><strong>Esclusioni:</strong> l'abbonamento non riduce la commissione del 5% e non elimina la soglia catalogo di 50,00€.<br><br><strong>Responsabilità:</strong> TCG Vault non risponde della qualità dei beni, della condotta in incontro o della spedizione autonoma, e mette a disposizione escrow, tracking e gestione controversie. Per assistenza: support@tcgvault.com.</p></details>
                 </div>
             `;
