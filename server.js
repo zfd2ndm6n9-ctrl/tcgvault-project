@@ -1853,20 +1853,39 @@ function isPlausibleIban(value) {
     return /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/.test(normalizeIban(value));
 }
 
-function syncHeldFromCompletedOrders(userId) {
-    const user = getOrCreateWalletUser(userId);
-    let held = 0;
+function sellerHoldEuro(userId) {
+    let n = 0;
     ordersDB.forEach(o => {
         if (String(o.sellerId) !== String(userId) || o.status !== 'completed') return;
         const amt = Number(o.amount || 0);
         const t = Date.parse(o.holdUntil);
-        if (Number.isFinite(t) && t > Date.now()) held += amt;
+        if (Number.isFinite(t) && t > Date.now()) n += amt;
     });
-    if (held > Number(user.heldWallet || 0)) {
-        user.heldWallet = held;
-        syncWalletTotals(user);
-        persistWalletsToDisk();
+    return Math.round(n * 100) / 100;
+}
+
+function sellerAvailableFromOrders(userId) {
+    let n = 0;
+    ordersDB.forEach(o => {
+        if (String(o.sellerId) !== String(userId) || o.status !== 'completed') return;
+        if (o.sellerTransferId) return;
+        if (String(o.ibanPayoutId || '').startsWith('pending_iban|')) return;
+        if (isHoldPending(o.holdUntil)) return;
+        n += Number(o.amount || 0);
+    });
+    return Math.round(n * 100) / 100;
+}
+
+function syncHeldFromCompletedOrders(userId) {
+    const user = getOrCreateWalletUser(userId);
+    const held = sellerHoldEuro(userId);
+    const fromOrders = sellerAvailableFromOrders(userId);
+    const pending = pendingIbanInfo(user);
+    user.heldWallet = held;
+    if (!pending) {
+        user.availableWallet = fromOrders;
     }
+    syncWalletTotals(user);
     return user;
 }
 
@@ -2550,7 +2569,7 @@ async function getCardsByIds(ids) {
 
 function upsertUserInMemory(profile) {
     const id = String(profile.id);
-    let user = usersDB.find(u => String(u.id) === id || (profile.email && u.email && u.email.toLowerCase() === String(profile.email).toLowerCase()));
+    let user = usersDB.find(u => String(u.id) === id);
     if (!user) {
         user = {
             id,

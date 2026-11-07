@@ -2156,6 +2156,11 @@
                     lng: profileLng || savedProfile.lng,
                     radius_km: profileRadius || savedProfile.radius_km,
                     wallet: 0.00,
+                    heldWallet: 0,
+                    escrowWallet: 0,
+                    creditTotal: 0,
+                    walletStory: '',
+                    walletLines: [],
                     iban: '',
                     accountType: normalizeAccountType(savedProfile.userType || savedProfile.accountType || 'privato'),
                     partner: false,
@@ -2187,6 +2192,7 @@
                     if (flags && flags.radius_km) currentUser.radius_km = clampRadiusKm(flags.radius_km);
                     currentUser.payoutPending = !!flags.payoutPending;
                     accountMetaCache[String(currentUser.id)] = { accountType: currentUser.accountType, partner: !!currentUser.partner };
+                    paintWalletAmounts();
                 } catch (e) {}
                 if (!currentUser.lat) {
                     const saved = JSON.parse(localStorage.getItem(`tcg_vault_profile_${session.user.id}`) || '{}');
@@ -2648,8 +2654,10 @@
         async function logoutSupabase() {
             await supabaseClient.auth.signOut();
             currentUser = null;
+            paintWalletAmounts();
             closeChat();
             hideOverlay('mfa-modal');
+            hideOverlay('profile-modal');
             if (unreadCheckInterval) clearInterval(unreadCheckInterval);
             updateHeaderUI();
             showNotification('Logout effettuato.');
@@ -3027,14 +3035,18 @@
 
         function paintWalletAmounts() {
             const u = currentUser || {};
-            const credit = Number(u.creditTotal != null ? u.creditTotal : ((u.wallet || 0) + (u.heldWallet || 0) + (u.escrowWallet || 0)));
+            const credit = currentUser
+                ? Number(u.creditTotal != null ? u.creditTotal : ((u.wallet || 0) + (u.heldWallet || 0) + (u.escrowWallet || 0)))
+                : 0;
             const creditEl = document.getElementById('wallet-credit');
             const bal = document.getElementById('wallet-balance');
             const storyEl = document.getElementById('wallet-story');
             const linesEl = document.getElementById('wallet-lines');
             if (creditEl) creditEl.innerText = credit.toFixed(2);
             if (bal) bal.innerText = Number(u.wallet || 0).toFixed(2);
-            if (storyEl) storyEl.textContent = u.walletStory || (credit > 0 ? 'Vendita registrata.' : 'Nessuna vendita in corso.');
+            if (storyEl) storyEl.textContent = currentUser
+                ? (u.walletStory || (credit > 0 ? 'Vendita registrata.' : 'Nessuna vendita in corso. Gli acquisti non accreditano questo portafoglio.'))
+                : 'Nessuna vendita in corso.';
             if (linesEl) {
                 const lines = Array.isArray(u.walletLines) ? u.walletLines : [];
                 linesEl.innerHTML = lines.map(l => '<div style="margin-bottom:6px;"><strong>€ ' + Number(l.amount || 0).toFixed(2) + '</strong> · ' + escapeHtml(l.title || '') + '<br>' + escapeHtml(l.hint || '') + '</div>').join('');
@@ -3042,19 +3054,21 @@
         }
 
         async function refreshWalletFromServer() {
-            if (!currentUser) return;
+            if (!currentUser) {
+                paintWalletAmounts();
+                return;
+            }
             try {
                 const flags = await fetch('/api/users/' + encodeURIComponent(currentUser.id)).then(r => r.json());
                 if (!flags) return;
-                if (flags.availableWallet != null) currentUser.wallet = Number(flags.availableWallet) || 0;
-                else if (flags.wallet != null) currentUser.wallet = Number(flags.wallet) || 0;
-                if (flags.heldWallet != null) currentUser.heldWallet = Number(flags.heldWallet) || 0;
-                if (flags.escrowWallet != null) currentUser.escrowWallet = Number(flags.escrowWallet) || 0;
-                if (flags.creditTotal != null) currentUser.creditTotal = Number(flags.creditTotal) || 0;
+                currentUser.wallet = Number(flags.availableWallet != null ? flags.availableWallet : flags.wallet) || 0;
+                currentUser.heldWallet = Number(flags.heldWallet) || 0;
+                currentUser.escrowWallet = Number(flags.escrowWallet) || 0;
+                currentUser.creditTotal = Number(flags.creditTotal) || 0;
                 currentUser.walletStory = flags.story || '';
-                currentUser.walletLines = flags.lines || [];
-                if (flags.iban) currentUser.iban = flags.iban;
-                if (flags.payoutHolder) currentUser.payoutHolder = flags.payoutHolder;
+                currentUser.walletLines = Array.isArray(flags.lines) ? flags.lines : [];
+                currentUser.iban = flags.iban || '';
+                currentUser.payoutHolder = flags.payoutHolder || '';
                 currentUser.payoutPending = !!flags.payoutPending;
                 paintWalletAmounts();
             } catch (e) {}
