@@ -292,6 +292,8 @@ async function fulfillPaidOrder(order) {
         );
     }
     persistOrdersToDisk();
+    await attachStripeFeeToOrder(order);
+    persistOrdersToDisk();
     await markCardsSold(order.cardIds && order.cardIds.length ? order.cardIds : [order.cardId]);
     return order;
 }
@@ -828,6 +830,111 @@ function platformChargeCents(listedEuro) {
     const wantNet = base + Math.round(base * PLATFORM_FEE_RATE);
     return Math.ceil((wantNet + 25) / 0.985);
 }
+
+function platformFeeCentsFromListed(listedEuro) {
+    return Math.round(Math.round(Number(listedEuro || 0) * 100) * PLATFORM_FEE_RATE);
+}
+
+async function lockStripePayoutsManual() {
+    if (!stripe) return;
+    try {
+        const me = await stripe.accounts.retrieve();
+        const interval = me.settings && me.settings.payouts && me.settings.payouts.schedule && me.settings.payouts.schedule.interval;
+        if (interval !== 'manual') {
+            await stripe.accounts.update(me.id, {
+                settings: { payouts: { schedule: { interval: 'manual' } } }
+            });
+            console.log('Stripe payouts impostati su manuale: escrow e hold restano su Stripe, non sul conto banca.');
+        } else {
+            console.log('Stripe payouts già manuali.');
+        }
+        const pending = await stripe.payouts.list({ status: 'pending', limit: 20 });
+        for (const p of pending.data || []) {
+            try {
+                await stripe.payouts.cancel(p.id);
+                console.log('Payout Stripe in attesa annullato:', p.id);
+            } catch (err) {
+                console.error('Annullamento payout Stripe:', err.message);
+            }
+        }
+    } catch (err) {
+        console.error('Impossibile impostare payout Stripe manuali:', err.message);
+    }
+}
+
+async function attachStripeFeeToOrder(order) {
+    if (!stripe || !order || !order.paymentIntentId) return;
+    try {
+        const pi = await stripe.paymentIntents.retrieve(order.paymentIntentId, { expand: ['latest_charge.balance_transaction'] });
+        order.chargedCents = pi.amount;
+        const charge = pi.latest_charge;
+        const bt = charge && typeof charge === 'object' ? charge.balance_transaction : null;
+        if (bt && typeof bt === 'object') {
+            order.stripeFeeCents = Number(bt.fee || 0);
+            order.netCents = Number(bt.net || 0);
+            order.platformFeeCents = Math.max(0, Number(bt.net || 0) - Math.round(Number(order.amount || 0) * 100));
+        } else {
+            order.platformFeeCents = platformFeeCentsFromListed(order.amount);
+        }
+    } catch (err) {
+        console.error('Lettura commissioni Stripe ordine:', err.message);
+        if (order.platformFeeCents == null) order.platformFeeCents = platformFeeCentsFromListed(order.amount);
+    }
+}
+
+function sellerFundsReservedEuro() {
+    let n = 0;
+    ordersDB.forEach(o => {
+        if (!o || o.status === 'pending_payment') return;
+        if (o.status === 'paid' || o.status === 'shipped' || o.status === 'meetup_arranged') {
+            n += Number(o.amount || 0);
+        }
+    });
+    usersDB.forEach(u => {
+        n += Number(u.heldWallet || 0) + Number(u.availableWallet || 0);
+        const pending = pendingIbanInfo(u);
+        if (pending) n += pending.amount;
+    });
+    (shopSubsDB || []).forEach(s => {
+        n += Number(s.heldWallet || 0) + Number(s.availableWallet || 0);
+    });
+    return Math.round(n * 100) / 100;
+}
+
+async function stripeEscrowSnapshot() {
+    const reservedEuro = sellerFundsReservedEuro();
+    const reservedCents = Math.round(reservedEuro * 100);
+    let availableCents = 0;
+    let pendingCents = 0;
+    let payoutInterval = 'unknown';
+    if (stripe) {
+        try {
+            const bal = await stripe.balance.retrieve();
+            const eurAvail = (bal.available || []).find(x => x.currency === 'eur');
+            const eurPend = (bal.pending || []).find(x => x.currency === 'eur');
+            availableCents = eurAvail ? Number(eurAvail.amount || 0) : 0;
+            pendingCents = eurPend ? Number(eurPend.amount || 0) : 0;
+        } catch (err) {
+            console.error('Lettura saldo Stripe:', err.message);
+        }
+        try {
+            const me = await stripe.accounts.retrieve();
+            payoutInterval = (me.settings && me.settings.payouts && me.settings.payouts.schedule && me.settings.payouts.schedule.interval) || 'unknown';
+        } catch (err) {}
+    }
+    const platformPayoutableCents = Math.max(0, availableCents - reservedCents);
+    const shortfallCents = Math.max(0, reservedCents - availableCents - pendingCents);
+    return {
+        reservedEuro,
+        reservedCents,
+        availableCents,
+        pendingCents,
+        platformPayoutableCents,
+        shortfallCents,
+        payoutInterval,
+        platformFeeRate: PLATFORM_FEE_RATE
+    };
+}
 const MEETUP_MAX_AMOUNT = 150;
 const HOLD_RELEASED_AT = '1970-01-01T00:00:00.000Z';
 const SINGLE_CARD_TYPE = 'Carta Singola';
@@ -883,6 +990,10 @@ function orderToRow(o) {
         card_ids: Array.isArray(o.cardIds) ? o.cardIds : [],
         card_title: o.cardTitle || null,
         amount: o.amount != null ? Number(o.amount) : null,
+        charged_cents: o.chargedCents != null ? Number(o.chargedCents) : null,
+        stripe_fee_cents: o.stripeFeeCents != null ? Number(o.stripeFeeCents) : null,
+        net_cents: o.netCents != null ? Number(o.netCents) : null,
+        platform_fee_cents: o.platformFeeCents != null ? Number(o.platformFeeCents) : null,
         status: o.status || 'pending_payment',
         escrow_notified: !!o.escrowNotified,
         carrier: o.carrier || null,
@@ -909,6 +1020,10 @@ function rowToOrder(r) {
         cardIds: r.card_ids || [],
         cardTitle: r.card_title,
         amount: Number(r.amount || 0),
+        chargedCents: r.charged_cents != null ? Number(r.charged_cents) : undefined,
+        stripeFeeCents: r.stripe_fee_cents != null ? Number(r.stripe_fee_cents) : undefined,
+        netCents: r.net_cents != null ? Number(r.net_cents) : undefined,
+        platformFeeCents: r.platform_fee_cents != null ? Number(r.platform_fee_cents) : undefined,
         status: r.status,
         escrowNotified: !!r.escrow_notified,
         carrier: r.carrier,
@@ -928,18 +1043,27 @@ function rowToOrder(r) {
 
 async function persistOrdersToSupabase() {
     if (!ordersDB.length) return;
-    const res = await fetch(SUPABASE_URL + '/rest/v1/orders', {
-        method: 'POST',
-        headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: 'Bearer ' + SUPABASE_KEY,
-            'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates,return=minimal'
-        },
-        body: JSON.stringify(ordersDB.map(orderToRow))
-    });
-    if (!res.ok) {
-        console.error('Salvataggio orders Supabase:', res.status, await res.text());
+    const rows = ordersDB.map(orderToRow);
+    for (let round = 0; round < 8; round++) {
+        const res = await fetch(SUPABASE_URL + '/rest/v1/orders', {
+            method: 'POST',
+            headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: 'Bearer ' + SUPABASE_KEY,
+                'Content-Type': 'application/json',
+                Prefer: 'resolution=merge-duplicates,return=minimal'
+            },
+            body: JSON.stringify(rows)
+        });
+        if (res.ok) return;
+        const errText = await res.text();
+        const missing = errText.match(/Could not find the '([^']+)' column/i);
+        if (missing) {
+            rows.forEach(row => { delete row[missing[1]]; });
+            continue;
+        }
+        console.error('Salvataggio orders Supabase:', res.status, errText);
+        return;
     }
 }
 
@@ -2512,6 +2636,8 @@ app.post('/api/create-payment-intent', async (req, res) => {
             cardIds: cards.map(c => c.id),
             cardTitle: cards.map(c => c.title).join(', '),
             amount,
+            chargedCents: totalChargedToBuyer,
+            platformFeeCents: platformFeeCentsFromListed(amount),
             status: 'pending_payment',
             escrowNotified: false,
             deliveryMethod,
@@ -2884,6 +3010,62 @@ app.post('/api/wallet/payout', async (req, res) => {
         payoutPending: true,
         payoutPendingAmount: withdrawnAmount
     });
+});
+
+app.get('/api/admin/escrow-ledger', async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    try {
+        const snap = await stripeEscrowSnapshot();
+        res.json({
+            success: true,
+            ...snap,
+            availableEuro: snap.availableCents / 100,
+            pendingEuro: snap.pendingCents / 100,
+            platformPayoutableEuro: snap.platformPayoutableCents / 100,
+            shortfallEuro: snap.shortfallCents / 100,
+            hint: snap.payoutInterval !== 'manual'
+                ? 'I payout Stripe non sono ancora manuali: i fondi escrow possono finire sul conto banca.'
+                : (snap.shortfallCents > 0
+                    ? 'Stripe ha già versato fondi sul conto banca. I hold venditori sono debiti da pagare con bonifico IBAN.'
+                    : 'Puoi prelevare solo le commissioni piattaforma, non i soldi dei venditori.')
+        });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/admin/platform-payout', async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    if (!stripe) return res.status(500).json({ success: false, error: 'Stripe non configurato.' });
+    try {
+        await lockStripePayoutsManual();
+        const snap = await stripeEscrowSnapshot();
+        const requested = req.body && req.body.amount != null && req.body.amount !== ''
+            ? Math.round(Number(req.body.amount) * 100)
+            : snap.platformPayoutableCents;
+        if (!(requested > 0)) {
+            return res.status(400).json({ success: false, error: 'Nessuna commissione piattaforma prelevabile ora (i fondi venditori restano su Stripe).' });
+        }
+        if (requested > snap.platformPayoutableCents) {
+            return res.status(400).json({
+                success: false,
+                error: 'Puoi prelevare al massimo €' + (snap.platformPayoutableCents / 100).toFixed(2) + ' di commissioni. Il resto è escrow/hold venditori.'
+            });
+        }
+        const payout = await stripe.payouts.create({
+            amount: requested,
+            currency: 'eur',
+            statement_descriptor: 'TCGVAULT FEE'
+        });
+        res.json({
+            success: true,
+            payoutId: payout.id,
+            amount: requested / 100,
+            message: 'Payout commissioni inviato. Escrow e hold venditori restano su Stripe.'
+        });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
 });
 
 app.get('/api/admin/payouts', async (req, res) => {
@@ -3657,6 +3839,7 @@ Promise.all([
     releaseMatureHolds();
     soldIdsFromOrders();
     await recoverSoldFromStripe();
+    await lockStripePayoutsManual();
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
         console.log('Ambiente:', IS_SANDBOX ? 'SANDBOX' : 'produzione');

@@ -1015,9 +1015,9 @@
             <div id="tab-wallet-escrow" class="tab-content" style="display: none;">
                 <div style="margin-bottom: 25px;">
                     <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
-                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;"><strong>1.</strong> Il compratore paga: i soldi restano in escrow. <strong>2.</strong> Spedisci o incontri; lui conferma. <strong>3.</strong> 7 giorni di hold, poi prelevi. Il modo semplice è il bonifico IBAN (1–3 giorni). Stripe Express è facoltativo.</p>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;"><strong>1.</strong> Il compratore paga: i soldi restano in escrow su Stripe TCG Vault (non sul conto del titolare). Il 5% piattaforma è già pagato dal compratore, non viene scalato da questo saldo. <strong>2.</strong> Spedisci o incontri; lui conferma. <strong>3.</strong> 7 giorni di hold, poi prelevi con bonifico IBAN (1–3 giorni). Stripe Express è facoltativo.</p>
                     <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 8px;">€ <span id="wallet-balance">0.00</span></div>
-                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">In hold anti-truffa: € <span id="wallet-held">0.00</span></p>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">In hold 7 giorni (credito venditore, fondi su Stripe TCG Vault): € <span id="wallet-held">0.00</span></p>
                     <p id="payout-pending-msg" style="font-size: 0.9rem; color: var(--accent-neon); margin-bottom: 12px;"></p>
                     <div class="form-group">
                         <label>IBAN *</label>

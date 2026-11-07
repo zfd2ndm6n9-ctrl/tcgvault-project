@@ -57,6 +57,13 @@
                 <div id="list"></div>
             </div>
             <div class="card">
+                <h2 style="margin-top:0;">Escrow Stripe</h2>
+                <p class="muted">I payout automatici verso il conto banca sono disattivati. Qui vedi cosa deve restare ai venditori e cosa puoi prelevare come commissione 5%.</p>
+                <div id="escrow-box" class="muted">Caricamento...</div>
+                <button class="btn" style="margin-top:12px;" onclick="payoutPlatformFees()">Preleva solo commissioni piattaforma</button>
+                <p id="escrow-msg" class="muted"></p>
+            </div>
+            <div class="card">
                 <h2 style="margin-top:0;">Bonifici IBAN da fare</h2>
                 <p class="muted">Dopo il bonifico SEPA dal tuo conto, segna come pagato. Rifiuta per rimettere i soldi nel wallet del venditore.</p>
                 <div id="payout-list"></div>
@@ -84,6 +91,32 @@
             document.getElementById('app').style.display = 'block';
             loadCodes();
             loadPayouts();
+            loadEscrow();
+        }
+
+        async function loadEscrow() {
+            const box = document.getElementById('escrow-box');
+            const data = await fetch('/api/admin/escrow-ledger').then(r => r.json());
+            if (!data.success) { box.innerHTML = '<p class="err">' + (data.error || 'Accesso negato.') + '</p>'; return; }
+            box.innerHTML = '<div>Payout Stripe: <strong>' + data.payoutInterval + '</strong></div>'
+                + '<div>Su Stripe disponibile: <strong>€ ' + Number(data.availableEuro).toFixed(2) + '</strong></div>'
+                + '<div>Su Stripe in arrivo (2-3 gg): <strong>€ ' + Number(data.pendingEuro).toFixed(2) + '</strong></div>'
+                + '<div>Riservato venditori (escrow + hold): <strong>€ ' + Number(data.reservedEuro).toFixed(2) + '</strong></div>'
+                + '<div>Commissioni prelevabili: <strong class="ok">€ ' + Number(data.platformPayoutableEuro).toFixed(2) + '</strong></div>'
+                + (Number(data.shortfallEuro) > 0 ? '<p class="err">Mancano € ' + Number(data.shortfallEuro).toFixed(2) + ' su Stripe rispetto ai debiti venditori (già usciti sul conto banca). I bonifici IBAN li paghi da quel conto.</p>' : '')
+                + '<p class="muted">' + (data.hint || '') + '</p>';
+        }
+
+        async function payoutPlatformFees() {
+            const msg = document.getElementById('escrow-msg');
+            const data = await fetch('/api/admin/platform-payout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }).then(r => r.json());
+            msg.className = data.success ? 'ok' : 'err';
+            msg.innerText = data.success ? data.message : (data.error || 'Errore');
+            loadEscrow();
         }
 
         async function loadCodes() {
