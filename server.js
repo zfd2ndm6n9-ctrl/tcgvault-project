@@ -819,6 +819,17 @@ function publicTournament(t) {
 loadMessagesFromDisk();
 loadOrdersFromDisk();
 soldIdSet = new Set((loadJsonArray('sold-ids.json') || []).map(String));
+let platformFeesPaidCents = 0;
+try {
+    const feeFile = dataFile('platform-fees.json');
+    if (fs.existsSync(feeFile)) {
+        const parsed = JSON.parse(fs.readFileSync(feeFile, 'utf8'));
+        platformFeesPaidCents = Math.max(0, Number(parsed && parsed.paidCents) || 0);
+    }
+} catch (err) {}
+function persistPlatformFeesPaid() {
+    persistJsonFile('platform-fees.json', { paidCents: platformFeesPaidCents }, true);
+}
 soldIdsFromOrders();
 shopSubsDB = loadJsonArray('shops.json');
 tournamentsDB = loadJsonArray('tournaments.json');
@@ -902,8 +913,8 @@ async function attachStripeFeeToOrder(order) {
 function sellerFundsReservedEuro() {
     let n = 0;
     ordersDB.forEach(o => {
-        if (!o || o.status === 'pending_payment') return;
-        if (o.status === 'paid' || o.status === 'shipped' || o.status === 'meetup_arranged') {
+        if (!o || o.status === 'pending_payment' || o.status === 'refunded') return;
+        if (o.status === 'paid' || o.status === 'shipped' || o.status === 'meetup_arranged' || o.status === 'disputed') {
             n += Number(o.amount || 0);
         }
     });
@@ -918,9 +929,20 @@ function sellerFundsReservedEuro() {
     return Math.round(n * 100) / 100;
 }
 
+function earnedPlatformFeeCents() {
+    let n = 0;
+    ordersDB.forEach(o => {
+        if (!o || o.status === 'pending_payment' || o.status === 'refunded' || o.status === 'disputed') return;
+        n += Number(o.platformFeeCents != null ? o.platformFeeCents : platformFeeCentsFromListed(o.amount));
+    });
+    return Math.max(0, n);
+}
+
 async function stripeEscrowSnapshot() {
     const reservedEuro = sellerFundsReservedEuro();
     const reservedCents = Math.round(reservedEuro * 100);
+    const earnedFeeCents = earnedPlatformFeeCents();
+    const unpaidFeeCents = Math.max(0, earnedFeeCents - platformFeesPaidCents);
     let availableCents = 0;
     let pendingCents = 0;
     let payoutInterval = 'unknown';
@@ -939,11 +961,14 @@ async function stripeEscrowSnapshot() {
             payoutInterval = (me.settings && me.settings.payouts && me.settings.payouts.schedule && me.settings.payouts.schedule.interval) || 'unknown';
         } catch (err) {}
     }
-    const platformPayoutableCents = Math.max(0, availableCents - reservedCents);
+    const leftoverCents = Math.max(0, availableCents - reservedCents);
+    const platformPayoutableCents = Math.min(leftoverCents, unpaidFeeCents);
     const shortfallCents = Math.max(0, reservedCents - availableCents - pendingCents);
     return {
         reservedEuro,
         reservedCents,
+        earnedFeeCents,
+        unpaidFeeCents,
         availableCents,
         pendingCents,
         platformPayoutableCents,
@@ -1591,6 +1616,7 @@ function releaseMatureHolds() {
 async function autoPayoutPlatformFees() {
     if (!stripe) return null;
     try {
+        await lockStripePayoutsManual();
         const snap = await stripeEscrowSnapshot();
         if (snap.platformPayoutableCents < 100) return null;
         const payout = await stripe.payouts.create({
@@ -1598,6 +1624,8 @@ async function autoPayoutPlatformFees() {
             currency: 'eur',
             statement_descriptor: 'TCGVAULT FEE'
         });
+        platformFeesPaidCents += snap.platformPayoutableCents;
+        persistPlatformFeesPaid();
         console.log('Payout automatico commissioni piattaforma:', payout.id, snap.platformPayoutableCents / 100);
         return payout;
     } catch (err) {
@@ -3142,6 +3170,8 @@ app.get('/api/admin/escrow-ledger', async (req, res) => {
             ...snap,
             availableEuro: snap.availableCents / 100,
             pendingEuro: snap.pendingCents / 100,
+            earnedFeeEuro: (snap.earnedFeeCents || 0) / 100,
+            unpaidFeeEuro: (snap.unpaidFeeCents || 0) / 100,
             platformPayoutableEuro: snap.platformPayoutableCents / 100,
             shortfallEuro: snap.shortfallCents / 100,
             hint: snap.payoutInterval !== 'manual'
@@ -3178,6 +3208,8 @@ app.post('/api/admin/platform-payout', async (req, res) => {
             currency: 'eur',
             statement_descriptor: 'TCGVAULT FEE'
         });
+        platformFeesPaidCents += requested;
+        persistPlatformFeesPaid();
         res.json({
             success: true,
             payoutId: payout.id,
