@@ -1762,17 +1762,71 @@ function sellerEscrowEuro(userId) {
     return Math.round(n * 100) / 100;
 }
 
+function formatItDate(iso) {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return '';
+    return new Date(t).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function daysUntil(iso) {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return null;
+    return Math.max(0, Math.ceil((t - Date.now()) / (24 * 60 * 60 * 1000)));
+}
+
+function walletSaleLines(userId) {
+    const lines = [];
+    ordersDB.forEach(o => {
+        if (String(o.sellerId) !== String(userId)) return;
+        const amount = Number(o.amount || 0);
+        if (!(amount > 0)) return;
+        if (o.status === 'paid' || o.status === 'shipped' || o.status === 'meetup_arranged') {
+            lines.push({
+                kind: 'escrow',
+                amount,
+                title: o.cardTitle || 'Vendita',
+                unlockAt: null,
+                hint: o.deliveryMethod === 'meetup' ? 'Incontro pagato: manca lo scan QR o il luogo.' : 'Pagato: manca tracking e conferma ricezione.'
+            });
+        } else if (o.status === 'completed' && isHoldPending(o.holdUntil)) {
+            const days = daysUntil(o.holdUntil);
+            lines.push({
+                kind: 'hold',
+                amount,
+                title: o.cardTitle || 'Vendita',
+                unlockAt: o.holdUntil,
+                hint: 'Consegna/QR ok. Prelevi dal ' + formatItDate(o.holdUntil) + (days != null ? ' (tra ' + days + ' giorni).' : '.')
+            });
+        }
+    });
+    return lines;
+}
+
 function walletPublic(userId) {
     releaseMatureHolds();
     syncHeldFromCompletedOrders(userId);
     const user = getOrCreateWalletUser(userId);
     const pending = pendingIbanInfo(user);
     const escrowWallet = sellerEscrowEuro(userId);
+    const available = Number(user.availableWallet || 0);
+    const held = Number(user.heldWallet || 0);
+    const lines = walletSaleLines(userId);
+    const nextHold = lines.filter(l => l.kind === 'hold' && l.unlockAt).sort((a, b) => Date.parse(a.unlockAt) - Date.parse(b.unlockAt))[0];
+    let story = 'Nessuna vendita in corso.';
+    if (pending) story = 'Bonifico IBAN in lavorazione.';
+    else if (available > 0) story = 'Puoi prelevare €' + available.toFixed(2) + '.';
+    else if (nextHold) story = nextHold.hint;
+    else if (escrowWallet > 0) story = lines.find(l => l.kind === 'escrow') ? lines.find(l => l.kind === 'escrow').hint : 'Vendita pagata, in attesa di consegna.';
     return {
-        wallet: Number(user.availableWallet || 0),
-        availableWallet: Number(user.availableWallet || 0),
-        heldWallet: Number(user.heldWallet || 0),
+        wallet: available,
+        availableWallet: available,
+        heldWallet: held,
         escrowWallet,
+        creditTotal: Math.round((available + held + escrowWallet) * 100) / 100,
+        unlockAt: nextHold ? nextHold.unlockAt : null,
+        unlockLabel: nextHold ? formatItDate(nextHold.unlockAt) : '',
+        story,
+        lines,
         iban: user.iban || '',
         stripeAccountId: user.stripeAccountId || null,
         payoutPending: !!pending,

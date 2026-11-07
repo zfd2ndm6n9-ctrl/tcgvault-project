@@ -1014,11 +1014,12 @@
 
             <div id="tab-wallet-escrow" class="tab-content" style="display: none;">
                 <div style="margin-bottom: 25px;">
-                    <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
-                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;"><strong>1.</strong> Il compratore paga: i soldi restano in escrow su Stripe TCG Vault. Il 5% lo paga il compratore. <strong>2.</strong> Spedisci o incontri; lui conferma. <strong>3.</strong> 7 giorni di hold anti-chargeback. Se hai Stripe Express, Stripe ti accredita da solo sul conto (altri 2–3 giorni). Senza Express resta il bonifico IBAN. Resi e dispute li gestisce Stripe: se arrivano durante l’hold, il trasferimento al venditore non parte.</p>
-                    <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 8px;">€ <span id="wallet-balance">0.00</span></div>
-                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px;">In escrow (pagato, in attesa di consegna/QR): € <span id="wallet-escrow">0.00</span></p>
-                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">In hold 7 giorni (credito venditore, fondi su Stripe TCG Vault): € <span id="wallet-held">0.00</span></p>
+                    <h3 style="margin-top:0; color: var(--accent-neon);">Portafoglio vendite</h3>
+                    <p id="wallet-story" style="font-size: 1rem; color: var(--text-main); margin: 0 0 10px; font-weight: 600;">Nessuna vendita in corso.</p>
+                    <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 8px;">€ <span id="wallet-credit">0.00</span></div>
+                    <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0 0 14px;">Credito totale delle tue vendite. Il prelievo si sblocca 7 giorni dopo QR o conferma ricezione.</p>
+                    <div id="wallet-lines" style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 14px;"></div>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Prelevabile ora: € <span id="wallet-balance">0.00</span></p>
                     <p id="payout-pending-msg" style="font-size: 0.9rem; color: var(--accent-neon); margin-bottom: 12px;"></p>
                     <div class="form-group">
                         <label>IBAN *</label>
@@ -2170,6 +2171,11 @@
                     if (flags && flags.availableWallet != null) currentUser.wallet = Number(flags.availableWallet) || 0;
                     if (flags && flags.heldWallet != null) currentUser.heldWallet = Number(flags.heldWallet) || 0;
                     if (flags && flags.escrowWallet != null) currentUser.escrowWallet = Number(flags.escrowWallet) || 0;
+                    if (flags && flags.creditTotal != null) currentUser.creditTotal = Number(flags.creditTotal) || 0;
+                    if (flags) {
+                        currentUser.walletStory = flags.story || '';
+                        currentUser.walletLines = flags.lines || [];
+                    }
                     if (flags && flags.iban) currentUser.iban = flags.iban;
                     if (flags && flags.city) currentUser.city = flags.city;
                     if (flags && flags.address && !currentUser.address) currentUser.address = flags.address;
@@ -3018,12 +3024,19 @@
         function closeSavedModal() { hideOverlay('saved-modal'); }
 
         function paintWalletAmounts() {
+            const u = currentUser || {};
+            const credit = Number(u.creditTotal != null ? u.creditTotal : ((u.wallet || 0) + (u.heldWallet || 0) + (u.escrowWallet || 0)));
+            const creditEl = document.getElementById('wallet-credit');
             const bal = document.getElementById('wallet-balance');
-            const heldEl = document.getElementById('wallet-held');
-            const escrowEl = document.getElementById('wallet-escrow');
-            if (bal) bal.innerText = (currentUser && currentUser.wallet ? currentUser.wallet : 0).toFixed(2);
-            if (heldEl) heldEl.innerText = (currentUser && currentUser.heldWallet ? currentUser.heldWallet : 0).toFixed(2);
-            if (escrowEl) escrowEl.innerText = (currentUser && currentUser.escrowWallet ? currentUser.escrowWallet : 0).toFixed(2);
+            const storyEl = document.getElementById('wallet-story');
+            const linesEl = document.getElementById('wallet-lines');
+            if (creditEl) creditEl.innerText = credit.toFixed(2);
+            if (bal) bal.innerText = Number(u.wallet || 0).toFixed(2);
+            if (storyEl) storyEl.textContent = u.walletStory || (credit > 0 ? 'Vendita registrata.' : 'Nessuna vendita in corso.');
+            if (linesEl) {
+                const lines = Array.isArray(u.walletLines) ? u.walletLines : [];
+                linesEl.innerHTML = lines.map(l => '<div style="margin-bottom:6px;"><strong>€ ' + Number(l.amount || 0).toFixed(2) + '</strong> · ' + escapeHtml(l.title || '') + '<br>' + escapeHtml(l.hint || '') + '</div>').join('');
+            }
         }
 
         async function refreshWalletFromServer() {
@@ -3035,6 +3048,9 @@
                 else if (flags.wallet != null) currentUser.wallet = Number(flags.wallet) || 0;
                 if (flags.heldWallet != null) currentUser.heldWallet = Number(flags.heldWallet) || 0;
                 if (flags.escrowWallet != null) currentUser.escrowWallet = Number(flags.escrowWallet) || 0;
+                if (flags.creditTotal != null) currentUser.creditTotal = Number(flags.creditTotal) || 0;
+                currentUser.walletStory = flags.story || '';
+                currentUser.walletLines = flags.lines || [];
                 paintWalletAmounts();
             } catch (e) {}
         }
