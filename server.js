@@ -118,7 +118,7 @@ function ensureOrderFromPaymentIntent(pi) {
     if (!ids.length) return null;
     const meta = pi.metadata || {};
     order = {
-        id: 'order-stripe-' + pi.id,
+        id: String(meta.orderId || ('order-stripe-' + pi.id)),
         paymentIntentId: pi.id,
         buyerId: String(meta.buyerId || ''),
         sellerId: String(meta.sellerId || ''),
@@ -316,6 +316,22 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
         const order = ensureOrderFromPaymentIntent(pi) || ordersDB.find(o => o.paymentIntentId === pi.id);
         if (order) await fulfillPaidOrder(order);
         else await markCardsSold(cardIdsFromStripeMeta(pi.metadata));
+    }
+    if (event.type === 'charge.refunded' || event.type === 'charge.dispute.created') {
+        const charge = event.data.object;
+        const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : (charge.payment_intent && charge.payment_intent.id);
+        const order = ordersDB.find(o =>
+            (piId && o.paymentIntentId === piId) ||
+            (charge.id && o.chargeId === charge.id)
+        );
+        if (order) {
+            if (event.type === 'charge.dispute.created' && order.status !== 'refunded') {
+                order.status = 'disputed';
+                persistOrdersToDisk();
+            } else {
+                await applyStripeRefundToOrder(order, event.type);
+            }
+        }
     }
     res.json({ received: true });
 });
@@ -868,6 +884,7 @@ async function attachStripeFeeToOrder(order) {
         const pi = await stripe.paymentIntents.retrieve(order.paymentIntentId, { expand: ['latest_charge.balance_transaction'] });
         order.chargedCents = pi.amount;
         const charge = pi.latest_charge;
+        order.chargeId = typeof charge === 'string' ? charge : (charge && charge.id) || order.chargeId;
         const bt = charge && typeof charge === 'object' ? charge.balance_transaction : null;
         if (bt && typeof bt === 'object') {
             order.stripeFeeCents = Number(bt.fee || 0);
@@ -994,6 +1011,8 @@ function orderToRow(o) {
         stripe_fee_cents: o.stripeFeeCents != null ? Number(o.stripeFeeCents) : null,
         net_cents: o.netCents != null ? Number(o.netCents) : null,
         platform_fee_cents: o.platformFeeCents != null ? Number(o.platformFeeCents) : null,
+        charge_id: o.chargeId || null,
+        seller_transfer_id: o.sellerTransferId || null,
         status: o.status || 'pending_payment',
         escrow_notified: !!o.escrowNotified,
         carrier: o.carrier || null,
@@ -1024,6 +1043,8 @@ function rowToOrder(r) {
         stripeFeeCents: r.stripe_fee_cents != null ? Number(r.stripe_fee_cents) : undefined,
         netCents: r.net_cents != null ? Number(r.net_cents) : undefined,
         platformFeeCents: r.platform_fee_cents != null ? Number(r.platform_fee_cents) : undefined,
+        chargeId: r.charge_id || undefined,
+        sellerTransferId: r.seller_transfer_id || undefined,
         status: r.status,
         escrowNotified: !!r.escrow_notified,
         carrier: r.carrier,
@@ -1508,26 +1529,114 @@ function isHoldPending(holdUntil) {
     return Number.isFinite(t) && t >= Date.parse('2000-01-01');
 }
 
-function releaseMatureHolds() {
+let holdReleaseRunning = false;
+async function releaseMatureHoldsAsync() {
+    if (holdReleaseRunning) return false;
+    holdReleaseRunning = true;
     let changed = false;
     const now = Date.now();
-    ordersDB.forEach(order => {
-        if (order.status !== 'completed' || !isHoldPending(order.holdUntil)) return;
-        if (new Date(order.holdUntil).getTime() > now) return;
-        const amount = Number(order.amount || 0);
-        const seller = getOrCreateWalletUser(order.sellerId);
-        seller.heldWallet = Math.max(0, Number(seller.heldWallet || 0) - amount);
-        seller.availableWallet = Number(seller.availableWallet || 0) + amount;
-        seller.walletUpdatedAt = new Date().toISOString();
+    try {
+        for (const order of ordersDB) {
+            if (!order || order.status === 'refunded' || order.status === 'disputed') continue;
+            if (order.status !== 'completed' || !isHoldPending(order.holdUntil)) continue;
+            if (new Date(order.holdUntil).getTime() > now) continue;
+            const amount = Number(order.amount || 0);
+            const cents = Math.round(amount * 100);
+            const seller = getOrCreateWalletUser(order.sellerId);
+            seller.heldWallet = Math.max(0, Number(seller.heldWallet || 0) - amount);
+            seller.walletUpdatedAt = new Date().toISOString();
+            const st = stripe ? await stripeConnectStatus(seller) : { payoutsEnabled: false };
+            if (st.payoutsEnabled && cents > 0) {
+                try {
+                    const payload = {
+                        amount: cents,
+                        currency: 'eur',
+                        destination: seller.stripeAccountId,
+                        transfer_group: order.id,
+                        metadata: { orderId: String(order.id), sellerId: String(order.sellerId), type: 'hold_release' }
+                    };
+                    if (order.chargeId) payload.source_transaction = order.chargeId;
+                    const transfer = await stripe.transfers.create(payload);
+                    order.sellerTransferId = transfer.id;
+                    order.autoPaidAt = new Date().toISOString();
+                    seller.lastPayoutId = transfer.id;
+                    seller.lastPayoutAt = order.autoPaidAt;
+                } catch (err) {
+                    console.error('Transfer automatico venditore fallito:', order.id, err.message);
+                    seller.availableWallet = Number(seller.availableWallet || 0) + amount;
+                }
+            } else {
+                seller.availableWallet = Number(seller.availableWallet || 0) + amount;
+            }
+            syncWalletTotals(seller);
+            order.holdUntil = HOLD_RELEASED_AT;
+            changed = true;
+        }
+        if (changed) {
+            persistOrdersToDisk();
+            persistWalletsToDisk();
+        }
+        await autoPayoutPlatformFees();
+        return changed;
+    } finally {
+        holdReleaseRunning = false;
+    }
+}
+
+function releaseMatureHolds() {
+    releaseMatureHoldsAsync().catch(err => console.error('Rilascio hold:', err.message));
+    return false;
+}
+
+async function autoPayoutPlatformFees() {
+    if (!stripe) return null;
+    try {
+        const snap = await stripeEscrowSnapshot();
+        if (snap.platformPayoutableCents < 100) return null;
+        const payout = await stripe.payouts.create({
+            amount: snap.platformPayoutableCents,
+            currency: 'eur',
+            statement_descriptor: 'TCGVAULT FEE'
+        });
+        console.log('Payout automatico commissioni piattaforma:', payout.id, snap.platformPayoutableCents / 100);
+        return payout;
+    } catch (err) {
+        console.error('Payout automatico commissioni:', err.message);
+        return null;
+    }
+}
+
+async function applyStripeRefundToOrder(order, reason) {
+    if (!order || order.status === 'refunded') return order;
+    if (order.sellerTransferId && stripe) {
+        try {
+            await stripe.transfers.createReversal(order.sellerTransferId);
+        } catch (err) {
+            console.error('Reversal transfer rimborso:', err.message);
+        }
+    }
+    const amount = Number(order.amount || 0);
+    const seller = getOrCreateWalletUser(order.sellerId);
+    if (order.status === 'completed') {
+        if (isHoldPending(order.holdUntil)) {
+            seller.heldWallet = Math.max(0, Number(seller.heldWallet || 0) - amount);
+        } else if (!order.sellerTransferId) {
+            seller.availableWallet = Math.max(0, Number(seller.availableWallet || 0) - amount);
+        }
         syncWalletTotals(seller);
-        order.holdUntil = HOLD_RELEASED_AT;
-        changed = true;
-    });
-    if (changed) {
-        persistOrdersToDisk();
         persistWalletsToDisk();
     }
-    return changed;
+    const wasCompleted = order.status === 'completed';
+    order.status = 'refunded';
+    order.refundedAt = new Date().toISOString();
+    order.refundReason = String(reason || 'refunded');
+    persistOrdersToDisk();
+    if (!wasCompleted) {
+        const ids = order.cardIds && order.cardIds.length ? order.cardIds : [order.cardId];
+        (ids || []).forEach(id => soldIdSet.delete(String(id)));
+        persistSoldIds();
+    }
+    return order;
 }
 
 function pendingIbanInfo(user) {
@@ -2613,12 +2722,15 @@ app.post('/api/create-payment-intent', async (req, res) => {
             if (meetupErr) return res.status(400).json({ error: { message: meetupErr } });
         }
         const totalChargedToBuyer = platformChargeCents(amount);
+        const orderId = 'order-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
 
         const paymentIntent = await stripe.paymentIntents.create({
             amount: totalChargedToBuyer,
             currency: 'eur',
             automatic_payment_methods: { enabled: true },
+            transfer_group: orderId,
             metadata: {
+                orderId,
                 buyerId: auth.id,
                 sellerId,
                 cardIds: cards.map(c => c.id).join(','),
@@ -2628,7 +2740,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
         });
 
         const newOrder = {
-            id: 'order-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex'),
+            id: orderId,
             paymentIntentId: paymentIntent.id,
             buyerId: auth.id,
             sellerId,
@@ -2905,14 +3017,23 @@ app.post('/api/connect/onboard', async (req, res) => {
     try {
         if (!user.stripeAccountId) {
             const fromShop = req.body && req.body.from === 'shop';
-            const account = await stripe.accounts.create({
+            const baseAccount = {
                 type: 'express',
                 country: 'IT',
                 email: auth.email || undefined,
                 business_type: fromShop ? undefined : 'individual',
                 capabilities: { transfers: { requested: true } },
                 business_profile: { url: publicSiteUrl(req) }
-            });
+            };
+            let account;
+            try {
+                account = await stripe.accounts.create({
+                    ...baseAccount,
+                    settings: { payouts: { schedule: { interval: 'daily', delay_days: 2 } } }
+                });
+            } catch (err) {
+                account = await stripe.accounts.create(baseAccount);
+            }
             user.stripeAccountId = account.id;
             persistWalletsToDisk();
         }
@@ -2935,7 +3056,7 @@ app.post('/api/wallet/payout', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
     const userId = auth.id;
-    releaseMatureHolds();
+    await releaseMatureHoldsAsync();
     const user = getOrCreateWalletUser(userId);
     const method = String((req.body && req.body.method) || 'iban').toLowerCase();
 
@@ -3027,7 +3148,7 @@ app.get('/api/admin/escrow-ledger', async (req, res) => {
                 ? 'I payout Stripe non sono ancora manuali: i fondi escrow possono finire sul conto banca.'
                 : (snap.shortfallCents > 0
                     ? 'Stripe ha già versato fondi sul conto banca. I hold venditori sono debiti da pagare con bonifico IBAN.'
-                    : 'Puoi prelevare solo le commissioni piattaforma, non i soldi dei venditori.')
+                    : 'Le commissioni piattaforma vengono accreditate da sole sul tuo conto. Escrow e hold restano su Stripe finché Stripe non paga il venditore.')
         });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
@@ -3227,7 +3348,7 @@ function answerVaultBot(message) {
         return 'Regola Chat: il primo messaggio attiva correttamente la notifica. Il controllo periodico memorizza gli ID già visti e segnala ogni nuovo arrivo, senza saltare il primo.';
     }
     if (/(escrow|pagament|stripe|carta|checkout|tos|termini)/.test(q)) {
-        return 'Pagamenti: il checkout usa Stripe. I fondi restano in Escrow fino a conferma di consegna o scambio a mano, poi passano nel wallet del venditore. Per completare l\'ordine servono Nome completo, indirizzo di fatturazione e la spunta obbligatoria «Accetto i Termini e le Condizioni».';
+        return 'Pagamenti: il checkout usa Stripe. I fondi restano in escrow su Stripe TCG Vault fino a consegna/incontro, poi 7 giorni di hold. Se il venditore ha Stripe Express, Stripe gli accredita da solo sul conto (2–3 giorni). Resi e dispute: Stripe blocca o storna il trasferimento. Il 5% piattaforma lo paga il compratore.';
     }
     if (/(spediz|corriere|pacco|poste|inpost|gls|dhl|ups|brt)/.test(q)) {
         return 'Spedizioni: i corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS. I metodi non tracciati fanno decadere la protezione Escrow. Lo scambio a mano: il compratore mostra un QR (come al check-in tornei), il venditore lo scansiona e i fondi restano 7 giorni in hold.';
@@ -3836,10 +3957,13 @@ Promise.all([
     loadPromoCodesFromSupabase(),
     loadWalletsFromSupabase()
 ]).finally(async () => {
-    releaseMatureHolds();
+    await releaseMatureHoldsAsync();
     soldIdsFromOrders();
     await recoverSoldFromStripe();
     await lockStripePayoutsManual();
+    setInterval(() => {
+        releaseMatureHoldsAsync().catch(err => console.error('Rilascio hold:', err.message));
+    }, 60 * 60 * 1000);
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
         console.log('Ambiente:', IS_SANDBOX ? 'SANDBOX' : 'produzione');
