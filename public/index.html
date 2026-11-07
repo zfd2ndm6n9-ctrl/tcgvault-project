@@ -1017,7 +1017,7 @@
                     <h3 style="margin-top:0; color: var(--accent-neon);">Portafoglio vendite</h3>
                     <p id="wallet-story" style="font-size: 1rem; color: var(--text-main); margin: 0 0 10px; font-weight: 600;">Nessuna vendita in corso.</p>
                     <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 8px;">€ <span id="wallet-credit">0.00</span></div>
-                    <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0 0 14px;">Credito totale delle tue vendite. Il prelievo si sblocca 7 giorni dopo QR o conferma ricezione.</p>
+                    <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0 0 14px;">Credito totale delle tue vendite. 7 giorni dopo QR o conferma ricezione, se non ci sono storni, dispute o assistenza, il saldo va da solo sul tuo profilo.</p>
                     <div id="wallet-lines" style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 14px;"></div>
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Prelevabile ora: € <span id="wallet-balance">0.00</span></p>
                     <p id="payout-pending-msg" style="font-size: 0.9rem; color: var(--accent-neon); margin-bottom: 12px;"></p>
@@ -1029,7 +1029,8 @@
                         <label>Intestatario del conto *</label>
                         <input type="text" id="payout-holder" placeholder="Nome e cognome come in banca">
                     </div>
-                    <button type="button" class="btn-submit" onclick="requestWalletPayout('iban')">Richiedi bonifico IBAN</button>
+                    <button type="button" class="btn-outline" onclick="saveWalletPayoutDetails()">Salva IBAN per accredito automatico</button>
+                    <button type="button" class="btn-submit" style="margin-top:8px;" onclick="requestWalletPayout('iban')">Richiedi bonifico IBAN ora</button>
                     <p id="connect-status" style="font-size: 0.85rem; color: var(--text-muted); margin: 18px 0 8px;">Stripe automatico (facoltativo): …</p>
                     <button type="button" class="btn-outline" onclick="startStripeConnect()">Collega Stripe Express (facoltativo)</button>
                     <button type="button" class="btn-outline" style="margin-top:8px;" onclick="requestWalletPayout('stripe')">Preleva in automatico su Stripe</button>
@@ -2177,6 +2178,7 @@
                         currentUser.walletLines = flags.lines || [];
                     }
                     if (flags && flags.iban) currentUser.iban = flags.iban;
+                    if (flags && flags.payoutHolder) currentUser.payoutHolder = flags.payoutHolder;
                     if (flags && flags.city) currentUser.city = flags.city;
                     if (flags && flags.address && !currentUser.address) currentUser.address = flags.address;
                     if (flags && flags.avatar_url) currentUser.avatar_url = flags.avatar_url;
@@ -3051,6 +3053,9 @@
                 if (flags.creditTotal != null) currentUser.creditTotal = Number(flags.creditTotal) || 0;
                 currentUser.walletStory = flags.story || '';
                 currentUser.walletLines = flags.lines || [];
+                if (flags.iban) currentUser.iban = flags.iban;
+                if (flags.payoutHolder) currentUser.payoutHolder = flags.payoutHolder;
+                currentUser.payoutPending = !!flags.payoutPending;
                 paintWalletAmounts();
             } catch (e) {}
         }
@@ -3083,6 +3088,8 @@
             paintWalletAmounts();
             const ibanEl = document.getElementById('payout-iban');
             if (ibanEl) ibanEl.value = currentUser.iban || '';
+            const holderEl = document.getElementById('payout-holder');
+            if (holderEl) holderEl.value = currentUser.payoutHolder || '';
             const pendingEl = document.getElementById('payout-pending-msg');
             if (pendingEl) pendingEl.textContent = currentUser.payoutPending ? 'Bonifico IBAN già in lavorazione.' : '';
             refreshConnectStatus();
@@ -3242,6 +3249,29 @@
                     return;
                 }
                 showNotification(data.error || 'Impossibile aprire Stripe Connect.', 'error');
+            } catch (err) {
+                showNotification('Errore di comunicazione.', 'error');
+            }
+        }
+
+        async function saveWalletPayoutDetails() {
+            try {
+                const res = await fetch(`${window.location.origin}/api/wallet/payout-details`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        iban: (document.getElementById('payout-iban') || {}).value || '',
+                        holder: (document.getElementById('payout-holder') || {}).value || ''
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    currentUser.iban = data.iban || '';
+                    currentUser.payoutHolder = data.payoutHolder || '';
+                    showNotification(data.message);
+                } else {
+                    showNotification(data.error || 'IBAN non salvato.', 'error');
+                }
             } catch (err) {
                 showNotification('Errore di comunicazione.', 'error');
             }

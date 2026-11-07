@@ -1566,6 +1566,7 @@ function walletToRow(u) {
         held_balance: Number(u.heldWallet || 0),
         available_balance: Number(u.availableWallet || 0),
         iban: u.iban || null,
+        payout_holder: u.payoutHolder || null,
         stripe_account_id: u.stripeAccountId || null,
         last_payout_id: u.lastPayoutId || null,
         last_payout_at: u.lastPayoutAt || null,
@@ -1587,6 +1588,7 @@ function applyWalletRow(r) {
         user.availableWallet = available;
     }
     user.iban = r.iban || '';
+    user.payoutHolder = r.payout_holder || user.payoutHolder || '';
     user.stripeAccountId = r.stripe_account_id || user.stripeAccountId || null;
     user.lastPayoutId = r.last_payout_id || null;
     user.lastPayoutAt = r.last_payout_at || null;
@@ -1600,17 +1602,63 @@ function isHoldPending(holdUntil) {
     return Number.isFinite(t) && t >= Date.parse('2000-01-01');
 }
 
+async function payoutBlockedReason(order) {
+    if (!order) return 'ordine assente';
+    if (order.status === 'refunded') return 'rimborso';
+    if (order.status === 'disputed') return 'contestazione Stripe';
+    if (order.payoutFrozen || order.supportHold) return 'intervento assistenza';
+    if (!stripe) return null;
+    try {
+        let chargeId = order.chargeId || null;
+        if (!chargeId && order.paymentIntentId) {
+            const pi = await stripe.paymentIntents.retrieve(order.paymentIntentId);
+            chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : (pi.latest_charge && pi.latest_charge.id);
+            if (pi.status === 'canceled') return 'rimborso';
+        }
+        if (!chargeId) return null;
+        const charge = await stripe.charges.retrieve(chargeId);
+        if (charge.disputed) return 'contestazione Stripe';
+        if (charge.refunded || Number(charge.amount_refunded || 0) > 0) return 'rimborso';
+        return null;
+    } catch (err) {
+        console.error('Verifica disputa ordine', order.id, err.message);
+        return 'verifica Stripe non disponibile';
+    }
+}
+
+function maybeAutoQueueIban(seller) {
+    if (!seller || pendingIbanInfo(seller)) return false;
+    const iban = normalizeIban(seller.iban);
+    const holder = String(seller.payoutHolder || '').trim();
+    const withdrawn = Number(seller.availableWallet || 0);
+    if (!isPlausibleIban(iban) || holder.length < 3 || withdrawn <= 0) return false;
+    seller.availableWallet = 0;
+    setPendingIbanPayout(seller, withdrawn, holder);
+    seller.lastPayoutAt = new Date().toISOString();
+    seller.walletUpdatedAt = seller.lastPayoutAt;
+    syncWalletTotals(seller);
+    return true;
+}
+
 let holdReleaseRunning = false;
 async function releaseMatureHoldsAsync() {
     if (holdReleaseRunning) return false;
     holdReleaseRunning = true;
     let changed = false;
     const now = Date.now();
+    const ibanSellers = new Set();
     try {
         for (const order of ordersDB) {
             if (!order || order.status === 'refunded' || order.status === 'disputed') continue;
             if (order.status !== 'completed' || !isHoldPending(order.holdUntil)) continue;
             if (new Date(order.holdUntil).getTime() > now) continue;
+            const blocked = await payoutBlockedReason(order);
+            if (blocked) {
+                order.payoutHoldReason = blocked;
+                if (blocked === 'contestazione Stripe') order.status = 'disputed';
+                changed = true;
+                continue;
+            }
             const amount = Number(order.amount || 0);
             const cents = Math.round(amount * 100);
             const seller = getOrCreateWalletUser(order.sellerId);
@@ -1635,14 +1683,18 @@ async function releaseMatureHoldsAsync() {
                 } catch (err) {
                     console.error('Transfer automatico venditore fallito:', order.id, err.message);
                     seller.availableWallet = Number(seller.availableWallet || 0) + amount;
+                    ibanSellers.add(String(seller.id));
                 }
             } else {
                 seller.availableWallet = Number(seller.availableWallet || 0) + amount;
+                ibanSellers.add(String(seller.id));
             }
             syncWalletTotals(seller);
             order.holdUntil = HOLD_RELEASED_AT;
+            order.payoutHoldReason = null;
             changed = true;
         }
+        ibanSellers.forEach(id => maybeAutoQueueIban(getOrCreateWalletUser(id)));
         if (changed) {
             persistOrdersToDisk();
             persistWalletsToDisk();
@@ -1795,7 +1847,7 @@ function walletSaleLines(userId) {
                 amount,
                 title: o.cardTitle || 'Vendita',
                 unlockAt: o.holdUntil,
-                hint: 'Consegna/QR ok. Prelevi dal ' + formatItDate(o.holdUntil) + (days != null ? ' (tra ' + days + ' giorni).' : '.')
+                hint: 'Consegna/QR ok. Il ' + formatItDate(o.holdUntil) + ' il saldo va da solo sul tuo profilo' + (days != null ? ' (tra ' + days + ' giorni)' : '') + ', se non ci sono storni o contestazioni.'
             });
         }
     });
@@ -1828,6 +1880,7 @@ function walletPublic(userId) {
         story,
         lines,
         iban: user.iban || '',
+        payoutHolder: user.payoutHolder || '',
         stripeAccountId: user.stripeAccountId || null,
         payoutPending: !!pending,
         payoutPendingAmount: pending ? pending.amount : 0
@@ -3229,6 +3282,30 @@ app.post('/api/connect/onboard', async (req, res) => {
     }
 });
 
+app.post('/api/wallet/payout-details', async (req, res) => {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const user = getOrCreateWalletUser(auth.id);
+    const iban = normalizeIban(req.body && req.body.iban);
+    const holder = String((req.body && req.body.holder) || '').trim();
+    if (!isPlausibleIban(iban)) {
+        return res.status(400).json({ success: false, error: 'Inserisci un IBAN valido.' });
+    }
+    if (holder.length < 3) {
+        return res.status(400).json({ success: false, error: 'Inserisci nome e cognome dell\'intestatario del conto.' });
+    }
+    user.iban = iban;
+    user.payoutHolder = holder;
+    user.walletUpdatedAt = new Date().toISOString();
+    persistWalletsToDisk();
+    res.json({
+        success: true,
+        message: 'IBAN salvato. Alla scadenza dei 7 giorni, senza storni o contestazioni, il bonifico parte da solo.',
+        iban: user.iban,
+        payoutHolder: user.payoutHolder
+    });
+});
+
 app.post('/api/wallet/payout', async (req, res) => {
     const auth = await requireAuth(req, res);
     if (!auth) return;
@@ -3284,7 +3361,7 @@ app.post('/api/wallet/payout', async (req, res) => {
     }
 
     const iban = normalizeIban(req.body && req.body.iban);
-    const holder = String((req.body && req.body.holder) || '').trim();
+    const holder = String((req.body && req.body.holder) || user.payoutHolder || '').trim();
     if (!isPlausibleIban(iban)) {
         return res.status(400).json({ success: false, error: 'Inserisci un IBAN valido.' });
     }
@@ -3294,6 +3371,7 @@ app.post('/api/wallet/payout', async (req, res) => {
 
     user.availableWallet = 0;
     user.iban = iban;
+    user.payoutHolder = holder;
     setPendingIbanPayout(user, withdrawnAmount, holder);
     user.lastPayoutAt = new Date().toISOString();
     user.walletUpdatedAt = user.lastPayoutAt;
@@ -3529,13 +3607,13 @@ function answerVaultBot(message) {
         return 'Regola Chat: il primo messaggio attiva correttamente la notifica. Il controllo periodico memorizza gli ID già visti e segnala ogni nuovo arrivo, senza saltare il primo.';
     }
     if (/(escrow|pagament|stripe|carta|checkout|tos|termini)/.test(q)) {
-        return 'Pagamenti: il checkout usa Stripe. I fondi restano in escrow su Stripe TCG Vault fino a consegna/incontro, poi 7 giorni di hold. Se il venditore ha Stripe Express, Stripe gli accredita da solo sul conto (2–3 giorni). Resi e dispute: Stripe blocca o storna il trasferimento. Il 5% piattaforma lo paga il compratore.';
+        return 'Pagamenti: il checkout usa Stripe. I fondi restano in escrow su Stripe TCG Vault fino a consegna/incontro, poi 7 giorni di hold. Alla scadenza, se non c\'è storno, disputa o assistenza, TCG Vault accredita da solo il venditore: con Stripe Express i soldi vanno sul suo conto Stripe; con IBAN salvato parte il bonifico. Resi e dispute bloccano il trasferimento. Il 5% piattaforma lo paga il compratore.';
     }
     if (/(spediz|corriere|pacco|poste|inpost|gls|dhl|ups|brt)/.test(q)) {
         return 'Spedizioni: i corrieri autorizzati sono Poste Italiane/SDA, InPost, BRT, GLS, DHL e UPS. I metodi non tracciati fanno decadere la protezione Escrow. Lo scambio a mano: il compratore mostra un QR (come al check-in tornei), il venditore lo scansiona e i fondi restano 7 giorni in hold.';
     }
     if (/(ordine|wallet|prelievo|iban|vendita|acquisto)/.test(q)) {
-        return 'Gestione ordini: dopo il pagamento l\'ordine è protetto. L\'acquirente riceve il prodotto con spedizione tracciata o scambio a mano; il venditore vede i fondi nel wallet e può richiedere il prelievo via IBAN a consegna confermata.';
+        return 'Gestione ordini: dopo il pagamento l\'ordine è protetto. A QR o conferma ricezione partono 7 giorni di hold. Poi, senza contestazioni, il saldo va da solo sul profilo venditore (Stripe Express o bonifico IBAN se i dati sono salvati).';
     }
     if (/(ospite|guest|login|registr|account|profilo)/.test(q)) {
         return 'Puoi sfogliare il catalogo da ospite. Per vendere, chattare, salvare, offrire o comprare serve l\'accesso. Il profilo salva nome, email e address su Supabase.';
@@ -4147,7 +4225,7 @@ Promise.all([
     await lockStripePayoutsManual();
     setInterval(() => {
         releaseMatureHoldsAsync().catch(err => console.error('Rilascio hold:', err.message));
-    }, 60 * 60 * 1000);
+    }, 15 * 60 * 1000);
     app.listen(PORT, () => {
         console.log(`🚀 TCG Vault Backend attivo sulla porta ${PORT}`);
         console.log('Ambiente:', IS_SANDBOX ? 'SANDBOX' : 'produzione');
