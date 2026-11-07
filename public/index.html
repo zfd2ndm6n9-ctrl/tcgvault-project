@@ -1017,6 +1017,7 @@
                     <h3 style="margin-top:0; color: var(--accent-neon);">💰 Saldo Disponibile in Wallet</h3>
                     <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;"><strong>1.</strong> Il compratore paga: i soldi restano in escrow su Stripe TCG Vault. Il 5% lo paga il compratore. <strong>2.</strong> Spedisci o incontri; lui conferma. <strong>3.</strong> 7 giorni di hold anti-chargeback. Se hai Stripe Express, Stripe ti accredita da solo sul conto (altri 2–3 giorni). Senza Express resta il bonifico IBAN. Resi e dispute li gestisce Stripe: se arrivano durante l’hold, il trasferimento al venditore non parte.</p>
                     <div style="font-size: 2rem; font-weight: 800; color: var(--accent-neon); margin-bottom: 8px;">€ <span id="wallet-balance">0.00</span></div>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px;">In escrow (pagato, in attesa di consegna/QR): € <span id="wallet-escrow">0.00</span></p>
                     <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">In hold 7 giorni (credito venditore, fondi su Stripe TCG Vault): € <span id="wallet-held">0.00</span></p>
                     <p id="payout-pending-msg" style="font-size: 0.9rem; color: var(--accent-neon); margin-bottom: 12px;"></p>
                     <div class="form-group">
@@ -2168,6 +2169,7 @@
                     if (flags && flags.wallet != null) currentUser.wallet = Number(flags.wallet) || 0;
                     if (flags && flags.availableWallet != null) currentUser.wallet = Number(flags.availableWallet) || 0;
                     if (flags && flags.heldWallet != null) currentUser.heldWallet = Number(flags.heldWallet) || 0;
+                    if (flags && flags.escrowWallet != null) currentUser.escrowWallet = Number(flags.escrowWallet) || 0;
                     if (flags && flags.iban) currentUser.iban = flags.iban;
                     if (flags && flags.city) currentUser.city = flags.city;
                     if (flags && flags.address && !currentUser.address) currentUser.address = flags.address;
@@ -3015,6 +3017,15 @@
 
         function closeSavedModal() { hideOverlay('saved-modal'); }
 
+        function paintWalletAmounts() {
+            const bal = document.getElementById('wallet-balance');
+            const heldEl = document.getElementById('wallet-held');
+            const escrowEl = document.getElementById('wallet-escrow');
+            if (bal) bal.innerText = (currentUser && currentUser.wallet ? currentUser.wallet : 0).toFixed(2);
+            if (heldEl) heldEl.innerText = (currentUser && currentUser.heldWallet ? currentUser.heldWallet : 0).toFixed(2);
+            if (escrowEl) escrowEl.innerText = (currentUser && currentUser.escrowWallet ? currentUser.escrowWallet : 0).toFixed(2);
+        }
+
         async function refreshWalletFromServer() {
             if (!currentUser) return;
             try {
@@ -3023,10 +3034,8 @@
                 if (flags.availableWallet != null) currentUser.wallet = Number(flags.availableWallet) || 0;
                 else if (flags.wallet != null) currentUser.wallet = Number(flags.wallet) || 0;
                 if (flags.heldWallet != null) currentUser.heldWallet = Number(flags.heldWallet) || 0;
-                const bal = document.getElementById('wallet-balance');
-                const heldEl = document.getElementById('wallet-held');
-                if (bal) bal.innerText = (currentUser.wallet || 0).toFixed(2);
-                if (heldEl) heldEl.innerText = (currentUser.heldWallet || 0).toFixed(2);
+                if (flags.escrowWallet != null) currentUser.escrowWallet = Number(flags.escrowWallet) || 0;
+                paintWalletAmounts();
             } catch (e) {}
         }
 
@@ -3055,9 +3064,7 @@
                 accountType: currentUser.accountType,
                 partner: !!currentUser.partner
             });
-            document.getElementById('wallet-balance').innerText = (currentUser.wallet || 0).toFixed(2);
-            const heldEl = document.getElementById('wallet-held');
-            if (heldEl) heldEl.innerText = (currentUser.heldWallet || 0).toFixed(2);
+            paintWalletAmounts();
             const ibanEl = document.getElementById('payout-iban');
             if (ibanEl) ibanEl.value = currentUser.iban || '';
             const pendingEl = document.getElementById('payout-pending-msg');
@@ -3241,9 +3248,8 @@
                 if (data.success) {
                     currentUser.wallet = data.newBalance;
                     if (data.heldWallet != null) currentUser.heldWallet = Number(data.heldWallet) || 0;
-                    document.getElementById('wallet-balance').innerText = currentUser.wallet.toFixed(2);
-                    const heldEl = document.getElementById('wallet-held');
-                    if (heldEl) heldEl.innerText = (currentUser.heldWallet || 0).toFixed(2);
+                    if (data.escrowWallet != null) currentUser.escrowWallet = Number(data.escrowWallet) || 0;
+                    paintWalletAmounts();
                     if (pendingEl) pendingEl.textContent = data.payoutPending ? data.message : '';
                     showNotification(data.message);
                 } else {

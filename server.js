@@ -152,16 +152,8 @@ async function recoverSoldFromStripe() {
                 const ids = cardIdsFromStripeMeta(pi.metadata);
                 if (!ids.length) continue;
                 found.push(...ids);
-                const existing = ordersDB.find(o => o.paymentIntentId === pi.id);
                 const order = ensureOrderFromPaymentIntent(pi);
-                if (order && !order.escrowNotified) {
-                    if (existing) await fulfillPaidOrder(order);
-                    else {
-                        order.status = 'paid';
-                        order.paidAt = order.createdAt;
-                        order.escrowNotified = true;
-                    }
-                }
+                if (order && !order.escrowNotified) await fulfillPaidOrder(order);
             }
             if (!list.has_more || !(list.data && list.data.length)) break;
             startingAfter = list.data[list.data.length - 1].id;
@@ -311,6 +303,13 @@ async function fulfillPaidOrder(order) {
     await attachStripeFeeToOrder(order);
     persistOrdersToDisk();
     await markCardsSold(order.cardIds && order.cardIds.length ? order.cardIds : [order.cardId]);
+    try { await supabaseUpsertRow('orders', orderToRow(order), 'id'); } catch (err) {
+        console.error('Supabase ordine dopo pagamento:', err.message);
+    }
+    const related = messagesDB.filter(m => m && String(m.orderId) === String(order.id)).slice(-8);
+    for (const msg of related) {
+        try { await supabaseUpsertRow('messages', messageToRow(msg), 'id'); } catch (err) {}
+    }
     return order;
 }
 
@@ -1103,29 +1102,53 @@ function rowToOrder(r) {
     };
 }
 
-async function persistOrdersToSupabase() {
-    if (!ordersDB.length) return;
-    const rows = ordersDB.map(orderToRow);
-    for (let round = 0; round < 8; round++) {
-        const res = await fetch(SUPABASE_URL + '/rest/v1/orders', {
+async function supabaseUpsertRow(table, row, idColumn) {
+    const payload = { ...row };
+    const key = idColumn || 'id';
+    for (let round = 0; round < 10; round++) {
+        const headers = {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal'
+        };
+        let res = await fetch(SUPABASE_URL + '/rest/v1/' + table, {
             method: 'POST',
-            headers: {
-                apikey: SUPABASE_KEY,
-                Authorization: 'Bearer ' + SUPABASE_KEY,
-                'Content-Type': 'application/json',
-                Prefer: 'resolution=merge-duplicates,return=minimal'
-            },
-            body: JSON.stringify(rows)
+            headers,
+            body: JSON.stringify(payload)
         });
-        if (res.ok) return;
+        if (res.ok) return true;
         const errText = await res.text();
         const missing = errText.match(/Could not find the '([^']+)' column/i);
         if (missing) {
-            rows.forEach(row => { delete row[missing[1]]; });
+            delete payload[missing[1]];
             continue;
         }
-        console.error('Salvataggio orders Supabase:', res.status, errText);
-        return;
+        if (payload[key] != null && (/no unique|ON CONFLICT|duplicate key/i.test(errText) || res.status === 409)) {
+            const patch = await fetch(
+                SUPABASE_URL + '/rest/v1/' + table + '?' + key + '=eq.' + encodeURIComponent(String(payload[key])),
+                { method: 'PATCH', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify(payload) }
+            );
+            if (patch.ok) return true;
+            const ins = await fetch(SUPABASE_URL + '/rest/v1/' + table, {
+                method: 'POST',
+                headers: { ...headers, Prefer: 'return=minimal' },
+                body: JSON.stringify(payload)
+            });
+            if (ins.ok) return true;
+            console.error('Salvataggio ' + table + ':', patch.status, await patch.text().catch(() => ''), ins.status);
+            return false;
+        }
+        console.error('Salvataggio ' + table + ':', res.status, errText.slice(0, 400));
+        return false;
+    }
+    return false;
+}
+
+async function persistOrdersToSupabase() {
+    const list = ordersDB.filter(o => o && o.id && o.status !== 'pending_payment').slice(-80);
+    for (const order of list) {
+        await supabaseUpsertRow('orders', orderToRow(order), 'id');
     }
 }
 
@@ -1143,13 +1166,24 @@ async function loadOrdersFromSupabase() {
         }
         const rows = await res.json();
         if (Array.isArray(rows) && rows.length) {
-            ordersDB = rows.map(rowToOrder);
+            const byId = new Map(ordersDB.map(o => [String(o.id), o]));
+            rows.map(rowToOrder).forEach(remote => {
+                const local = byId.get(String(remote.id));
+                if (!local) {
+                    ordersDB.push(remote);
+                    byId.set(String(remote.id), remote);
+                    return;
+                }
+                if (!local.status || local.status === 'pending_payment' || String(remote.status || '') !== 'pending_payment') {
+                    Object.assign(local, remote);
+                }
+            });
             try {
                 const file = dataFile('orders.json');
                 fs.mkdirSync(path.dirname(file), { recursive: true });
                 fs.writeFileSync(file, JSON.stringify(ordersDB, null, 2));
             } catch (err) {}
-            console.log('Ordini caricati da Supabase:', ordersDB.length);
+            console.log('Ordini uniti da Supabase:', ordersDB.length);
             soldIdsFromOrders();
             return;
         }
@@ -1216,19 +1250,9 @@ function rowToMessage(r) {
 }
 
 async function persistMessagesToSupabase() {
-    if (!messagesDB.length) return;
-    const res = await fetch(SUPABASE_URL + '/rest/v1/messages', {
-        method: 'POST',
-        headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: 'Bearer ' + SUPABASE_KEY,
-            'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates,return=minimal'
-        },
-        body: JSON.stringify(messagesDB.map(messageToRow))
-    });
-    if (!res.ok) {
-        console.error('Salvataggio messages Supabase:', res.status, await res.text());
+    const list = messagesDB.filter(m => m && m.id).slice(-120);
+    for (const msg of list) {
+        await supabaseUpsertRow('messages', messageToRow(msg), 'id');
     }
 }
 
@@ -1246,9 +1270,15 @@ async function loadMessagesFromSupabase() {
         }
         const rows = await res.json();
         if (Array.isArray(rows) && rows.length) {
-            messagesDB = rows.map(rowToMessage);
+            const byId = new Map(messagesDB.map(m => [String(m.id), m]));
+            rows.map(rowToMessage).forEach(remote => {
+                if (!byId.has(String(remote.id))) {
+                    messagesDB.push(remote);
+                    byId.set(String(remote.id), remote);
+                }
+            });
             persistJsonFile('messages.json', messagesDB, true);
-            console.log('Messaggi caricati da Supabase:', messagesDB.length);
+            console.log('Messaggi uniti da Supabase:', messagesDB.length);
             return;
         }
         if (messagesDB.length) {
@@ -1723,15 +1753,26 @@ function syncHeldFromCompletedOrders(userId) {
     return user;
 }
 
+function sellerEscrowEuro(userId) {
+    let n = 0;
+    ordersDB.forEach(o => {
+        if (String(o.sellerId) !== String(userId)) return;
+        if (o.status === 'paid' || o.status === 'shipped' || o.status === 'meetup_arranged') n += Number(o.amount || 0);
+    });
+    return Math.round(n * 100) / 100;
+}
+
 function walletPublic(userId) {
     releaseMatureHolds();
     syncHeldFromCompletedOrders(userId);
     const user = getOrCreateWalletUser(userId);
     const pending = pendingIbanInfo(user);
+    const escrowWallet = sellerEscrowEuro(userId);
     return {
         wallet: Number(user.availableWallet || 0),
         availableWallet: Number(user.availableWallet || 0),
         heldWallet: Number(user.heldWallet || 0),
+        escrowWallet,
         iban: user.iban || '',
         stripeAccountId: user.stripeAccountId || null,
         payoutPending: !!pending,
@@ -1748,19 +1789,8 @@ function publicSiteUrl(req) {
 
 async function persistWalletsToSupabase() {
     const rows = usersDB.filter(u => u && u.id).map(walletToRow);
-    if (!rows.length) return;
-    const res = await fetch(SUPABASE_URL + '/rest/v1/wallets', {
-        method: 'POST',
-        headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: 'Bearer ' + SUPABASE_KEY,
-            'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates,return=minimal'
-        },
-        body: JSON.stringify(rows)
-    });
-    if (!res.ok) {
-        console.error('Salvataggio wallets Supabase:', res.status, await res.text());
+    for (const row of rows) {
+        await supabaseUpsertRow('wallets', row, 'user_id');
     }
 }
 
@@ -4057,6 +4087,9 @@ Promise.all([
     await releaseMatureHoldsAsync();
     soldIdsFromOrders();
     await recoverSoldFromStripe();
+    await persistOrdersToSupabase();
+    await persistMessagesToSupabase();
+    await persistWalletsToSupabase();
     await lockStripePayoutsManual();
     setInterval(() => {
         releaseMatureHoldsAsync().catch(err => console.error('Rilascio hold:', err.message));
