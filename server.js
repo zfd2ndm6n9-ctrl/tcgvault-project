@@ -1053,6 +1053,7 @@ function orderToRow(o) {
         platform_fee_cents: o.platformFeeCents != null ? Number(o.platformFeeCents) : null,
         charge_id: o.chargeId || null,
         seller_transfer_id: o.sellerTransferId || null,
+        payout_ref: o.ibanPayoutId || o.sellerTransferId || null,
         status: o.status || 'pending_payment',
         escrow_notified: !!o.escrowNotified,
         carrier: o.carrier || null,
@@ -1085,6 +1086,7 @@ function rowToOrder(r) {
         platformFeeCents: r.platform_fee_cents != null ? Number(r.platform_fee_cents) : undefined,
         chargeId: r.charge_id || undefined,
         sellerTransferId: r.seller_transfer_id || undefined,
+        ibanPayoutId: r.payout_ref || r.seller_transfer_id || undefined,
         status: r.status,
         escrowNotified: !!r.escrow_notified,
         carrier: r.carrier,
@@ -1626,6 +1628,27 @@ async function payoutBlockedReason(order) {
     }
 }
 
+function unpaidReleasedOrders(sellerId) {
+    return ordersDB.filter(o => {
+        if (String(o.sellerId) !== String(sellerId) || o.status !== 'completed') return false;
+        if (o.sellerTransferId) return false;
+        if (isHoldPending(o.holdUntil)) return false;
+        if (String(o.ibanPayoutId || '').startsWith('pending_iban|')) return false;
+        return Number(o.amount || 0) > 0;
+    });
+}
+
+function attachIbanPayoutToOrders(sellerId, payoutId) {
+    unpaidReleasedOrders(sellerId).forEach(o => {
+        o.ibanPayoutId = payoutId;
+    });
+}
+
+function ordersForPayoutRef(payoutId) {
+    if (!payoutId) return [];
+    return ordersDB.filter(o => String(o.ibanPayoutId || o.sellerTransferId || '') === String(payoutId));
+}
+
 function maybeAutoQueueIban(seller) {
     if (!seller || pendingIbanInfo(seller)) return false;
     const iban = normalizeIban(seller.iban);
@@ -1634,10 +1657,52 @@ function maybeAutoQueueIban(seller) {
     if (!isPlausibleIban(iban) || holder.length < 3 || withdrawn <= 0) return false;
     seller.availableWallet = 0;
     setPendingIbanPayout(seller, withdrawn, holder);
+    attachIbanPayoutToOrders(seller.id, seller.lastPayoutId);
     seller.lastPayoutAt = new Date().toISOString();
     seller.walletUpdatedAt = seller.lastPayoutAt;
     syncWalletTotals(seller);
     return true;
+}
+
+async function payReleasedOrdersViaExpress(seller) {
+    if (!stripe || !seller || pendingIbanInfo(seller)) return 0;
+    const st = await stripeConnectStatus(seller);
+    if (!st.payoutsEnabled) return 0;
+    let paid = 0;
+    let changed = false;
+    for (const order of unpaidReleasedOrders(seller.id)) {
+        const amount = Number(order.amount || 0);
+        const cents = Math.round(amount * 100);
+        if (cents <= 0) continue;
+        try {
+            const payload = {
+                amount: cents,
+                currency: 'eur',
+                destination: seller.stripeAccountId,
+                transfer_group: order.id,
+                metadata: { orderId: String(order.id), sellerId: String(seller.id), type: 'hold_release' }
+            };
+            if (order.chargeId) payload.source_transaction = order.chargeId;
+            const transfer = await stripe.transfers.create(payload);
+            order.sellerTransferId = transfer.id;
+            order.ibanPayoutId = transfer.id;
+            order.autoPaidAt = new Date().toISOString();
+            seller.availableWallet = Math.max(0, Number(seller.availableWallet || 0) - amount);
+            seller.lastPayoutId = transfer.id;
+            seller.lastPayoutAt = order.autoPaidAt;
+            paid += amount;
+            changed = true;
+        } catch (err) {
+            console.error('Transfer ordine', order.id, err.message);
+        }
+    }
+    if (changed) {
+        seller.walletUpdatedAt = new Date().toISOString();
+        syncWalletTotals(seller);
+        persistOrdersToDisk();
+        persistWalletsToDisk();
+    }
+    return paid;
 }
 
 let holdReleaseRunning = false;
@@ -3231,6 +3296,9 @@ app.get('/api/connect/status', async (req, res) => {
     if (!auth) return;
     const user = getOrCreateWalletUser(auth.id);
     const st = await stripeConnectStatus(user);
+    if (st.payoutsEnabled) {
+        await payReleasedOrdersViaExpress(user);
+    }
     res.json({ success: true, stripeAccountId: user.stripeAccountId || null, ...st });
 });
 
@@ -3337,21 +3405,14 @@ app.post('/api/wallet/payout', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Per l\'accredito automatico completa Stripe Express, oppure usa il bonifico IBAN.' });
         }
         try {
-            const transfer = await stripe.transfers.create({
-                amount: Math.round(withdrawnAmount * 100),
-                currency: 'eur',
-                destination: user.stripeAccountId
-            });
-            user.availableWallet = 0;
-            user.lastPayoutId = transfer && transfer.id ? String(transfer.id) : null;
-            user.lastPayoutAt = new Date().toISOString();
-            user.walletUpdatedAt = user.lastPayoutAt;
-            syncWalletTotals(user);
-            persistWalletsToDisk();
+            const paid = await payReleasedOrdersViaExpress(user);
+            if (!(paid > 0)) {
+                return res.status(400).json({ success: false, error: 'Nessun ordine sbloccato da accreditare su Stripe.' });
+            }
             return res.json({
                 success: true,
-                message: `Prelievo di €${withdrawnAmount.toFixed(2)} inviato sul tuo conto Stripe.`,
-                newBalance: 0.00,
+                message: `Prelievo di €${paid.toFixed(2)} inviato sul tuo conto Stripe, abbinato agli ordini originali.`,
+                newBalance: Number(user.availableWallet || 0),
                 heldWallet: Number(user.heldWallet || 0),
                 payoutPending: false
             });
@@ -3373,6 +3434,8 @@ app.post('/api/wallet/payout', async (req, res) => {
     user.iban = iban;
     user.payoutHolder = holder;
     setPendingIbanPayout(user, withdrawnAmount, holder);
+    attachIbanPayoutToOrders(user.id, user.lastPayoutId);
+    persistOrdersToDisk();
     user.lastPayoutAt = new Date().toISOString();
     user.walletUpdatedAt = user.lastPayoutAt;
     syncWalletTotals(user);
@@ -3453,6 +3516,7 @@ app.get('/api/admin/payouts', async (req, res) => {
     const items = usersDB.map(u => {
         const pending = pendingIbanInfo(u);
         if (!pending) return null;
+        const linked = ordersForPayoutRef(u.lastPayoutId);
         return {
             userId: String(u.id),
             email: u.email || '',
@@ -3460,7 +3524,9 @@ app.get('/api/admin/payouts', async (req, res) => {
             iban: u.iban || '',
             holder: pending.holder,
             amount: pending.amount,
-            requestedAt: u.lastPayoutAt || null
+            requestedAt: u.lastPayoutAt || null,
+            payoutRef: u.lastPayoutId || '',
+            orders: linked.map(o => ({ id: o.id, title: o.cardTitle || 'Vendita', amount: Number(o.amount || 0) }))
         };
     }).filter(Boolean);
     res.json({ success: true, payouts: items });
@@ -3473,11 +3539,19 @@ app.post('/api/admin/payouts/:userId/complete', async (req, res) => {
     if (!pending) {
         return res.status(400).json({ success: false, error: 'Nessun bonifico in attesa per questo utente.' });
     }
-    user.lastPayoutId = 'sepa_' + Date.now();
+    const pendingId = user.lastPayoutId;
+    const sepa = 'sepa_' + Date.now();
+    ordersForPayoutRef(pendingId).forEach(o => {
+        o.sellerTransferId = sepa;
+        o.ibanPayoutId = sepa;
+        o.autoPaidAt = new Date().toISOString();
+    });
+    user.lastPayoutId = sepa;
     user.lastPayoutAt = new Date().toISOString();
     user.walletUpdatedAt = user.lastPayoutAt;
+    persistOrdersToDisk();
     persistWalletsToDisk();
-    res.json({ success: true });
+    res.json({ success: true, payoutId: sepa });
 });
 
 app.post('/api/admin/payouts/:userId/reject', async (req, res) => {
@@ -3487,11 +3561,15 @@ app.post('/api/admin/payouts/:userId/reject', async (req, res) => {
     if (!pending) {
         return res.status(400).json({ success: false, error: 'Nessun bonifico in attesa per questo utente.' });
     }
+    ordersForPayoutRef(user.lastPayoutId).forEach(o => {
+        o.ibanPayoutId = null;
+    });
     user.availableWallet = Number(user.availableWallet || 0) + pending.amount;
     user.lastPayoutId = null;
     user.lastPayoutAt = new Date().toISOString();
     user.walletUpdatedAt = user.lastPayoutAt;
     syncWalletTotals(user);
+    persistOrdersToDisk();
     persistWalletsToDisk();
     res.json({ success: true, restored: pending.amount });
 });
