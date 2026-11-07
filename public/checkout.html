@@ -59,7 +59,7 @@
         <div class="card">
             <h2 style="margin-top:0;">Riepilogo ordine</h2>
             <div id="cart-summary"></div>
-            <p style="font-size:0.85rem;color:var(--text-muted);">Ordine minimo €20,00 da un singolo venditore.</p>
+            <p style="font-size:0.85rem;color:var(--text-muted);">Ordine minimo €1,00 (test) da un singolo venditore.</p>
             <div class="form-group" style="margin-top:14px;">
                 <label>Consegna *</label>
                 <label style="display:flex;gap:8px;align-items:flex-start;text-transform:none;font-weight:500;color:var(--text-main);margin:8px 0;">
@@ -158,7 +158,7 @@
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGttcHBqdGVzcGVta3pta29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDM2NDAsImV4cCI6MjEwNzcxOTY0MH0._VeFP1v5vZkGz1-rGVUpHcROWWfs7zzkWEV7i96tkbk';
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         window.__tcgSupabase = supabaseClient;
-        const CART_MIN_ORDER = 20;
+        const CART_MIN_ORDER = 1;
         let cart = JSON.parse(localStorage.getItem('tcg_cart') || '[]');
         let currentUser = null;
         let elements = null;

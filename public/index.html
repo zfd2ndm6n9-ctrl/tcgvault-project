@@ -765,8 +765,8 @@
         </div>
 
         <div class="rules-banner">
-            <strong>Compratori:</strong> ordine minimo €20,00 e articoli di un solo venditore.
-            <br><strong>Venditori:</strong> sotto €50,00 di catalogo (non venduti) gli annunci restano in attesa e si pubblicano tutti insieme al raggiungimento della soglia.
+            <strong>Compratori:</strong> ordine minimo €1,00 (test) e articoli di un solo venditore.
+            <br><strong>Venditori:</strong> in fase test la soglia catalogo è €1,00.
         </div>
         <div class="section-title" style="font-size: 0.9rem; margin-bottom: 15px;">Prodotti Disponibili</div>
         <div id="product-list" class="card-grid"></div>
@@ -885,7 +885,7 @@
                 <button class="close-btn" onclick="closeCartModal()">&times;</button>
             </div>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">
-                Ordine minimo <strong style="color: var(--accent-neon);">€20,00</strong> e articoli dello <strong>stesso venditore</strong>. Non si possono mischiare venditori diversi.
+                Ordine minimo <strong style="color: var(--accent-neon);">€1,00</strong> (fase test) e articoli dello <strong>stesso venditore</strong>. Non si possono mischiare venditori diversi.
             </p>
             <div id="cart-items-container" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
                 <p style="color: var(--text-muted);">Il tuo carrello è vuoto.</p>
@@ -998,8 +998,8 @@
             </div>
 
             <div id="tab-my-listings" class="tab-content" style="display: none;">
-                <div class="rules-banner" id="seller-threshold-status">Soglia catalogo venditore: €50,00. Sotto soglia gli annunci restano in attesa.</div>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci. Sotto i €50 di prodotti non venduti restano in attesa; al raggiungimento della soglia si pubblicano tutti insieme.</p>
+                <div class="rules-banner" id="seller-threshold-status">Soglia catalogo venditore (test): €1,00.</div>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Gestisci i tuoi annunci. In fase test un annuncio da €1 è già pubblicabile.</p>
                 <div id="my-listings-container" class="card-grid">
                     <p style="color: var(--text-muted);">Caricamento annunci...</p>
                 </div>
@@ -1334,7 +1334,7 @@
                 <h2>Crea Annuncio di Vendita</h2>
                 <button class="close-btn" onclick="closeSellModal()">&times;</button>
             </div>
-            <div class="rules-banner">Soglia catalogo: <strong>€50,00</strong>. Sotto soglia l'annuncio viene salvato <strong>in attesa</strong> e non compare in vetrina.</div>
+            <div class="rules-banner">Fase test: soglia catalogo <strong>€1,00</strong>, ordine minimo <strong>€1,00</strong>.</div>
             <form id="sell-form" onsubmit="handleSellSubmit(event)">
                 <div class="form-group">
                     <label>Categoria TCG *</label>
@@ -1413,8 +1413,8 @@
         const ADMIN_EMAIL = 'francesco_delduca@icloud.com';
         let pendingMfaFactorId = null;
 
-        const CART_MIN_ORDER = 20;
-        const SELLER_MIN_CATALOG_CENTS = 5000;
+        const CART_MIN_ORDER = 1;
+        const SELLER_MIN_CATALOG_CENTS = 100;
         const PENDING_MARKER = '[[PENDING]]';
 
         let allCards = [];
@@ -2909,12 +2909,13 @@
                 rebuildSellerCatalogIndex();
                 applyFilters();
                 if (sync.pending) {
-                    const remaining = (50 - sync.total).toFixed(2);
-                    alert(`ANNUNCIO IN ATTESA\n\nCatalogo: €${sync.total.toFixed(2)} / €50,00 (mancano €${remaining}).\nNon è visibile in vetrina finché il totale dei prodotti non venduti non raggiunge €50. A soglia raggiunta verranno pubblicati tutti insieme.`);
+                    const minEuro = SELLER_MIN_CATALOG_CENTS / 100;
+                    const remaining = (minEuro - sync.total).toFixed(2);
+                    alert(`ANNUNCIO IN ATTESA\n\nCatalogo: €${sync.total.toFixed(2)} / €${minEuro.toFixed(2)} (mancano €${remaining}).`);
                     openProfileModal();
                     switchProfileTab('my-listings', document.querySelectorAll('.profile-tab')[1]);
                 } else {
-                    showNotification('✅ Catalogo ≥ €50: gli annunci sono pubblicati in vetrina.');
+                    showNotification('Annuncio pubblicato in vetrina.');
                 }
             }
         }
@@ -3478,7 +3479,8 @@
                 if (getSellerCatalogCents(ownerId) >= SELLER_MIN_CATALOG_CENTS) {
                     thresholdEl.innerHTML = `Catalogo: <strong>€${total.toFixed(2)}</strong> — soglia raggiunta, gli annunci non venduti sono pubblicati.`;
                 } else {
-                    thresholdEl.innerHTML = `Catalogo: <strong>€${total.toFixed(2)}</strong> / €50,00. Mancano <strong>€${(50 - total).toFixed(2)}</strong>: gli annunci restano in attesa e si pubblicheranno tutti insieme.`;
+                    const minEuro = SELLER_MIN_CATALOG_CENTS / 100;
+                    thresholdEl.innerHTML = `Catalogo: <strong>€${total.toFixed(2)}</strong> / €${minEuro.toFixed(2)}. Mancano <strong>€${(minEuro - total).toFixed(2)}</strong>: gli annunci restano in attesa.`;
                 }
             }
             if (myCards.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun prodotto in gestione.</p>'; return; }
@@ -3685,7 +3687,7 @@
         function addToCart(card) {
             if (!card) return;
             if (!isListingBuyable(card)) {
-                showNotification(isCardSold(card) ? 'Questo prodotto è già stato venduto!' : 'Annuncio in attesa: il venditore non ha ancora raggiunto €50 di catalogo.', 'error');
+                showNotification(isCardSold(card) ? 'Questo prodotto è già stato venduto!' : 'Annuncio in attesa: catalogo sotto soglia.', 'error');
                 return;
             }
 

@@ -862,7 +862,7 @@ try {
         console.warn('Manca SUPABASE_SERVICE_ROLE_KEY: con RLS stretto il server non potrà marcare gli annunci come venduti.');
     }
 } catch (e) {}
-const CART_MIN_ORDER = 20;
+const CART_MIN_ORDER = 1;
 const WALLET_HOLD_DAYS = 7;
 const PLATFORM_FEE_RATE = 0.05;
 const SHOP_PLAN_EUR = 15;
