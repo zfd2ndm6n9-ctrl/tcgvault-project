@@ -137,9 +137,18 @@ function ensureOrderFromPaymentIntent(pi) {
 
 let stripeSoldSyncAt = 0;
 let stripeSoldSyncing = false;
-async function recoverSoldFromStripe() {
+function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
+function uuidOrNull(value) {
+    const s = String(value || '').trim();
+    return isUuid(s) ? s : null;
+}
+
+async function recoverSoldFromStripe(force) {
     if (!stripe || stripeSoldSyncing) return;
-    if (Date.now() - stripeSoldSyncAt < 30000) return;
+    if (!force && Date.now() - stripeSoldSyncAt < 30000) return;
     stripeSoldSyncing = true;
     stripeSoldSyncAt = Date.now();
     const found = [];
@@ -680,8 +689,15 @@ function persistPromoCodesToDisk() {
     persistPromoCodesToSupabase().catch(err => console.error('Salvataggio promo Supabase:', err.message));
 }
 function persistAccountsToDisk() { persistJsonFile('accounts.json', accountsDB); }
+function isSellerWalletUser(u) {
+    if (!u || !u.id) return false;
+    if (u.iban || u.stripeAccountId || pendingIbanInfo(u)) return true;
+    if (Number(u.heldWallet || 0) || Number(u.availableWallet || 0)) return true;
+    return ordersDB.some(o => String(o.sellerId) === String(u.id) && o.status && o.status !== 'pending_payment');
+}
+
 function persistWalletsToDisk() {
-    persistJsonFile('wallets.json', usersDB.filter(u => u && u.id).map(walletToRow));
+    persistJsonFile('wallets.json', usersDB.filter(isSellerWalletUser).map(walletToRow));
     persistWalletsToSupabase().catch(err => console.error('Salvataggio wallet Supabase:', err.message));
 }
 
@@ -1041,8 +1057,8 @@ function orderToRow(o) {
     return {
         id: o.id,
         payment_intent_id: o.paymentIntentId || null,
-        buyer_id: o.buyerId || null,
-        seller_id: o.sellerId || null,
+        buyer_id: uuidOrNull(o.buyerId),
+        seller_id: uuidOrNull(o.sellerId),
         card_id: o.cardId != null ? String(o.cardId) : null,
         card_ids: Array.isArray(o.cardIds) ? o.cardIds : [],
         card_title: o.cardTitle || null,
@@ -1107,7 +1123,7 @@ function rowToOrder(r) {
 async function supabaseUpsertRow(table, row, idColumn) {
     const payload = { ...row };
     const key = idColumn || 'id';
-    for (let round = 0; round < 10; round++) {
+    for (let round = 0; round < 12; round++) {
         const headers = {
             apikey: SUPABASE_KEY,
             Authorization: 'Bearer ' + SUPABASE_KEY,
@@ -1116,7 +1132,7 @@ async function supabaseUpsertRow(table, row, idColumn) {
         };
         let res = await fetch(SUPABASE_URL + '/rest/v1/' + table, {
             method: 'POST',
-            headers,
+            headers: { ...headers, Prefer: 'return=minimal' },
             body: JSON.stringify(payload)
         });
         if (res.ok) return true;
@@ -1126,19 +1142,41 @@ async function supabaseUpsertRow(table, row, idColumn) {
             delete payload[missing[1]];
             continue;
         }
+        const badUuid = errText.match(/invalid input syntax for type uuid:\s*"([^"]*)"/i);
+        if (badUuid) {
+            const bad = badUuid[1];
+            let changed = false;
+            Object.keys(payload).forEach(k => {
+                if (String(payload[k]) === bad) {
+                    payload[k] = null;
+                    changed = true;
+                }
+            });
+            if (changed) continue;
+        }
+        if (/foreign key constraint/i.test(errText)) {
+            ['sender_id', 'receiver_id', 'buyer_id', 'seller_id', 'user_id'].forEach(col => {
+                if (payload[col] != null && !isUuid(payload[col])) payload[col] = null;
+            });
+            if (/sender_id/i.test(errText)) payload.sender_id = null;
+            continue;
+        }
         if (payload[key] != null && (/no unique|ON CONFLICT|duplicate key/i.test(errText) || res.status === 409)) {
             const patch = await fetch(
                 SUPABASE_URL + '/rest/v1/' + table + '?' + key + '=eq.' + encodeURIComponent(String(payload[key])),
-                { method: 'PATCH', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify(payload) }
+                { method: 'PATCH', headers: { ...headers, Prefer: 'return=representation' }, body: JSON.stringify(payload) }
             );
-            if (patch.ok) return true;
+            if (patch.ok) {
+                const patched = await patch.text();
+                if (patched && patched !== '[]') return true;
+            }
             const ins = await fetch(SUPABASE_URL + '/rest/v1/' + table, {
                 method: 'POST',
                 headers: { ...headers, Prefer: 'return=minimal' },
                 body: JSON.stringify(payload)
             });
             if (ins.ok) return true;
-            console.error('Salvataggio ' + table + ':', patch.status, await patch.text().catch(() => ''), ins.status);
+            console.error('Salvataggio ' + table + ':', patch.status, await patch.text().catch(() => ''), ins.status, await ins.text().catch(() => ''));
             return false;
         }
         console.error('Salvataggio ' + table + ':', res.status, errText.slice(0, 400));
@@ -1201,8 +1239,8 @@ async function loadOrdersFromSupabase() {
 function messageToRow(m) {
     return {
         id: m.id,
-        sender_id: String(m.senderId || ''),
-        receiver_id: String(m.receiverId || ''),
+        sender_id: uuidOrNull(m.senderId),
+        receiver_id: uuidOrNull(m.receiverId),
         text: m.text || null,
         offer_price: m.offerPrice != null && m.offerPrice !== '' ? Number(m.offerPrice) : null,
         card_id: m.cardId != null ? String(m.cardId) : null,
@@ -1944,9 +1982,28 @@ function walletPublic(userId) {
     const user = getOrCreateWalletUser(userId);
     const pending = pendingIbanInfo(user);
     const escrowWallet = sellerEscrowEuro(userId);
+    const lines = walletSaleLines(userId);
+    const soldSomething = lines.length > 0 || escrowWallet > 0 || sellerHoldEuro(userId) > 0 || sellerAvailableFromOrders(userId) > 0;
+    if (!soldSomething) {
+        return {
+            wallet: 0,
+            availableWallet: 0,
+            heldWallet: 0,
+            escrowWallet: 0,
+            creditTotal: 0,
+            unlockAt: null,
+            unlockLabel: '',
+            story: 'Nessuna vendita in corso. Gli acquisti non accreditano questo portafoglio.',
+            lines: [],
+            iban: user.iban || '',
+            payoutHolder: user.payoutHolder || '',
+            stripeAccountId: user.stripeAccountId || null,
+            payoutPending: false,
+            payoutPendingAmount: 0
+        };
+    }
     const available = Number(user.availableWallet || 0);
     const held = Number(user.heldWallet || 0);
-    const lines = walletSaleLines(userId);
     const nextHold = lines.filter(l => l.kind === 'hold' && l.unlockAt).sort((a, b) => Date.parse(a.unlockAt) - Date.parse(b.unlockAt))[0];
     let story = 'Nessuna vendita in corso.';
     if (pending) story = 'Bonifico IBAN in lavorazione.';
@@ -1979,7 +2036,7 @@ function publicSiteUrl(req) {
 }
 
 async function persistWalletsToSupabase() {
-    const rows = usersDB.filter(u => u && u.id).map(walletToRow);
+    const rows = usersDB.filter(isSellerWalletUser).map(walletToRow);
     for (const row of rows) {
         await supabaseUpsertRow('wallets', row, 'user_id');
     }
@@ -4291,7 +4348,7 @@ app.post('/api/tournaments/:id/match', async (req, res) => {
 
 app.get('/api/sold-card-ids', (req, res) => {
     soldIdsFromOrders();
-    recoverSoldFromStripe().catch(err => console.error('Recupero venduti da Stripe:', err.message));
+    recoverSoldFromStripe(true).catch(err => console.error('Recupero venduti da Stripe:', err.message));
     res.set('Cache-Control', 'no-store');
     res.json({ success: true, ids: [...soldIdSet] });
 });
@@ -4315,7 +4372,7 @@ Promise.all([
 ]).finally(async () => {
     await releaseMatureHoldsAsync();
     soldIdsFromOrders();
-    await recoverSoldFromStripe();
+    await recoverSoldFromStripe(true);
     await persistOrdersToSupabase();
     await persistMessagesToSupabase();
     await persistWalletsToSupabase();
