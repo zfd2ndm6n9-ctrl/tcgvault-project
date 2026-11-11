@@ -112,11 +112,15 @@ function cardIdsFromStripeMeta(meta) {
 
 function ensureOrderFromPaymentIntent(pi) {
     if (!pi || !pi.id) return null;
-    let order = ordersDB.find(o => o.paymentIntentId === pi.id);
-    if (order) return order;
-    const ids = cardIdsFromStripeMeta(pi.metadata);
-    if (!ids.length) return null;
     const meta = pi.metadata || {};
+    let order = ordersDB.find(o => o.paymentIntentId === pi.id);
+    if (order) {
+        if (meta.buyerId) order.buyerId = String(meta.buyerId);
+        if (meta.sellerId) order.sellerId = String(meta.sellerId);
+        return order;
+    }
+    const ids = cardIdsFromStripeMeta(meta);
+    if (!ids.length) return null;
     order = {
         id: String(meta.orderId || ('order-stripe-' + pi.id)),
         paymentIntentId: pi.id,
@@ -1891,13 +1895,21 @@ function isPlausibleIban(value) {
     return /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/.test(normalizeIban(value));
 }
 
+function orderStillOnHold(o) {
+    if (!o || o.status !== 'completed') return false;
+    if (o.sellerTransferId) return false;
+    const holdAt = Date.parse(o.holdUntil);
+    if (Number.isFinite(holdAt) && holdAt >= Date.parse('2000-01-01')) return holdAt > Date.now();
+    const done = Date.parse(o.completedAt);
+    if (Number.isFinite(done)) return Date.now() < done + WALLET_HOLD_DAYS * 24 * 60 * 60 * 1000;
+    return true;
+}
+
 function sellerHoldEuro(userId) {
     let n = 0;
     ordersDB.forEach(o => {
         if (String(o.sellerId) !== String(userId) || o.status !== 'completed') return;
-        const amt = Number(o.amount || 0);
-        const t = Date.parse(o.holdUntil);
-        if (Number.isFinite(t) && t > Date.now()) n += amt;
+        if (orderStillOnHold(o)) n += Number(o.amount || 0);
     });
     return Math.round(n * 100) / 100;
 }
@@ -1908,7 +1920,7 @@ function sellerAvailableFromOrders(userId) {
         if (String(o.sellerId) !== String(userId) || o.status !== 'completed') return;
         if (o.sellerTransferId) return;
         if (String(o.ibanPayoutId || '').startsWith('pending_iban|')) return;
-        if (isHoldPending(o.holdUntil)) return;
+        if (orderStillOnHold(o)) return;
         n += Number(o.amount || 0);
     });
     return Math.round(n * 100) / 100;
@@ -2002,8 +2014,8 @@ function walletPublic(userId) {
             payoutPendingAmount: 0
         };
     }
-    const available = Number(user.availableWallet || 0);
-    const held = Number(user.heldWallet || 0);
+    const available = sellerAvailableFromOrders(userId);
+    const held = sellerHoldEuro(userId);
     const nextHold = lines.filter(l => l.kind === 'hold' && l.unlockAt).sort((a, b) => Date.parse(a.unlockAt) - Date.parse(b.unlockAt))[0];
     let story = 'Nessuna vendita in corso.';
     if (pending) story = 'Bonifico IBAN in lavorazione.';
@@ -3462,11 +3474,14 @@ app.post('/api/wallet/payout', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Hai già un bonifico in lavorazione. Attendi l\'accredito o scrivi al supporto.' });
     }
 
-    if ((user.availableWallet || 0) <= 0) {
-        const held = Number(user.heldWallet || 0);
+    const fromSales = sellerAvailableFromOrders(userId);
+    user.availableWallet = fromSales;
+    syncWalletTotals(user);
+    if (fromSales <= 0) {
+        const held = sellerHoldEuro(userId);
         const msg = held > 0
             ? 'Hai €' + held.toFixed(2) + ' in hold. Il prelievo è possibile solo dopo 7 giorni dalla conferma di consegna.'
-            : 'Non hai fondi disponibili da prelevare nel wallet.';
+            : 'Non hai fondi disponibili da prelevare: questo portafoglio è solo per le vendite.';
         return res.status(400).json({ success: false, error: msg });
     }
 
